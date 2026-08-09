@@ -500,10 +500,10 @@ const Toolbar: React.FC<{
 
     const contextRef = useRef(context);
     const containerRef = useRef<HTMLDivElement>(null);
+    const rightToolbarRef = useRef<HTMLDivElement>(null);
     const [toolbarWrapIndex, setToolbarWrapIndex] = useState(-1);
-    const [itemLocations, setItemLocations] = useState<number[]>([]);
+    const [rightToolbarWidth, setRightToolbarWidth] = useState(30);
     const [showDuneModal, setShowDuneModal] = useState(false);
-    const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1480);
     const { showDialog, hideDialog } = useDialog();
     const { showAlert, hideAlert } = useAlert();
 
@@ -617,73 +617,77 @@ const Toolbar: React.FC<{
       [],
     );
 
-    // Add window resize listener to update desktop state
+    const toolbarItemsKey = settings.toolbarItems.join('|');
+    const customToolbarItemsKey = settings.customToolbarItems
+      .map((item) => item.key)
+      .join('|');
+
     useEffect(() => {
-      const handleResize = () => {
-        setIsDesktop(window.innerWidth >= 1480);
+      const rightToolbar = rightToolbarRef.current;
+      if (!rightToolbar) return;
+
+      const updateRightToolbarWidth = () => {
+        setRightToolbarWidth(
+          Math.ceil(rightToolbar.getBoundingClientRect().width),
+        );
       };
 
-      window.addEventListener('resize', handleResize);
-      return () => window.removeEventListener('resize', handleResize);
+      updateRightToolbarWidth();
+      if (typeof ResizeObserver === 'undefined') return;
+
+      const resizeObserver = new ResizeObserver(updateRightToolbarWidth);
+      resizeObserver.observe(rightToolbar);
+      return () => resizeObserver.disconnect();
     }, []);
 
-    // rerenders the entire toolbar and trigger recalculation of item locations
+    // rerender the entire toolbar before recalculating the wrap position
     useEffect(() => {
       setToolbarWrapIndex(-1);
-    }, [settings.toolbarItems, settings.customToolbarItems]);
-
-    // recalculate item locations
-    useEffect(() => {
-      if (toolbarWrapIndex === -1) {
-        const container = containerRef.current!;
-        if (!container) return;
-        const items = container.querySelectorAll('.fortune-toolbar-item');
-        if (!items) return;
-        const locations: number[] = [];
-        const containerRect = container.getBoundingClientRect();
-        for (let i = 0; i < items.length; i += 1) {
-          const item = items[i] as HTMLElement;
-          const itemRect = item.getBoundingClientRect();
-          locations.push(itemRect.left - containerRect.left + itemRect.width);
-        }
-        setItemLocations(locations);
-      }
-    }, [toolbarWrapIndex, sheetWidth]);
+      setMoreItems(null);
+    }, [
+      customToolbarItemsKey,
+      rightToolbarWidth,
+      setMoreItems,
+      sheetWidth,
+      toolbarItemsKey,
+    ]);
 
     // calculate the position after which items should be wrapped
     useEffect(() => {
-      // If on desktop, show all items
-      if (isDesktop) {
-        setToolbarWrapIndex(-1);
-        setMoreItems(null);
-        return;
-      }
-
-      if (itemLocations.length === 0) return;
+      if (toolbarWrapIndex !== -1) return;
       const container = containerRef.current!;
       if (!container) return;
-      const moreButtonWidth = 50;
-      const containerWidth = container.getBoundingClientRect().width;
-      const availableWidth = containerWidth - 30; // Account for padding
+      const items = container.querySelectorAll(
+        '.fortune-toolbar-left .fortune-toolbar-item',
+      );
+      if (items.length === 0) return;
 
-      for (let i = itemLocations.length - 1; i >= 0; i -= 1) {
-        const loc = itemLocations[i];
+      const moreButtonWidth = 50;
+      const containerRect = container.getBoundingClientRect();
+      const availableWidth =
+        containerRect.width - Math.max(30, rightToolbarWidth);
+
+      for (let i = items.length - 1; i >= 0; i -= 1) {
+        const itemRect = items[i].getBoundingClientRect();
+        const loc = itemRect.left - containerRect.left + itemRect.width;
         if (loc + moreButtonWidth < availableWidth) {
           setToolbarWrapIndex(
-            i - itemLocations.length + settings.toolbarItems.length,
+            i - items.length + settings.toolbarItems.length,
           );
-          if (i === itemLocations.length - 1) {
+          if (i === items.length - 1) {
             setMoreItems(null);
           }
           break;
         }
       }
     }, [
-      itemLocations,
+      customToolbarItemsKey,
+      rightToolbarWidth,
       setMoreItems,
       settings.toolbarItems.length,
       sheetWidth,
-      isDesktop,
+      toolbarItemsKey,
+      toolbarWrapIndex,
     ]);
 
     useEffect(() => {
@@ -2202,12 +2206,11 @@ const Toolbar: React.FC<{
           {settings.customToolbarItems?.length > 0 ? (
             <Divider key="customDivider" />
           ) : null}
-          {(toolbarWrapIndex === -1 || isDesktop
+          {(toolbarWrapIndex === -1
             ? settings.toolbarItems
             : settings.toolbarItems.slice(0, toolbarWrapIndex + 1)
           ).map((name, i) => getToolbarItem(name, i))}
-          {!isDesktop &&
-            toolbarWrapIndex !== -1 &&
+          {toolbarWrapIndex !== -1 &&
             toolbarWrapIndex < settings.toolbarItems.length - 1 ? (
             <Button
               iconId="Ellipsis"
@@ -2231,7 +2234,7 @@ const Toolbar: React.FC<{
             </MoreItemsContaier>
           )}
         </div>
-        <div className="fortune-toolbar-right">
+        <div ref={rightToolbarRef} className="fortune-toolbar-right">
           {settings.customToolbarItems.length > 0 && (
             <>
               {settings.customToolbarItems
