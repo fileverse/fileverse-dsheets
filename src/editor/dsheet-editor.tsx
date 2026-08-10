@@ -53,6 +53,8 @@ const EditorContent = ({
   isReadOnly,
   permissionMode,
   onEnterEdit,
+  onSignInToComment,
+  onViewerModeChange,
   allowSheetDownload,
   toggleTemplateSidebar,
   onboardingComplete,
@@ -77,6 +79,8 @@ const EditorContent = ({
   | 'isReadOnly'
   | 'permissionMode'
   | 'onEnterEdit'
+  | 'onSignInToComment'
+  | 'onViewerModeChange'
   | 'allowSheetDownload'
   | 'toggleTemplateSidebar'
   | 'selectedTemplate'
@@ -470,6 +474,8 @@ const EditorContent = ({
             sidebarPortalRegistry={sidebarPortalRegistry}
             permissionMode={resolvedPermissionMode}
             onEnterEdit={onEnterEdit}
+            onSignInToComment={onSignInToComment}
+            onViewerModeChange={onViewerModeChange}
             theme={theme}
           />
         </TransitionWrapper>
@@ -532,6 +538,8 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
   isReadOnly = false,
       permissionMode,
       onEnterEdit,
+      onSignInToComment,
+      onViewerModeChange,
   allowSheetDownload,
   renderNavbar,
   enableIndexeddbSync,
@@ -616,6 +624,8 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
         isReadOnly={isReadOnly}
           permissionMode={permissionMode}
           onEnterEdit={onEnterEdit}
+          onSignInToComment={onSignInToComment}
+          onViewerModeChange={onViewerModeChange}
         allowSheetDownload={allowSheetDownload}
         toggleTemplateSidebar={toggleTemplateSidebar}
         onboardingComplete={onboardingComplete}

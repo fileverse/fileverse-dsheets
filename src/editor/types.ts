@@ -114,6 +114,11 @@ export interface DsheetProps {
   /** Called when a read-only consumer asks to elevate to edit mode. The host
    * owns access proof, loading, errors, and the resulting mode transition. */
   onEnterEdit?: () => void;
+  /** Called when an invited commenter needs to authenticate before the host can
+   * recover comment capability. */
+  onSignInToComment?: () => void;
+  /** Lets the host toggle a recovered commenter between comment and view mode. */
+  onViewerModeChange?: (mode: 'comment' | 'view') => void;
   allowSheetDownload?: boolean;
   isTemplateOpen?: boolean;
   selectedTemplate?: string;

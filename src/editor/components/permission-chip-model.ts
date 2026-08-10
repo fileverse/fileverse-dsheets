@@ -24,6 +24,30 @@ export const canShowEditElevation = ({
   onEnterEdit?: () => void;
 }) => mode !== "edit" && Boolean(onEnterEdit);
 
+export const canShowViewerModeMenu = ({
+  mode,
+  onViewerModeChange,
+}: {
+  mode: DSheetPermissionMode;
+  onViewerModeChange?: (mode: "comment" | "view") => void;
+}) => mode !== "edit" && Boolean(onViewerModeChange);
+
+export const canShowCommentSignIn = ({
+  mode,
+  onEnterEdit,
+  onSignInToComment,
+  onViewerModeChange,
+}: {
+  mode: DSheetPermissionMode;
+  onEnterEdit?: () => void;
+  onSignInToComment?: () => void;
+  onViewerModeChange?: (mode: "comment" | "view") => void;
+}) =>
+  mode === "view" &&
+  Boolean(onSignInToComment) &&
+  !canShowEditElevation({ mode, onEnterEdit }) &&
+  !canShowViewerModeMenu({ mode, onViewerModeChange });
+
 export const resolvePermissionChipMode = ({
   allowComments,
   isReadOnly,
