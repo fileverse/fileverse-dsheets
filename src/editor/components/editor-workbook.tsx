@@ -7,12 +7,7 @@ import type {
 } from '@sheet-engine/react';
 import type { ThemeKey } from '@sheet-engine/core/theme';
 import { Cell } from '@sheet-engine/react';
-import {
-  TOOL_BAR_ITEMS,
-  CELL_CONTEXT_MENU_ITEMS,
-  HEADER_CONTEXT_MENU_ITEMS,
-  DEFAULT_SHEET_DATA,
-} from '../constants/shared-constants';
+import { DEFAULT_SHEET_DATA } from '../constants/shared-constants';
 import {
   getCustomToolbarItems,
   getReadOnlyCustomToolbarItems,
@@ -63,6 +58,7 @@ import {
 } from '../utils/cell-comment-marker';
 import { getCurrentSheetIdSafe } from '../utils/sheet-editor-safe';
 import { detachWorkbookData } from '../utils/detach-workbook-data';
+import { getWorkbookControlItems } from './editor-workbook-controls';
 // import { useEditorData } from '../hooks/use-editor-data';
 // Use the types defined in types.ts
 type OnboardingHandler = OnboardingHandlerType;
@@ -350,17 +346,12 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     updateDocumentTitle,
   });
 
-  const cellContextMenu = isReadOnly
-    ? allowComments
-      ? ['comment', 'copy']
-      : ['copy']
-    : CELL_CONTEXT_MENU_ITEMS;
-  const headerContextMenu = isReadOnly ? ['filter'] : HEADER_CONTEXT_MENU_ITEMS;
-  const toolbarItems = isReadOnly
-    ? allowComments
-      ? ['filter', 'sort', 'comment']
-      : ['filter', 'sort']
-    : TOOL_BAR_ITEMS;
+  const { cellContextMenu, headerContextMenu, toolbarItems } =
+    getWorkbookControlItems({
+      isReadOnly,
+      allowComments,
+      isRTCActive: isLiveCollabSession,
+    });
 
   const syncContext = {
     sheetEditorRef,

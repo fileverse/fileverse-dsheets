@@ -1532,27 +1532,6 @@ const Toolbar: React.FC<{
               },
             ];
           }
-          if (settings.isRTCActive) {
-            return (
-              <Tooltip
-                key={name}
-                text="Comments are not available during real-time collaboration"
-                position="bottom"
-              >
-                <div
-                  style={{
-                    opacity: 0.45,
-                    pointerEvents: 'none',
-                    display: 'inline-flex',
-                  }}
-                >
-                  <Combo iconId={name} tooltip={tooltip} showArrow={false}>
-                    {() => null}
-                  </Combo>
-                </div>
-              </Tooltip>
-            );
-          }
           return (
             <Combo iconId={name} key={name} tooltip={tooltip} showArrow={false}>
               {(setOpen) => (

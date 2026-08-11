@@ -37,7 +37,7 @@ import React, {
 } from 'react';
 import regeneratorRuntime from 'regenerator-runtime';
 import Tippy from '@tippyjs/react';
-import { LucideIcon, Tooltip } from '@fileverse/ui';
+import { LucideIcon } from '@fileverse/ui';
 import { SplitColumn } from '../SplitColumn';
 import { ResetColumnWidth } from '../ResetColumnWidth';
 import { ResetRowHeight } from '../ResetRowHeight';
@@ -496,24 +496,6 @@ const ContextMenu: React.FC = () => {
         );
       }
       if (name === 'comment') {
-        if (settings.isRTCActive) {
-          return (
-            <Tooltip
-              key={name}
-              text="Comments are not available during real-time collaboration"
-              position="right"
-            >
-              <div style={{ opacity: 0.45, pointerEvents: 'none' }}>
-                <Menu onClick={() => {}}>
-                  <div className="context-item">
-                    <LucideIcon name="MessageSquarePlus" />
-                    <p>Comment</p>
-                  </div>
-                </Menu>
-              </div>
-            </Tooltip>
-          );
-        }
         return (
           <Menu
             key={name}
