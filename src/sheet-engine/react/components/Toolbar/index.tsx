@@ -2060,11 +2060,7 @@ const Toolbar: React.FC<{
               iconId={name}
               tooltip={tooltip}
               key={name}
-              disabled={
-                ((name === 'number-decrease' || name === 'number-increase') &&
-                  context.luckysheetCellUpdate.length > 0) ||
-                Boolean(hyperlinkInsertBlocked)
-              }
+              disabled={Boolean(hyperlinkInsertBlocked)}
               selected={toolbarItemSelectedFunc(name)?.(cell)}
               onMouseDown={(e) => {
                 if (name === 'link') {
@@ -2088,14 +2084,6 @@ const Toolbar: React.FC<{
                   return;
                 }
                 setContext((draftCtx) => {
-                  const isDecimalAction =
-                    name === 'number-decrease' || name === 'number-increase';
-                  if (
-                    isDecimalAction &&
-                    draftCtx.luckysheetCellUpdate.length > 0
-                  ) {
-                    return;
-                  }
                   toolbarItemClickHandler(name)?.(
                     draftCtx,
                     refs.cellInput.current!,

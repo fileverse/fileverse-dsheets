@@ -19,6 +19,7 @@ import {
 import {
   buildFiatCurrencyFormat,
   datenum_local,
+  getEffectiveGeneralDp,
   is_date,
   MAX_GENERAL_AUTO_DP,
   refreshGeneralNumericDisplay,
@@ -53,6 +54,7 @@ import {
   isdatatypemulti,
   isRealNull,
   isRealNum,
+  isNumericCellType,
 } from './validation';
 import {
   getCellHyperlinks,
@@ -77,6 +79,62 @@ type ToolbarItemClickHandler = (
 ) => void;
 
 type ToolbarItemSelectedFunc = (cell: Cell | null | undefined) => boolean;
+
+/** Same numeric recognition as default right-align: explicit number type or numeric value/display. */
+function isCellEligibleForDecimalAdjust(
+  cell: Cell | null | undefined,
+): boolean {
+  if (!cell) return false;
+  if (cell.ct?.fa === '@') return false;
+  if (isNumericCellType(cell)) return true;
+  if (typeof cell.v === 'number') return true;
+  if (isRealNum(cell.v)) return true;
+  if (isRealNum(cell.m)) return true;
+  return false;
+}
+
+function forEachSelectedCell(
+  ctx: Context,
+  flowdata: CellMatrix,
+  fn: (row: number, col: number, cell: Cell | null | undefined) => void,
+) {
+  ctx.luckysheet_select_save?.forEach((selection) => {
+    for (let row = selection.row[0]; row <= selection.row[1]; row += 1) {
+      for (
+        let col = selection.column[0];
+        col <= selection.column[1];
+        col += 1
+      ) {
+        fn(row, col, flowdata[row]?.[col]);
+      }
+    }
+  });
+}
+
+function adjustGeneralDecimal(cell: Cell, delta: -1 | 1): boolean {
+  if (!_.isPlainObject(cell)) return false;
+  const raw = cell.v ?? cell.m;
+  if (raw == null || !isRealNum(raw)) return false;
+  if (!cell.ct) cell.ct = {};
+  cell.ct.fa = 'General';
+  cell.ct.t = 'g';
+  const currentDp = getEffectiveGeneralDp(cell);
+  if (delta < 0) {
+    if (currentDp <= 0) return false;
+    cell.ct.dp = currentDp - 1;
+  } else {
+    cell.ct.dp = Math.min(MAX_GENERAL_AUTO_DP, currentDp + 1);
+  }
+  refreshGeneralNumericDisplay(cell);
+  return true;
+}
+
+function isGeneralFormatCell(cell: Cell | null | undefined): boolean {
+  if (!cell) return false;
+  const fa = cell.ct?.fa;
+  if (fa === 'General' || fa == null) return true;
+  return cell.ct?.t === 'g';
+}
 
 function pushToolbarCellDataUpdate(
   ctx: Context,
@@ -1277,32 +1335,32 @@ export function handleNumberDecrease(ctx: Context, cellInput: HTMLDivElement) {
 
   let foucsStatus = normalizedAttr(flowdata, row_index, col_index, 'ct');
   const cell = flowdata[row_index][col_index];
-  const numericSample = cell?.v ?? cell?.m;
-  if (foucsStatus == null && cell != null && isRealNum(numericSample)) {
-    foucsStatus = { fa: 'General', t: 'g' };
-  }
 
-  if (
-    foucsStatus == null ||
-    (foucsStatus.t !== 'n' &&
-      !(foucsStatus.t === 'g' && isRealNum(numericSample)))
-  ) {
+  if (!isCellEligibleForDecimalAdjust(cell)) {
     return;
   }
 
-  // General (Auto): adjust display decimals via ct.dp only — keep fa General + t "g" (Sheets-like).
-  if (foucsStatus.fa === 'General') {
-    if (!cell || !_.isPlainObject(cell)) return;
-    const raw = cell.v ?? cell.m;
-    if (raw == null || !isRealNum(raw)) return;
-    if (!cell.ct?.dp || cell.ct.dp < 1) return;
-    if (cell.ct.dp <= 1) {
-      delete cell.ct.dp;
-    } else {
-      cell.ct.dp -= 1;
-    }
-    refreshGeneralNumericDisplay(cell);
-    pushToolbarCellDataUpdate(ctx, row_index, col_index, flowdata);
+  if (foucsStatus == null) {
+    foucsStatus = { fa: 'General', t: 'g' };
+  }
+
+  // General (Auto): adjust display decimals via ct.dp — keep fa General + t "g" (Sheets-like).
+  if (isGeneralFormatCell(cell)) {
+    const updated: { row: number; col: number }[] = [];
+    forEachSelectedCell(ctx, flowdata, (r, c, targetCell) => {
+      if (!isCellEligibleForDecimalAdjust(targetCell) || !targetCell) return;
+      if (!isGeneralFormatCell(targetCell)) return;
+      if (adjustGeneralDecimal(targetCell, -1)) {
+        updated.push({ row: r, col: c });
+      }
+    });
+    updated.forEach(({ row, col }) =>
+      pushToolbarCellDataUpdate(ctx, row, col, flowdata),
+    );
+    return;
+  }
+
+  if (foucsStatus.t !== 'n') {
     return;
   }
 
@@ -1383,31 +1441,32 @@ export function handleNumberIncrease(ctx: Context, cellInput: HTMLDivElement) {
   if (row_index === undefined || col_index === undefined) return;
   let foucsStatus = normalizedAttr(flowdata, row_index, col_index, 'ct');
   const cell = flowdata[row_index][col_index];
-  const numericSample = cell?.v ?? cell?.m;
-  if (foucsStatus == null && cell != null && isRealNum(numericSample)) {
-    foucsStatus = { fa: 'General', t: 'g' };
-  }
 
-  if (
-    foucsStatus == null ||
-    (foucsStatus.t !== 'n' &&
-      !(foucsStatus.t === 'g' && isRealNum(numericSample)))
-  ) {
+  if (!isCellEligibleForDecimalAdjust(cell)) {
     return;
   }
 
+  if (foucsStatus == null) {
+    foucsStatus = { fa: 'General', t: 'g' };
+  }
+
   // General (Auto): store decimal hint on ct.dp; keep fa/t as Auto (Sheets-like).
-  if (foucsStatus.fa === 'General') {
-    if (!cell || !_.isPlainObject(cell)) return;
-    const raw = cell.v ?? cell.m;
-    if (raw == null || !isRealNum(raw)) return;
-    if (!cell.ct) cell.ct = {};
-    const nextDp = Math.min(MAX_GENERAL_AUTO_DP, (cell.ct.dp ?? 0) + 1);
-    cell.ct.fa = 'General';
-    cell.ct.t = 'g';
-    cell.ct.dp = nextDp;
-    refreshGeneralNumericDisplay(cell);
-    pushToolbarCellDataUpdate(ctx, row_index, col_index, flowdata);
+  if (isGeneralFormatCell(cell)) {
+    const updated: { row: number; col: number }[] = [];
+    forEachSelectedCell(ctx, flowdata, (r, c, targetCell) => {
+      if (!isCellEligibleForDecimalAdjust(targetCell) || !targetCell) return;
+      if (!isGeneralFormatCell(targetCell)) return;
+      if (adjustGeneralDecimal(targetCell, 1)) {
+        updated.push({ row: r, col: c });
+      }
+    });
+    updated.forEach(({ row, col }) =>
+      pushToolbarCellDataUpdate(ctx, row, col, flowdata),
+    );
+    return;
+  }
+
+  if (foucsStatus.t !== 'n') {
     return;
   }
 
