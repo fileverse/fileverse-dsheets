@@ -83,13 +83,22 @@ type ToolbarItemSelectedFunc = (cell: Cell | null | undefined) => boolean;
 function isCellEligibleForDecimalAdjust(
   cell: Cell | null | undefined,
 ): boolean {
-  if (!cell || cell.ct?.fa === '@') return false;
+  // Empty / unset cell is Automatic — allow so +/- can store ct.dp for later values.
+  if (cell == null) return true;
+  if (cell.ct?.fa === '@') return false;
+  if (cell.ct?.t === 'n') return true;
+  if (isGeneralFormatCell(cell) && isCellValueEmpty(cell)) return true;
   return (
-    cell.ct?.t === 'n' ||
-    typeof cell.v === 'number' ||
-    isRealNum(cell.v) ||
-    isRealNum(cell.m)
+    typeof cell.v === 'number' || isRealNum(cell.v) || isRealNum(cell.m)
   );
+}
+
+function isCellValueEmpty(cell: Cell | null | undefined): boolean {
+  if (cell == null) return true;
+  if (cell.v != null && cell.v !== '') return false;
+  if (cell.m != null && String(cell.m) !== '') return false;
+  if (cell.f != null && String(cell.f) !== '') return false;
+  return true;
 }
 
 function forEachSelectedCell(
@@ -110,26 +119,53 @@ function forEachSelectedCell(
   });
 }
 
+function ensureGeneralAutoCell(
+  flowdata: CellMatrix,
+  row: number,
+  col: number,
+): Cell | null {
+  if (!flowdata[row]) return null;
+  const existing = flowdata[row][col];
+  if (existing != null && !_.isPlainObject(existing)) return null;
+  if (existing == null) {
+    flowdata[row][col] = { ct: { fa: 'General', t: 'g' } };
+  } else {
+    if (!existing.ct) existing.ct = {};
+    if (existing.ct.fa == null || existing.ct.fa === 'General') {
+      existing.ct.fa = 'General';
+      existing.ct.t = 'g';
+    }
+  }
+  return flowdata[row][col] as Cell;
+}
+
 function adjustGeneralDecimal(cell: Cell, delta: -1 | 1): boolean {
   if (!_.isPlainObject(cell)) return false;
+  const empty = isCellValueEmpty(cell);
   const raw = cell.v ?? cell.m;
-  if (raw == null || !isRealNum(raw)) return false;
+  if (!empty && (raw == null || !isRealNum(raw))) return false;
   if (!cell.ct) cell.ct = {};
   cell.ct.fa = 'General';
   cell.ct.t = 'g';
-  const currentDp = getEffectiveGeneralDp(cell);
+  const currentDp = empty
+    ? cell.ct.dp != null && cell.ct.dp >= 0
+      ? Math.min(MAX_GENERAL_AUTO_DP, Math.floor(cell.ct.dp))
+      : 0
+    : getEffectiveGeneralDp(cell);
   if (delta < 0) {
     if (currentDp <= 0) return false;
     cell.ct.dp = currentDp - 1;
   } else {
     cell.ct.dp = Math.min(MAX_GENERAL_AUTO_DP, currentDp + 1);
   }
-  refreshGeneralNumericDisplay(cell);
+  if (!empty) {
+    refreshGeneralNumericDisplay(cell);
+  }
   return true;
 }
 
 function isGeneralFormatCell(cell: Cell | null | undefined): boolean {
-  if (!cell) return false;
+  if (cell == null) return true;
   const fa = cell.ct?.fa;
   if (fa === 'General' || fa == null) return true;
   return cell.ct?.t === 'g';
@@ -1344,12 +1380,22 @@ export function handleNumberDecrease(ctx: Context, cellInput: HTMLDivElement) {
   }
 
   // General (Auto): adjust display decimals via ct.dp — keep fa General + t "g" (Sheets-like).
+  // Empty Auto cells also get ct.dp (same idea as empty Number cells keeping fa).
   if (isGeneralFormatCell(cell)) {
     const updated: { row: number; col: number }[] = [];
     forEachSelectedCell(ctx, flowdata, (r, c, targetCell) => {
-      if (!isCellEligibleForDecimalAdjust(targetCell) || !targetCell) return;
-      if (!isGeneralFormatCell(targetCell)) return;
-      if (adjustGeneralDecimal(targetCell, -1)) {
+      if (targetCell?.ct?.fa === '@') return;
+      if (targetCell != null && !isGeneralFormatCell(targetCell)) return;
+      if (
+        targetCell != null &&
+        !isCellEligibleForDecimalAdjust(targetCell) &&
+        !isCellValueEmpty(targetCell)
+      ) {
+        return;
+      }
+      const ensured = ensureGeneralAutoCell(flowdata, r, c);
+      if (!ensured) return;
+      if (adjustGeneralDecimal(ensured, -1)) {
         updated.push({ row: r, col: c });
       }
     });
@@ -1448,12 +1494,22 @@ export function handleNumberIncrease(ctx: Context, cellInput: HTMLDivElement) {
   }
 
   // General (Auto): store decimal hint on ct.dp; keep fa/t as Auto (Sheets-like).
+  // Empty Auto cells also get ct.dp (same idea as empty Number cells keeping fa).
   if (isGeneralFormatCell(cell)) {
     const updated: { row: number; col: number }[] = [];
     forEachSelectedCell(ctx, flowdata, (r, c, targetCell) => {
-      if (!isCellEligibleForDecimalAdjust(targetCell) || !targetCell) return;
-      if (!isGeneralFormatCell(targetCell)) return;
-      if (adjustGeneralDecimal(targetCell, 1)) {
+      if (targetCell?.ct?.fa === '@') return;
+      if (targetCell != null && !isGeneralFormatCell(targetCell)) return;
+      if (
+        targetCell != null &&
+        !isCellEligibleForDecimalAdjust(targetCell) &&
+        !isCellValueEmpty(targetCell)
+      ) {
+        return;
+      }
+      const ensured = ensureGeneralAutoCell(flowdata, r, c);
+      if (!ensured) return;
+      if (adjustGeneralDecimal(ensured, 1)) {
         updated.push({ row: r, col: c });
       }
     });
