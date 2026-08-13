@@ -511,8 +511,9 @@ export function insertRowCol(
           count,
         )}`;
 
-        if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
-          data![calc_r]![calc_c]!.f = functionStr;
+        // Guard: other sheets may have calcChain before data is hydrated.
+        if (data?.[calc_r]?.[calc_c]?.f === calc_funcStr) {
+          data[calc_r]![calc_c]!.f = functionStr;
         }
       } else if (type === 'column' && SheetIndex === curOrder) {
         const functionStr = `=${functionStrChange(
@@ -549,8 +550,8 @@ export function insertRowCol(
           count,
         )}`;
 
-        if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
-          data![calc_r]![calc_c]!.f = functionStr;
+        if (data?.[calc_r]?.[calc_c]?.f === calc_funcStr) {
+          data[calc_r]![calc_c]!.f = functionStr;
         }
       }
     }
@@ -1927,10 +1928,10 @@ export function deleteRowCol(
           slen,
         )}`;
 
-        if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
-          data![calc_r]![calc_c]!.f = functionStr;
+        if (data?.[calc_r]?.[calc_c]?.f === calc_funcStr) {
+          data[calc_r]![calc_c]!.f = functionStr;
           if (functionStr === '=#REF!')
-            markCellRefError(data![calc_r]![calc_c]!);
+            markCellRefError(data[calc_r]![calc_c]!);
         }
       } else if (type === 'column' && SheetIndex === curOrder) {
         if (calc_c < start || calc_c > end) {
@@ -1965,10 +1966,10 @@ export function deleteRowCol(
           slen,
         )}`;
 
-        if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
-          data![calc_r]![calc_c]!.f = functionStr;
+        if (data?.[calc_r]?.[calc_c]?.f === calc_funcStr) {
+          data[calc_r]![calc_c]!.f = functionStr;
           if (functionStr === '=#REF!')
-            markCellRefError(data![calc_r]![calc_c]!);
+            markCellRefError(data[calc_r]![calc_c]!);
         }
       }
     }
