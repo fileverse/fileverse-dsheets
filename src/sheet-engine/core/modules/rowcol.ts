@@ -511,8 +511,10 @@ export function insertRowCol(
           count,
         )}`;
 
-        if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
-          data![calc_r]![calc_c]!.f = functionStr;
+        // Guard: other sheets may have calcChain before data is hydrated.
+        const otherRowCell = data?.[calc_r]?.[calc_c];
+        if (otherRowCell != null && otherRowCell.f === calc_funcStr) {
+          otherRowCell.f = functionStr;
         }
       } else if (type === 'column' && SheetIndex === curOrder) {
         const functionStr = `=${functionStrChange(
@@ -549,8 +551,9 @@ export function insertRowCol(
           count,
         )}`;
 
-        if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
-          data![calc_r]![calc_c]!.f = functionStr;
+        const otherColCell = data?.[calc_r]?.[calc_c];
+        if (otherColCell != null && otherColCell.f === calc_funcStr) {
+          otherColCell.f = functionStr;
         }
       }
     }
@@ -1927,10 +1930,10 @@ export function deleteRowCol(
           slen,
         )}`;
 
-        if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
-          data![calc_r]![calc_c]!.f = functionStr;
-          if (functionStr === '=#REF!')
-            markCellRefError(data![calc_r]![calc_c]!);
+        const otherDelRowCell = data?.[calc_r]?.[calc_c];
+        if (otherDelRowCell != null && otherDelRowCell.f === calc_funcStr) {
+          otherDelRowCell.f = functionStr;
+          if (functionStr === '=#REF!') markCellRefError(otherDelRowCell);
         }
       } else if (type === 'column' && SheetIndex === curOrder) {
         if (calc_c < start || calc_c > end) {
@@ -1965,10 +1968,10 @@ export function deleteRowCol(
           slen,
         )}`;
 
-        if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
-          data![calc_r]![calc_c]!.f = functionStr;
-          if (functionStr === '=#REF!')
-            markCellRefError(data![calc_r]![calc_c]!);
+        const otherDelColCell = data?.[calc_r]?.[calc_c];
+        if (otherDelColCell != null && otherDelColCell.f === calc_funcStr) {
+          otherDelColCell.f = functionStr;
+          if (functionStr === '=#REF!') markCellRefError(otherDelColCell);
         }
       }
     }

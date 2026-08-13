@@ -19,6 +19,7 @@ import {
 import {
   buildFiatCurrencyFormat,
   datenum_local,
+  getEffectiveGeneralDp,
   is_date,
   MAX_GENERAL_AUTO_DP,
   refreshGeneralNumericDisplay,
@@ -78,23 +79,115 @@ type ToolbarItemClickHandler = (
 
 type ToolbarItemSelectedFunc = (cell: Cell | null | undefined) => boolean;
 
-function pushToolbarCellDataUpdate(
+/** Same numeric recognition as default right-align in `normalizedCellAttr`. */
+function isCellEligibleForDecimalAdjust(
+  cell: Cell | null | undefined,
+): boolean {
+  // Empty / unset cell is Automatic — allow so +/- can store ct.dp for later values.
+  if (cell == null) return true;
+  if (cell.ct?.fa === '@') return false;
+  if (cell.ct?.t === 'n') return true;
+  if (isGeneralFormatCell(cell) && isCellValueEmpty(cell)) return true;
+  return (
+    typeof cell.v === 'number' || isRealNum(cell.v) || isRealNum(cell.m)
+  );
+}
+
+function isCellValueEmpty(cell: Cell | null | undefined): boolean {
+  if (cell == null) return true;
+  if (cell.v != null && cell.v !== '') return false;
+  if (cell.m != null && String(cell.m) !== '') return false;
+  if (cell.f != null && String(cell.f) !== '') return false;
+  return true;
+}
+
+function forEachSelectedCell(
   ctx: Context,
-  r: number,
-  c: number,
+  flowdata: CellMatrix,
+  fn: (row: number, col: number, cell: Cell | null | undefined) => void,
+) {
+  ctx.luckysheet_select_save?.forEach((selection) => {
+    for (let row = selection.row[0]; row <= selection.row[1]; row += 1) {
+      for (
+        let col = selection.column[0];
+        col <= selection.column[1];
+        col += 1
+      ) {
+        fn(row, col, flowdata[row]?.[col]);
+      }
+    }
+  });
+}
+
+function ensureGeneralAutoCell(
+  flowdata: CellMatrix,
+  row: number,
+  col: number,
+): Cell | null {
+  if (!flowdata[row]) return null;
+  const existing = flowdata[row][col];
+  if (existing != null && !_.isPlainObject(existing)) return null;
+  if (existing == null) {
+    flowdata[row][col] = { ct: { fa: 'General', t: 'g' } };
+  } else {
+    if (!existing.ct) existing.ct = {};
+    if (existing.ct.fa == null || existing.ct.fa === 'General') {
+      existing.ct.fa = 'General';
+      existing.ct.t = 'g';
+    }
+  }
+  return flowdata[row][col] as Cell;
+}
+
+function adjustGeneralDecimal(cell: Cell, delta: -1 | 1): boolean {
+  if (!_.isPlainObject(cell)) return false;
+  const empty = isCellValueEmpty(cell);
+  const raw = cell.v ?? cell.m;
+  if (!empty && (raw == null || !isRealNum(raw))) return false;
+  if (!cell.ct) cell.ct = {};
+  cell.ct.fa = 'General';
+  cell.ct.t = 'g';
+  const currentDp = empty
+    ? cell.ct.dp != null && cell.ct.dp >= 0
+      ? Math.min(MAX_GENERAL_AUTO_DP, Math.floor(cell.ct.dp))
+      : 0
+    : getEffectiveGeneralDp(cell);
+  if (delta < 0) {
+    if (currentDp <= 0) return false;
+    cell.ct.dp = currentDp - 1;
+  } else {
+    cell.ct.dp = Math.min(MAX_GENERAL_AUTO_DP, currentDp + 1);
+  }
+  if (!empty) {
+    refreshGeneralNumericDisplay(cell);
+  }
+  return true;
+}
+
+function isGeneralFormatCell(cell: Cell | null | undefined): boolean {
+  if (cell == null) return true;
+  const fa = cell.ct?.fa;
+  if (fa === 'General' || fa == null) return true;
+  return cell.ct?.t === 'g';
+}
+
+/** One cache clear + one ydoc batch for all updated cells. */
+function pushToolbarCellDataUpdates(
+  ctx: Context,
+  updated: { row: number; col: number }[],
   d: CellMatrix,
 ) {
+  if (updated.length === 0) return;
   clearMeasureTextCache();
-  const cell = d[r]?.[c];
-  ctx.hooks?.updateCellYdoc?.([
-    {
+  ctx.hooks?.updateCellYdoc?.(
+    updated.map(({ row, col }) => ({
       sheetId: ctx.currentSheetId,
       path: ['celldata'],
-      value: { r, c, v: cell },
-      key: `${r}_${c}`,
+      value: { r: row, c: col, v: d[row]?.[col] },
+      key: `${row}_${col}`,
       type: 'update',
-    },
-  ]);
+    })),
+  );
 }
 
 function pushRangeFormatConfigUpdate(
@@ -1277,32 +1370,40 @@ export function handleNumberDecrease(ctx: Context, cellInput: HTMLDivElement) {
 
   let foucsStatus = normalizedAttr(flowdata, row_index, col_index, 'ct');
   const cell = flowdata[row_index][col_index];
-  const numericSample = cell?.v ?? cell?.m;
-  if (foucsStatus == null && cell != null && isRealNum(numericSample)) {
-    foucsStatus = { fa: 'General', t: 'g' };
-  }
 
-  if (
-    foucsStatus == null ||
-    (foucsStatus.t !== 'n' &&
-      !(foucsStatus.t === 'g' && isRealNum(numericSample)))
-  ) {
+  if (!isCellEligibleForDecimalAdjust(cell)) {
     return;
   }
 
-  // General (Auto): adjust display decimals via ct.dp only — keep fa General + t "g" (Sheets-like).
-  if (foucsStatus.fa === 'General') {
-    if (!cell || !_.isPlainObject(cell)) return;
-    const raw = cell.v ?? cell.m;
-    if (raw == null || !isRealNum(raw)) return;
-    if (!cell.ct?.dp || cell.ct.dp < 1) return;
-    if (cell.ct.dp <= 1) {
-      delete cell.ct.dp;
-    } else {
-      cell.ct.dp -= 1;
-    }
-    refreshGeneralNumericDisplay(cell);
-    pushToolbarCellDataUpdate(ctx, row_index, col_index, flowdata);
+  if (foucsStatus == null) {
+    foucsStatus = { fa: 'General', t: 'g' };
+  }
+
+  // General (Auto): adjust display decimals via ct.dp — keep fa General + t "g" (Sheets-like).
+  // Empty Auto cells also get ct.dp (same idea as empty Number cells keeping fa).
+  if (isGeneralFormatCell(cell)) {
+    const updated: { row: number; col: number }[] = [];
+    forEachSelectedCell(ctx, flowdata, (r, c, targetCell) => {
+      if (targetCell?.ct?.fa === '@') return;
+      if (targetCell != null && !isGeneralFormatCell(targetCell)) return;
+      if (
+        targetCell != null &&
+        !isCellEligibleForDecimalAdjust(targetCell) &&
+        !isCellValueEmpty(targetCell)
+      ) {
+        return;
+      }
+      const ensured = ensureGeneralAutoCell(flowdata, r, c);
+      if (!ensured) return;
+      if (adjustGeneralDecimal(ensured, -1)) {
+        updated.push({ row: r, col: c });
+      }
+    });
+    pushToolbarCellDataUpdates(ctx, updated, flowdata);
+    return;
+  }
+
+  if (foucsStatus.t !== 'n') {
     return;
   }
 
@@ -1383,31 +1484,40 @@ export function handleNumberIncrease(ctx: Context, cellInput: HTMLDivElement) {
   if (row_index === undefined || col_index === undefined) return;
   let foucsStatus = normalizedAttr(flowdata, row_index, col_index, 'ct');
   const cell = flowdata[row_index][col_index];
-  const numericSample = cell?.v ?? cell?.m;
-  if (foucsStatus == null && cell != null && isRealNum(numericSample)) {
-    foucsStatus = { fa: 'General', t: 'g' };
-  }
 
-  if (
-    foucsStatus == null ||
-    (foucsStatus.t !== 'n' &&
-      !(foucsStatus.t === 'g' && isRealNum(numericSample)))
-  ) {
+  if (!isCellEligibleForDecimalAdjust(cell)) {
     return;
   }
 
+  if (foucsStatus == null) {
+    foucsStatus = { fa: 'General', t: 'g' };
+  }
+
   // General (Auto): store decimal hint on ct.dp; keep fa/t as Auto (Sheets-like).
-  if (foucsStatus.fa === 'General') {
-    if (!cell || !_.isPlainObject(cell)) return;
-    const raw = cell.v ?? cell.m;
-    if (raw == null || !isRealNum(raw)) return;
-    if (!cell.ct) cell.ct = {};
-    const nextDp = Math.min(MAX_GENERAL_AUTO_DP, (cell.ct.dp ?? 0) + 1);
-    cell.ct.fa = 'General';
-    cell.ct.t = 'g';
-    cell.ct.dp = nextDp;
-    refreshGeneralNumericDisplay(cell);
-    pushToolbarCellDataUpdate(ctx, row_index, col_index, flowdata);
+  // Empty Auto cells also get ct.dp (same idea as empty Number cells keeping fa).
+  if (isGeneralFormatCell(cell)) {
+    const updated: { row: number; col: number }[] = [];
+    forEachSelectedCell(ctx, flowdata, (r, c, targetCell) => {
+      if (targetCell?.ct?.fa === '@') return;
+      if (targetCell != null && !isGeneralFormatCell(targetCell)) return;
+      if (
+        targetCell != null &&
+        !isCellEligibleForDecimalAdjust(targetCell) &&
+        !isCellValueEmpty(targetCell)
+      ) {
+        return;
+      }
+      const ensured = ensureGeneralAutoCell(flowdata, r, c);
+      if (!ensured) return;
+      if (adjustGeneralDecimal(ensured, 1)) {
+        updated.push({ row: r, col: c });
+      }
+    });
+    pushToolbarCellDataUpdates(ctx, updated, flowdata);
+    return;
+  }
+
+  if (foucsStatus.t !== 'n') {
     return;
   }
 

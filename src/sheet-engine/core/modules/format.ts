@@ -615,9 +615,39 @@ export function update(fmt: string, v: any) {
 /** Max decimal places for toolbar +/- on General (Auto) without switching to a numeric `fa`. */
 export const MAX_GENERAL_AUTO_DP = 15;
 
+/** Count decimal places currently shown for a General/Auto numeric cell. */
+export function countGeneralDisplayDecimalPlaces(cell: Cell): number {
+  if (typeof cell.m === 'string' && cell.m.includes('.')) {
+    const digits = cell.m.split('.')[1]?.replace(/[^0-9]/g, '') ?? '';
+    return digits.length;
+  }
+  const v = cell.v;
+  if (!isRealNum(v)) return 0;
+  const num = Number(v);
+  if (Number.isInteger(num)) return 0;
+  const auto = formatGeneralAutoDecimalWithTenDigitRule(num);
+  if (auto?.includes('.')) {
+    return auto.split('.')[1].length;
+  }
+  const s = num.toString();
+  if (s.includes('.')) {
+    const frac = s.split('.')[1];
+    return frac.replace(/0+$/, '').length || frac.length;
+  }
+  return 0;
+}
+
+/** Effective decimal places for toolbar +/- (explicit `ct.dp` or inferred from display). */
+export function getEffectiveGeneralDp(cell: Cell): number {
+  if (cell.ct?.dp != null && cell.ct.dp >= 0) {
+    return Math.min(MAX_GENERAL_AUTO_DP, Math.floor(cell.ct.dp));
+  }
+  return countGeneralDisplayDecimalPlaces(cell);
+}
+
 /**
  * Recompute `m` for numeric cells with `fa === "General"`.
- * When `ct.dp` is set (1..MAX), uses fixed decimals like Sheets Auto + decimal buttons.
+ * When `ct.dp` is set (0..MAX), uses fixed decimals like Sheets Auto + decimal buttons.
  * Otherwise uses the usual `genarate` General display.
  */
 export function refreshGeneralNumericDisplay(cell: Cell): void {
@@ -638,7 +668,17 @@ export function refreshGeneralNumericDisplay(cell: Cell): void {
   }
   if (!isRealNum(v)) return;
   const num = Number(v);
-  if (ct.dp != null && ct.dp >= 1) {
+  if (ct.dp != null && ct.dp >= 0) {
+    if (ct.dp === 0) {
+      const s = num.toString();
+      if (s.toLowerCase().includes('e')) {
+        const g = genarate(num);
+        if (g) cell.m = g[0].toString();
+        return;
+      }
+      cell.m = String(Math.round(num));
+      return;
+    }
     const d = Math.min(MAX_GENERAL_AUTO_DP, Math.max(1, Math.floor(ct.dp)));
     const s = num.toString();
     if (s.toLowerCase().includes('e')) {
