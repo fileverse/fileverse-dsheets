@@ -54,7 +54,6 @@ import {
   isdatatypemulti,
   isRealNull,
   isRealNum,
-  isNumericCellType,
 } from './validation';
 import {
   getCellHyperlinks,
@@ -80,17 +79,17 @@ type ToolbarItemClickHandler = (
 
 type ToolbarItemSelectedFunc = (cell: Cell | null | undefined) => boolean;
 
-/** Same numeric recognition as default right-align: explicit number type or numeric value/display. */
+/** Same numeric recognition as default right-align in `normalizedCellAttr`. */
 function isCellEligibleForDecimalAdjust(
   cell: Cell | null | undefined,
 ): boolean {
-  if (!cell) return false;
-  if (cell.ct?.fa === '@') return false;
-  if (isNumericCellType(cell)) return true;
-  if (typeof cell.v === 'number') return true;
-  if (isRealNum(cell.v)) return true;
-  if (isRealNum(cell.m)) return true;
-  return false;
+  if (!cell || cell.ct?.fa === '@') return false;
+  return (
+    cell.ct?.t === 'n' ||
+    typeof cell.v === 'number' ||
+    isRealNum(cell.v) ||
+    isRealNum(cell.m)
+  );
 }
 
 function forEachSelectedCell(
@@ -136,23 +135,23 @@ function isGeneralFormatCell(cell: Cell | null | undefined): boolean {
   return cell.ct?.t === 'g';
 }
 
-function pushToolbarCellDataUpdate(
+/** One cache clear + one ydoc batch for all updated cells. */
+function pushToolbarCellDataUpdates(
   ctx: Context,
-  r: number,
-  c: number,
+  updated: { row: number; col: number }[],
   d: CellMatrix,
 ) {
+  if (updated.length === 0) return;
   clearMeasureTextCache();
-  const cell = d[r]?.[c];
-  ctx.hooks?.updateCellYdoc?.([
-    {
+  ctx.hooks?.updateCellYdoc?.(
+    updated.map(({ row, col }) => ({
       sheetId: ctx.currentSheetId,
       path: ['celldata'],
-      value: { r, c, v: cell },
-      key: `${r}_${c}`,
+      value: { r: row, c: col, v: d[row]?.[col] },
+      key: `${row}_${col}`,
       type: 'update',
-    },
-  ]);
+    })),
+  );
 }
 
 function pushRangeFormatConfigUpdate(
@@ -1354,9 +1353,7 @@ export function handleNumberDecrease(ctx: Context, cellInput: HTMLDivElement) {
         updated.push({ row: r, col: c });
       }
     });
-    updated.forEach(({ row, col }) =>
-      pushToolbarCellDataUpdate(ctx, row, col, flowdata),
-    );
+    pushToolbarCellDataUpdates(ctx, updated, flowdata);
     return;
   }
 
@@ -1460,9 +1457,7 @@ export function handleNumberIncrease(ctx: Context, cellInput: HTMLDivElement) {
         updated.push({ row: r, col: c });
       }
     });
-    updated.forEach(({ row, col }) =>
-      pushToolbarCellDataUpdate(ctx, row, col, flowdata),
-    );
+    pushToolbarCellDataUpdates(ctx, updated, flowdata);
     return;
   }
 
