@@ -50,13 +50,13 @@ export class SyncManager {
   private readonly MAX_QUEUE_SIZE = 5;
   private _awarenessUpdateHandler:
     | ((
-      changes: {
-        added: number[];
-        updated: number[];
-        removed: number[];
-      },
-      origin: any,
-    ) => void)
+        changes: {
+          added: number[];
+          updated: number[];
+          removed: number[];
+        },
+        origin: any,
+      ) => void)
     | null = null;
 
   // --- Config (from constructor) ---
@@ -605,7 +605,7 @@ export class SyncManager {
       const updates: Uint8Array[] = [];
       // Tracks a failed commit-content fetch/decrypt — a transient storage
       // problem, not proof the room is poisoned. Gates the poisoned-room
-      // check below so a bad IPFS fetch isn't misreported as "ask the owner
+      // check below so a bad storage fetch isn't misreported as "ask the owner
       // to reopen the sheet" when a retry would likely just work.
       let commitContentFetchFailed = false;
 
@@ -763,15 +763,17 @@ export class SyncManager {
           Y.encodeStateAsUpdate(this.ydoc),
         );
         const file = objectToFile({ data: localContent }, 'commit');
-        const ipfsHash = await this.servicesRef.commitToStorage(file);
+        const contentRef = await this.servicesRef.commitToStorage(file);
 
-        if (!ipfsHash) {
-          throw new Error('Failed to upload commit to IPFS: no hash returned');
+        if (!contentRef) {
+          throw new Error(
+            'Failed to upload commit to storage: no content reference returned',
+          );
         }
 
         const commitResponse = await this.socketClient?.commitUpdates({
           updates: ids,
-          cid: ipfsHash,
+          cid: contentRef,
         });
 
         if (!commitResponse?.status) {
@@ -936,15 +938,17 @@ export class SyncManager {
           ),
         };
         const file = objectToFile(commitContent, 'commit');
-        const ipfsHash = await this.servicesRef!.commitToStorage(file);
+        const contentRef = await this.servicesRef!.commitToStorage(file);
 
-        if (!ipfsHash) {
-          throw new Error('Failed to upload commit to IPFS: no hash returned');
+        if (!contentRef) {
+          throw new Error(
+            'Failed to upload commit to storage: no content reference returned',
+          );
         }
 
         const response = await this.socketClient?.commitUpdates({
           updates,
-          cid: ipfsHash,
+          cid: contentRef,
         });
 
         if (!response?.status) {
