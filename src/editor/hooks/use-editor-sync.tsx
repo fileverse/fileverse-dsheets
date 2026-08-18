@@ -247,7 +247,9 @@ export const useEditorSync = (
     ).session;
     awareness.setLocalStateField('user', {
       name: session.username,
-      color: presenceColor(session.isEns, session.color),
+      color:
+        awareness.getLocalState()?.user?.color ??
+        presenceColor(session.isEns, session.color),
       isEns: session.isEns ?? false,
     });
   }, [awareness, collabEnabled]);
@@ -281,7 +283,8 @@ export const useEditorSync = (
     const localState = awareness.getLocalState();
     awareness.setLocalStateField('user', {
       ...(localState?.user ?? {}),
-      color: presenceColor(session.isEns),
+      color:
+        localState?.user?.color ?? presenceColor(session.isEns),
       isEns: true,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
