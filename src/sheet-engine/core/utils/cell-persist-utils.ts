@@ -34,8 +34,9 @@ export function hasCellMeaningfulContent(
   // keep merge hit-testing. config.merge alone is not enough for canvas.
   if (cell.mc != null) return true;
   if (cell.hl != null) return true;
-  // Comment/note-only cells (no value) must still persist.
-  if (cell.ps != null) return true;
+  // Do not persist `ps`. Fileverse comments live in the host store and are
+  // remapped by cell key; treating marker-only cells as data is what made
+  // viewers diverge from the owner after row/column drag.
   if (typeof cell.m === "string" && cell.m.length > 0) return true;
 
   const inline = cell.ct?.s;

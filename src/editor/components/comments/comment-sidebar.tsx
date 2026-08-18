@@ -113,8 +113,10 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
   );
 
   // When disabled (e.g. during real-time collaboration), comments are visible
-  // but read-only: input + actions are blocked.
+  // but read-only: input + actions are blocked. Unauthenticated visitors with
+  // comment permission can still read existing threads.
   const enableCollaboration = disabled;
+  const canWrite = !disabled && isAuthenticated;
 
   React.useEffect(() => {
     try {
@@ -279,14 +281,6 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
     });
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="flex h-full w-full items-center justify-center">
-        {unauthenticatedFallback ?? null}
-      </div>
-    );
-  }
-
   return (
     <div>
       {/* Filter Bar */}
@@ -388,7 +382,7 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
                   comment={comment as CommentThread}
                   sheetName={sheetInfo?.displayName}
                   cellReference={cellReference}
-                  onAction={disabled ? undefined : onCommentAction}
+                  onAction={canWrite ? onCommentAction : undefined}
                   ownerAddress={ownerAddress}
                   currentUserAddress={currentUserAddress}
                   isOwner={isOwner}
@@ -416,18 +410,22 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
                           </span>
                         </div>
                       </div>
-                    ) : (
+                    ) : canWrite ? (
                       <CommentInput
                         id="sidebar-comment-edit"
                         onSend={handleSendReply(key)}
                         autoFocus
                         backgroundColor="white"
                       />
-                    )}
+                    ) : !isAuthenticated ? (
+                      <div className="mt-3">{unauthenticatedFallback}</div>
+                    ) : null}
                   </div>
                 ) : comment.replies.length <= 0 ? (
                   <div className="pl-[32px]">
-                    {isCommentClick.has(key) && !comment.isResolved && (
+                    {canWrite &&
+                      isCommentClick.has(key) &&
+                      !comment.isResolved && (
                       <CommentInput
                         id="sidebar-comment-edit"
                         onSend={handleSendReply(key)}
@@ -452,6 +450,7 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
                     )}
                   </div>
                 ) : (
+                  canWrite &&
                   !comment.isResolved &&
                   comment.replies.length > 0 && (
                     <Button
@@ -482,6 +481,10 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
 
       {/* New Comment Section */}
       <div className="border-t p-2 space-lg">
+        {!isAuthenticated ? (
+          unauthenticatedFallback ?? null
+        ) : (
+          <>
         <div className="flex justify-start items-center gap-2">
           <div className="flex items-center justify-center w-6 h-6">
             <Avatar key={userName} size="md" content="text" alt={userName} />
@@ -508,6 +511,8 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
           removeCancelButton={true}
           className="mt-2"
         />
+          </>
+        )}
       </div>
     </div>
   );

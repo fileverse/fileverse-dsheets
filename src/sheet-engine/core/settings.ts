@@ -158,7 +158,46 @@ export type Hooks = {
   afterShowGridLinesChange?: () => void;
   afterNameChanges?: () => void;
   afterStatusChanges?: () => void;
+  /**
+   * Fired after row/column drag-drop, cell-range move, or insert/delete
+   * so host apps can remap comment keys (`${sheetId}_${row}_${col}`).
+   */
+  afterCommentAnchorMove?: (move: CommentAnchorMove) => void;
 };
+
+export type CommentAnchorMove =
+  | {
+      type: 'row' | 'column';
+      sheetId: string;
+      /** Prefixes that identify this sheet in comment keys (id, order, index). */
+      sheetKeys?: string[];
+      /** old index → new index for every row/col on the sheet */
+      indexMap: Record<number, number>;
+    }
+  | {
+      type: 'cells';
+      sheetId: string;
+      sheetKeys?: string[];
+      source: { row: [number, number]; column: [number, number] };
+      target: { row: [number, number]; column: [number, number] };
+    }
+  | {
+      type: 'insert';
+      axis: 'row' | 'column';
+      sheetId: string;
+      sheetKeys?: string[];
+      index: number;
+      count: number;
+      direction: 'lefttop' | 'rightbottom';
+    }
+  | {
+      type: 'delete';
+      axis: 'row' | 'column';
+      sheetId: string;
+      sheetKeys?: string[];
+      start: number;
+      end: number;
+    };
 
 type CommentUIDragFn = (
   e: React.MouseEvent<HTMLDivElement, MouseEvent>,

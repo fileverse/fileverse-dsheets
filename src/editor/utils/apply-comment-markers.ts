@@ -29,17 +29,9 @@ const resolveComment = (
  * the consumer-provided `commentData`.
  *
  * `ps` is a per-client, permission-gated *view overlay* — it is NOT persisted in
- * ydoc. Every path that rebuilds sheet data from ydoc (portal load, collab sync
- * remount, remote cell edits) produces cells WITHOUT `ps`, so this must run on
- * each such snapshot or the red-triangle indicator vanishes. Because it is
- * gated on the local `allowComments` permission, it must never be written back
- * to shared ydoc state — doing so would let one viewer wipe markers for all.
- *
- * Handles both shapes:
- * - Dense `sheet.data` (the live active sheet in `luckysheetfile`).
- * - Sparse `sheet.celldata` (plain snapshots from `ySheetArrayToPlain`, and
- *   inactive sheets). `initSheetData()` converts celldata → data on activation,
- *   so `ps` set on celldata carries through.
+ * ydoc (`shouldPersistCelldataCell` ignores marker-only cells). Empty cells are
+ * `null`, so a tiny `{ ps }` object is created in the live view only so the
+ * triangle can render. Row/column drag still owns real cell data.
  *
  * Mutates in place and returns the same array.
  */
@@ -49,6 +41,12 @@ export const applyCommentMarkers = <T>(
   allowComments: boolean | undefined,
 ): T | null | undefined => {
   if (!Array.isArray(sheets)) return sheets;
+  const commentCount =
+    commentData && typeof commentData === 'object'
+      ? Object.keys(commentData as object).length
+      : 0;
+  // Empty commentData is "not loaded yet". Do not walk cells and clear `ps`.
+  if (!commentCount) return sheets;
 
   (sheets as any[]).forEach((sheet, index) => {
     if (!sheet) return;
@@ -71,17 +69,14 @@ export const applyCommentMarkers = <T>(
         : undefined;
     };
 
-    // Find every cell on this sheet that has a comment. We need this list
-    // because an empty cell has no cell object, so the loops below can't add
-    // the comment marker to it unless we know it should have one.
     const commentedCells: Array<[number, number]> = [];
     if (commentData && allowComments) {
       const prefixes = new Set([sheetKey, String(sheetOrder), String(index)]);
       Object.keys(commentData as Record<string, unknown>).forEach((key) => {
         const parts = key.split('_');
-        if (parts.length !== 3) return; // not a cell comment (e.g. WITHOUT_CELL_*)
+        if (parts.length !== 3) return;
         const [prefix, rowStr, colStr] = parts;
-        if (!prefixes.has(prefix)) return; // comment is for a different sheet
+        if (!prefixes.has(prefix)) return;
         const row = Number(rowStr);
         const col = Number(colStr);
         if (Number.isNaN(row) || Number.isNaN(col)) return;
@@ -94,22 +89,25 @@ export const applyCommentMarkers = <T>(
       sheet.data.forEach((rowArr: any[], row: number) => {
         rowArr?.forEach((cell: any, col: number) => {
           if (!cell) return;
-          cell.ps = markerFor(row, col);
+          try {
+            cell.ps = markerFor(row, col);
+          } catch {
+            // Frozen snapshot — do not clone or replace sheet data.
+          }
         });
       });
-      // An empty cell is `null`, so the loop above skipped it. Create a tiny
-      // cell object just to hold the comment marker, so the indicator shows
-      // again after a refresh.
+      // Empty cells are `null`, so the loop above skipped them. Place a
+      // view-only marker object so the triangle shows. These are not written
+      // to ydoc.
       commentedCells.forEach(([row, col]) => {
         const rowArr = (sheet.data as any[])[row];
-        if (!rowArr) return; // cell is outside the current grid — skip
-        if (rowArr[col]) return; // real cell exists, already handled above
-        // This cell is only for showing the marker. A viewer's own comment
-        // never reaches here again (their comment isn't saved to the doc). It
-        // only fires for an empty cell whose comment lives in the host's
-        // comment store but not in the doc — a marker-only cell, which the
-        // doc already treats as a valid thing to keep.
-        rowArr[col] = { ps: { ...CELL_COMMENT_DEFAULT_VALUE } };
+        if (!rowArr) return;
+        if (rowArr[col]) return;
+        try {
+          rowArr[col] = { ps: { ...CELL_COMMENT_DEFAULT_VALUE } };
+        } catch {
+          // Frozen row — skip rather than cloning the grid.
+        }
       });
       return;
     }
@@ -118,20 +116,26 @@ export const applyCommentMarkers = <T>(
     if (Array.isArray(sheet.celldata)) {
       sheet.celldata.forEach((entry: any) => {
         if (!entry?.v) return;
-        entry.v.ps = markerFor(entry.r, entry.c);
+        try {
+          entry.v.ps = markerFor(entry.r, entry.c);
+        } catch {
+          // Frozen snapshot — do not clone or replace sheet data.
+        }
       });
-      // Same empty-cell problem here: if a commented cell has no entry, add a
-      // small entry that only carries the marker.
       const present = new Set(
         (sheet.celldata as any[]).map((e) => `${e?.r}_${e?.c}`),
       );
       commentedCells.forEach(([row, col]) => {
-        if (present.has(`${row}_${col}`)) return; // entry already exists
-        (sheet.celldata as any[]).push({
-          r: row,
-          c: col,
-          v: { ps: { ...CELL_COMMENT_DEFAULT_VALUE } },
-        });
+        if (present.has(`${row}_${col}`)) return;
+        try {
+          (sheet.celldata as any[]).push({
+            r: row,
+            c: col,
+            v: { ps: { ...CELL_COMMENT_DEFAULT_VALUE } },
+          });
+        } catch {
+          // Frozen celldata — skip rather than cloning the grid.
+        }
       });
     }
   });

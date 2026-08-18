@@ -18,7 +18,12 @@ export type { Context } from './context';
 
 // settings
 export { defaultSettings } from './settings';
-export type { Settings, Hooks, DateBaseLocale } from './settings';
+export type {
+  Settings,
+  Hooks,
+  DateBaseLocale,
+  CommentAnchorMove,
+} from './settings';
 
 // events
 export {
