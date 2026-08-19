@@ -1,4 +1,4 @@
-# Fileverse DSheet
+# Fileverse dSheet
 
 [![NPM](https://img.shields.io/npm/v/@fileverse-dev/dsheet)](https://www.npmjs.com/package/@fileverse-dev/dsheet)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
