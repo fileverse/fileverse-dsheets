@@ -13,8 +13,6 @@
 - Use a familiar spreadsheets interface & functions (VLOOKUP, INDEX, MATCH…)
 - Granular access permissions (e.g., give view, comment, edit, suggest access to specific email addresses)
 
-[**Try Live Demo →**](https://fileverse-dsheet.vercel.app/)
-
 ![image](https://github.com/user-attachments/assets/b3953811-3e02-43ac-9e8e-ee0c3923a22f)
 
 
