@@ -18,6 +18,7 @@ export type {
   CommentReply,
   CommentActionParams,
   CommentsConfig,
+  CommentAnchorMove,
 } from './types/comments';
 export { CommentAction } from './types/comments';
 

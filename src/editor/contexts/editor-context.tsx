@@ -280,6 +280,12 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     [onContentUpdate],
   );
 
+  // Same-turn ydoc writes (celldata emit, then comment anchors) must encode
+  // together. A leading persist in the middle of that stack publishes new
+  // cells with old comment positions — viewers then show data that moved and
+  // triangles that did not.
+  const portalUpdateScheduledRef = useRef(false);
+
   const rehydrateAfterCollabSyncRef = useRef<(reason: string) => boolean>(
     () => false,
   );
@@ -427,24 +433,33 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     [handleOnChange, handleContentUpdateNotification],
   );
 
-  const handleOnChangePortalUpdate = useCallback(() => {
+  const flushPortalUpdate = useCallback(() => {
     handleOnChange();
-    // Notify hosts cheaply for local changes while preserving the legacy
-    // snapshot callback for consumers that still request sheet data.
+    handleOnChange.flush();
     handleContentUpdateNotification();
+    handleContentUpdateNotification.flush();
   }, [handleOnChange, handleContentUpdateNotification]);
+
+  const handleOnChangePortalUpdate = useCallback(() => {
+    if (portalUpdateScheduledRef.current) return;
+    portalUpdateScheduledRef.current = true;
+    queueMicrotask(() => {
+      portalUpdateScheduledRef.current = false;
+      flushPortalUpdate();
+    });
+  }, [flushPortalUpdate]);
 
   useEffect(() => {
     if (!onChange) return;
 
     const handleBeforeUnload = () => {
-      handleOnChange();
+      flushPortalUpdate();
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [onChange, handleOnChange]);
+  }, [onChange, flushPortalUpdate]);
 
   // Initialize sheet data
   const {

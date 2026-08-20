@@ -22,6 +22,11 @@ import {
   remapCellFormatRanges,
 } from '../../../../core/utils/range-format';
 import { remapBorderInfo } from '../../../../core/utils/border-config-utils';
+import {
+  buildBlockMoveIndexMap,
+  getSheetCommentKeyPrefixes,
+  notifyCommentAnchorMove,
+} from '../../../../core/utils/comment-anchor-move';
 
 export const useRowDragAndDrop = (
   containerRef: RefObject<HTMLDivElement | null>,
@@ -422,7 +427,6 @@ export const useRowDragAndDrop = (
             affectedRowEnd,
             0,
             Math.max(0, numColsBeforeMove - 1),
-            _sheet.celldata,
           );
 
           // Move selected row block in one splice pair, preserving relative order.
@@ -433,22 +437,12 @@ export const useRowDragAndDrop = (
           updateContextWithSheetData(draft, _sheet.data);
 
           const d = getFlowdata(draft);
-          const rowMap: Record<number, number> = (() => {
-            const order = Array.from({ length: rows.length }, (_, i) => i);
-            const sourceStart = selectedStart;
-            const count = moveCount;
-            if (count <= 0) return {};
-            const moved = order.splice(sourceStart, count);
-            let insertAt = targetIndex;
-            if (insertAt < 0) insertAt = 0;
-            if (insertAt > order.length) insertAt = order.length;
-            order.splice(insertAt, 0, ...moved);
-            const map: Record<number, number> = {};
-            order.forEach((oldIdx, newIdx) => {
-              map[oldIdx] = newIdx;
-            });
-            return map;
-          })();
+          const rowMap = buildBlockMoveIndexMap(
+            rows.length,
+            selectedStart,
+            moveCount,
+            targetIndex,
+          );
 
           const previousFormatRanges = _sheet.config?.cellFormatRanges;
           const nextFormatRanges = remapCellFormatRanges(
@@ -743,8 +737,9 @@ export const useRowDragAndDrop = (
             }
           }
 
-          // Comments are stored on cell.ps and move with row/column data.
-          // Reset visible comment overlays so positions are recomputed lazily.
+          // Host-owned comment keys (`${sheetId}_${row}_${col}`) do not move
+          // with the splice. Notify after celldata is written to ydoc so the
+          // portal persist is not a half-update (old cells + new anchors).
           draft.commentBoxes = [];
           draft.hoveredCommentBox = undefined;
           draft.editingCommentBox = undefined;
@@ -811,6 +806,12 @@ export const useRowDragAndDrop = (
             Math.max(0, (rows[0]?.length ?? 1) - 1),
             ydocBeforePersisted,
           );
+          notifyCommentAnchorMove(draft, {
+            type: 'row',
+            sheetId: String(_sheet.id ?? draft.currentSheetId),
+            sheetKeys: getSheetCommentKeyPrefixes(_sheet, sheetIdx),
+            indexMap: rowMap,
+          });
           const colLen = d?.[0]?.length || 0;
           const colEnd = Math.max(0, colLen - 1);
           api.setSelection(

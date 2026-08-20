@@ -23,6 +23,8 @@ export const CommentCellUI: React.FC<CommentCellUIProps> = ({
   dragHandler,
   isHover = false,
   disabled = false,
+  isAuthenticated = true,
+  unauthenticatedFallback,
 }) => {
   const [isCommentHovered, setIsCommentHovered] = useState(false);
   const cellKey = `${sheetId}_${row}_${col}`;
@@ -43,6 +45,11 @@ export const CommentCellUI: React.FC<CommentCellUIProps> = ({
   // No comment yet — nothing to show in read-only mode (can't add one).
   if (!comment && disabled) {
     return null;
+  }
+
+  // No comment yet — join/login before composing.
+  if (!comment && !isAuthenticated) {
+    return <>{unauthenticatedFallback ?? null}</>;
   }
 
   // No comment yet — always show the input regardless of hover/click,
@@ -102,7 +109,7 @@ export const CommentCellUI: React.FC<CommentCellUIProps> = ({
       >
         <p className="text-sm font-medium color-text-default">Comments</p>
         <div className="min-h-[26px]">
-          {onAction && isCommentHovered && !disabled && (
+          {onAction && isCommentHovered && !disabled && isAuthenticated && (
             <CommentActionsDropdown
               comment={comment}
               onAction={(action) => {
@@ -130,7 +137,7 @@ export const CommentCellUI: React.FC<CommentCellUIProps> = ({
         <CommentItem
           comment={comment}
           isHovered={true}
-          onAction={disabled ? undefined : onAction}
+          onAction={disabled || !isAuthenticated ? undefined : onAction}
           ownerAddress={ownerAddress}
           currentUserAddress={currentUserAddress}
           isOwner={isOwner}
@@ -153,6 +160,10 @@ export const CommentCellUI: React.FC<CommentCellUIProps> = ({
                 Comments are not available during Real-Time Collaboration
               </span>
             </div>
+          </div>
+        ) : !isAuthenticated ? (
+          <div className="space-sm color-bg-secondary">
+            {unauthenticatedFallback ?? null}
           </div>
         ) : comment.isResolved ? (
           <div className="space-sm color-bg-secondary">
