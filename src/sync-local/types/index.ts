@@ -34,10 +34,29 @@ export interface CollabSessionMeta {
   isEns?: boolean;
 }
 
-/** Storage integrations the sync engine depends on */
+/**
+ * Store an encrypted commit file on the host's storage backend (IPFS,
+ * Swarm, ...) and return its content reference. The sync engine treats the
+ * returned reference as opaque (an IPFS CID, a Swarm reference, ...): it is
+ * handed to the sync server as the commit pointer and later passed back
+ * verbatim to `fetchFromStorage`.
+ */
+export type CommitToStorageFn = (file: File) => Promise<string>;
+
+/**
+ * Fetch a commit's content by the reference `commitToStorage` returned for
+ * it. The resolved value must expose the stored commit under `data`.
+ */
+export type FetchFromStorageFn = (contentRef: string) => Promise<any>;
+
+/**
+ * Storage integrations the sync engine depends on. Storage-agnostic: the
+ * host decides where commit files live (IPFS, Swarm, ...); the engine only
+ * round-trips the opaque content reference between these two functions.
+ */
 export interface CollabServices {
-  commitToStorage?: (file: File) => Promise<string>;
-  fetchFromStorage?: (cid: string) => Promise<any>;
+  commitToStorage?: CommitToStorageFn;
+  fetchFromStorage?: FetchFromStorageFn;
 }
 
 // ─── State Machine Types ───
@@ -158,6 +177,9 @@ export interface SendUpdateResponse extends AckResponse<{
   createdAt: number;
 }> {}
 
+// `cid`/`commitCid` above and below are the sync server's wire-format field
+// names for the commit's content reference; they carry whatever reference
+// `commitToStorage` returned, regardless of storage backend.
 export interface CommitResponse extends AckResponse<{
   cid: string;
   createdAt: number;

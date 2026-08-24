@@ -18,14 +18,14 @@ export function useSmartContractModal({
     address: Hex,
     chain: SupportedChain,
     abi: string,
-    smartContractName: string
+    smartContractName: string,
   ) => Promise<void>;
   setShowSmartContractModal: (show: boolean) => void;
   registryMapRef: React.MutableRefObject<Record<string, ContractConfig>>;
 }) {
   const [inputAddress, setInputAddress] = useState<string>('');
   const [selectedChain, setSelectedChain] = useState<SupportedChain>(
-    SupportedChain.Ethereum
+    SupportedChain.Ethereum,
   );
   const [formStep, setFormStep] = useState<number>(1);
   const [abiCode, setAbiCode] = useState('');
@@ -78,7 +78,6 @@ export function useSmartContractModal({
         size: formatFileSize(file.size),
       });
       setUploadProgress(50);
-      // handle file upload to ipfs
       const content = await readFileContent(file);
       validateAbi(content);
       setUploadProgress(100);
@@ -147,7 +146,7 @@ export function useSmartContractModal({
       inputAddress as Hex,
       selectedChain,
       _abi,
-      smartContractName
+      smartContractName,
     );
     onClose();
   };
