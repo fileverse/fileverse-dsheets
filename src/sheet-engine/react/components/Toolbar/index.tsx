@@ -17,8 +17,6 @@ import {
   deleteComment,
   showHideComment,
   showHideAllComments,
-  autoSelectionFormula,
-  handleSum,
   captureLinkEditorOpenSnapshot,
   locale,
   handleMerge,
@@ -36,7 +34,6 @@ import {
   clearFilter,
   toggleViewerFilter,
   applyLocation,
-  insertDuneChart,
   getFormulaEditorOwner,
   Cell,
   api,
@@ -73,9 +70,7 @@ import { LocationCondition } from '../LocationCondition';
 import CustomButton from './CustomButton';
 import { CustomColor } from './CustomColor';
 import { FormatSearch } from '../FormatSearch';
-import DuneChartsInputModal from '../DuneChartsInputModal/DuneChartsInputModal';
 import MoreItemsContaier from './MoreItemsContainer';
-import CryptoDenominationSelector from '../CryptoDenominationSelector';
 import { getGroupedCurrencyOptions, CRYPTO_OPTIONS } from '../../constants';
 import { buildFiatCurrencyFormat } from '@sheet-engine/core';
 import { convertCellsToCrypto } from '../../utils/convertCellsToCrypto';
@@ -500,7 +495,7 @@ const Toolbar: React.FC<{
     const containerRef = useRef<HTMLDivElement>(null);
     const [toolbarWrapIndex, setToolbarWrapIndex] = useState(-1);
     const [itemLocations, setItemLocations] = useState<number[]>([]);
-    const [showDuneModal, setShowDuneModal] = useState(false);
+    // const [showDuneModal, setShowDuneModal] = useState(false);
     const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1480);
     const { showDialog, hideDialog } = useDialog();
     const { showAlert, hideAlert } = useAlert();
@@ -2108,7 +2103,6 @@ const Toolbar: React.FC<{
         handleRedo,
         flowdata,
         formula,
-        showDuneModal,
         merge,
         border,
         freezen,
@@ -2233,7 +2227,7 @@ const Toolbar: React.FC<{
                     {n.children}
                   </CustomButton>
                 ))}
-              <Button
+              {/* <Button
                 iconId="dune"
                 tooltip="Insert Dune Chart"
                 key="dune-charts"
@@ -2245,8 +2239,8 @@ const Toolbar: React.FC<{
                   backgroundColor: '#F4603E2E',
                   borderRadius: '8px',
                 }}
-              />
-              <span style={{ display: 'inline-block', position: 'relative' }}>
+              /> */}
+              {/* <span style={{ display: 'inline-block', position: 'relative' }}>
                 <CryptoDenominationSelector>
                   <Button
                     iconId="crypto"
@@ -2258,7 +2252,7 @@ const Toolbar: React.FC<{
                     }}
                   />
                 </CryptoDenominationSelector>
-              </span>
+              </span> */}
             </>
           )}
           {settings.customToolbarItems
@@ -2281,7 +2275,7 @@ const Toolbar: React.FC<{
                 </CustomButton>
               );
             })}
-          {showDuneModal && (
+          {/* {showDuneModal && (
             <DuneChartsInputModal
               isOpen={showDuneModal}
               onSubmit={(url) => {
@@ -2295,7 +2289,7 @@ const Toolbar: React.FC<{
               placeholder="Paste here any Dune chart link for some magic"
               submitText="Add Dune chart"
             />
-          )}
+          )} */}
         </div>
       </div>
     );
