@@ -255,8 +255,8 @@ export type Settings = {
 };
 
 export const defaultSettings: Required<Settings> = {
-  column: 60, // 空表格默认的列数量
-  row: 84, // 空表格默认的行数据量
+  column: 26, // empty-sheet default column count (A–Z)
+  row: 100, // empty-sheet default row count
   addRows: 50, // It will add the rows when we click on add row button
   showToolbar: true, // 是否显示工具栏
   showFormulaBar: true, // 是否显示公式栏

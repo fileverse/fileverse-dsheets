@@ -311,8 +311,8 @@ export type Context = {
 export function defaultContext(refs: RefValues): Context {
   return {
     luckysheetfile: [],
-    defaultcolumnNum: 60,
-    defaultrowNum: 84,
+    defaultcolumnNum: 26,
+    defaultrowNum: 100,
     addDefaultRows: 50,
     fullscreenmode: true,
     devicePixelRatio: (globalThis || window).devicePixelRatio,
