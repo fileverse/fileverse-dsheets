@@ -22,7 +22,8 @@ export const PermissionChip: React.FC<PermissionChipProps> = ({
   onViewerModeChange,
 }) => {
   const { icon, label, modifier } = getPermissionChipConfig(mode);
-  const chipClassName = `dsheet-chip dsheet-chip--${modifier} inline-flex items-center py-1 gap-1 px-2 bg-yellow-100 rounded-full`;
+  const chipClassName = `dsheet-chip dsheet-chip--${modifier} inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md color-bg-brand-light color-text-on-brand text-xs font-medium whitespace-nowrap`;
+  const interactiveChipClassName = `${chipClassName} hover:opacity-90 transition-opacity`;
   const canEnterEdit = canShowEditElevation({ mode, onEnterEdit });
   const canSwitchViewerMode = canShowViewerModeMenu({
     mode,
@@ -37,9 +38,9 @@ export const PermissionChip: React.FC<PermissionChipProps> = ({
 
   const chipContent = (
     <>
-      <LucideIcon name={icon} className="w-4 h-4 color-text-default" />
+      <LucideIcon name={icon} size="sm" />
       <span
-        className="dsheet-text dsheet-text--chip text-xs color-text-default"
+        className="dsheet-text dsheet-text--chip"
         data-testid="permission-chip-label"
       >
         {label}
@@ -55,86 +56,109 @@ export const PermissionChip: React.FC<PermissionChipProps> = ({
         anchorTrigger={
           <button
             type="button"
-            className={chipClassName}
+            className={interactiveChipClassName}
             data-testid="permission-chip"
-            aria-label={
-              canSwitchViewerMode
-                ? 'Switch viewer mode'
-                : `${label}. Edit access available`
-            }
+            aria-label={`Switch spreadsheet mode. Current mode: ${label}`}
           >
             {chipContent}
-            <LucideIcon
-              name="ChevronDown"
-              className="w-4 h-4 color-text-default"
-            />
+            <LucideIcon name="ChevronDown" size="sm" />
           </button>
         }
         content={
-          <div className="flex flex-col gap-1 p-2 w-[280px] shadow-elevation-3">
-            {canEnterEdit && (
+          <div className="flex w-[260px] flex-col gap-1 p-2 shadow-elevation-3">
+            {onEnterEdit && (
               <button
                 type="button"
-                className="flex items-start gap-3 px-3 py-2 rounded-md text-left hover:color-bg-default-hover transition-colors"
+                aria-pressed={mode === 'edit'}
+                className={`flex items-center gap-2 rounded-md p-2 text-left transition-colors hover:color-bg-default-hover ${
+                  mode === 'edit' ? 'color-bg-default-hover' : ''
+                }`}
                 data-testid="permission-chip-edit-option"
                 onClick={onEnterEdit}
               >
                 <LucideIcon
-                  name="SquarePen"
-                  size="md"
-                  className="mt-0.5 shrink-0 color-text-default"
+                  name="Pencil"
+                  size="sm"
+                  className="shrink-0 color-text-default"
                 />
-                <span className="flex-1 min-w-0">
-                  <span className="block text-body-sm-bold color-text-default">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-body-sm color-text-default">
                     Edit
                   </span>
                   <span className="block text-helper-text-sm color-text-secondary">
-                    Make changes directly
+                    Edit spreadsheet
                   </span>
                 </span>
+                {mode === 'edit' && (
+                  <LucideIcon
+                    name="Check"
+                    size="sm"
+                    className="shrink-0 color-text-default"
+                  />
+                )}
               </button>
             )}
             {canSwitchViewerMode && (
               <>
                 <button
                   type="button"
-                  className="flex items-start gap-3 px-3 py-2 rounded-md text-left hover:color-bg-default-hover transition-colors"
+                  className={`flex items-center gap-2 rounded-md p-2 text-left transition-colors hover:color-bg-default-hover ${
+                    mode === 'comment' ? 'color-bg-default-hover' : ''
+                  }`}
                   data-testid="permission-chip-comment-option"
                   aria-pressed={mode === 'comment'}
                   onClick={() => onViewerModeChange?.('comment')}
                 >
                   <LucideIcon
                     name="MessageSquareText"
-                    size="md"
-                    className="mt-0.5 shrink-0 color-text-default"
+                    size="sm"
+                    className="shrink-0 color-text-default"
                   />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-body-sm-bold color-text-default">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-body-sm color-text-default">
                       View and comment
+                    </span>
+                    <span className="block text-helper-text-sm color-text-secondary">
+                      View and add comments
                     </span>
                   </span>
                   {mode === 'comment' && (
-                    <LucideIcon name="Check" size="sm" />
+                    <LucideIcon
+                      name="Check"
+                      size="sm"
+                      className="shrink-0 color-text-default"
+                    />
                   )}
                 </button>
                 <button
                   type="button"
-                  className="flex items-start gap-3 px-3 py-2 rounded-md text-left hover:color-bg-default-hover transition-colors"
+                  className={`flex items-center gap-2 rounded-md p-2 text-left transition-colors hover:color-bg-default-hover ${
+                    mode === 'view' ? 'color-bg-default-hover' : ''
+                  }`}
                   data-testid="permission-chip-view-option"
                   aria-pressed={mode === 'view'}
                   onClick={() => onViewerModeChange?.('view')}
                 >
                   <LucideIcon
                     name="Eye"
-                    size="md"
-                    className="mt-0.5 shrink-0 color-text-default"
+                    size="sm"
+                    className="shrink-0 color-text-default"
                   />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-body-sm-bold color-text-default">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-body-sm color-text-default">
                       View only
                     </span>
+                    <span className="block text-helper-text-sm color-text-secondary">
+                      View this spreadsheet, distraction-free
+                    </span>
                   </span>
-                  {mode === 'view' && <LucideIcon name="Check" size="sm" />}
+                  {mode === 'view' && (
+                    <LucideIcon
+                      name="Check"
+                      size="sm"
+                      className="shrink-0 color-text-default"
+                    />
+                  )}
                 </button>
               </>
             )}
@@ -148,17 +172,14 @@ export const PermissionChip: React.FC<PermissionChipProps> = ({
     return (
       <button
         type="button"
-        className={chipClassName}
+        className={interactiveChipClassName}
         data-testid="permission-chip"
         aria-label="Sign in to comment"
         onClick={onSignInToComment}
       >
-        <LucideIcon
-          name="MessageSquareText"
-          className="w-4 h-4 color-text-default"
-        />
+        <LucideIcon name="MessageSquareText" size="sm" />
         <span
-          className="dsheet-text dsheet-text--chip text-xs color-text-default"
+          className="dsheet-text dsheet-text--chip"
           data-testid="permission-chip-label"
         >
           Sign in to comment

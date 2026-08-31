@@ -22,19 +22,22 @@ const findByTestId = (
   if (!React.isValidElement(node)) return undefined;
   const element = node as ReactElement<Record<string, unknown>>;
   if (element.props['data-testid'] === testId) return element;
-  return React.Children.toArray(element.props.children as any).reduce<
+  return React.Children.toArray(element.props.children as ReactNode).reduce<
     ReactElement<Record<string, unknown>> | undefined
   >((match, child) => match ?? findByTestId(child, testId), undefined);
 };
 
 describe('PermissionChip', () => {
-  it('defines the package-owned edit presentation', () => {
-    expect(getPermissionChipConfig('edit')).toEqual({
-      icon: 'Pencil',
-      label: 'Edit',
-      modifier: 'edit',
-    });
-  });
+  it.each([
+    ['edit', 'Pencil', 'Edit', 'edit'],
+    ['comment', 'MessageSquareText', 'View and comment', 'comment'],
+    ['view', 'Eye', 'View only', 'view-only'],
+  ] as const)(
+    'defines the package-owned %s presentation',
+    (mode, icon, label, modifier) => {
+      expect(getPermissionChipConfig(mode)).toEqual({ icon, label, modifier });
+    },
+  );
 
   it.each(['view', 'comment'] as const)(
     'offers edit elevation from %s when the host supplies a callback',
@@ -60,7 +63,7 @@ describe('PermissionChip', () => {
     expect(canShowViewerModeMenu({ mode: 'view' })).toBe(false);
     expect(
       canShowViewerModeMenu({ mode: 'edit', onViewerModeChange: () => {} }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('offers direct comment sign-in only from a plain view chip', () => {
@@ -138,6 +141,21 @@ describe('PermissionChip', () => {
     (option?.props.onClick as () => void)();
 
     expect(editCount).toBe(1);
+  });
+
+  it('renders Edit as active in the three-mode menu', () => {
+    const chip = PermissionChip({
+      mode: 'edit',
+      onEnterEdit: () => {},
+      onViewerModeChange: () => {},
+    }) as ReactElement<{ content: ReactNode }>;
+    const option = findByTestId(
+      chip.props.content,
+      'permission-chip-edit-option',
+    );
+
+    expect(option?.props['aria-pressed']).toBe(true);
+    expect(option?.props.className).toContain('color-bg-default-hover');
   });
 
   it.each([

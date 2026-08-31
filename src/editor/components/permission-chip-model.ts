@@ -1,13 +1,13 @@
-import type { DSheetPermissionMode } from "../types";
+import type { DSheetPermissionMode } from '../types';
 
 const CHIP_CONFIG = {
-  view: { icon: "Eye", label: "View only", modifier: "view-only" },
+  view: { icon: 'Eye', label: 'View only', modifier: 'view-only' },
   comment: {
-    icon: "MessageSquareText",
-    label: "View and comment",
-    modifier: "comment",
+    icon: 'MessageSquareText',
+    label: 'View and comment',
+    modifier: 'comment',
   },
-  edit: { icon: "Pencil", label: "Edit", modifier: "edit" },
+  edit: { icon: 'Pencil', label: 'Edit', modifier: 'edit' },
 } as const satisfies Record<
   DSheetPermissionMode,
   { icon: string; label: string; modifier: string }
@@ -22,15 +22,14 @@ export const canShowEditElevation = ({
 }: {
   mode: DSheetPermissionMode;
   onEnterEdit?: () => void;
-}) => mode !== "edit" && Boolean(onEnterEdit);
+}) => mode !== 'edit' && Boolean(onEnterEdit);
 
 export const canShowViewerModeMenu = ({
-  mode,
   onViewerModeChange,
 }: {
   mode: DSheetPermissionMode;
-  onViewerModeChange?: (mode: "comment" | "view") => void;
-}) => mode !== "edit" && Boolean(onViewerModeChange);
+  onViewerModeChange?: (mode: 'comment' | 'view') => void;
+}) => Boolean(onViewerModeChange);
 
 export const canShowCommentSignIn = ({
   mode,
@@ -41,9 +40,9 @@ export const canShowCommentSignIn = ({
   mode: DSheetPermissionMode;
   onEnterEdit?: () => void;
   onSignInToComment?: () => void;
-  onViewerModeChange?: (mode: "comment" | "view") => void;
+  onViewerModeChange?: (mode: 'comment' | 'view') => void;
 }) =>
-  mode === "view" &&
+  mode === 'view' &&
   Boolean(onSignInToComment) &&
   !canShowEditElevation({ mode, onEnterEdit }) &&
   !canShowViewerModeMenu({ mode, onViewerModeChange });
@@ -57,4 +56,4 @@ export const resolvePermissionChipMode = ({
   isReadOnly: boolean;
   permissionMode?: DSheetPermissionMode;
 }): DSheetPermissionMode | null =>
-  permissionMode ?? (isReadOnly ? (allowComments ? "comment" : "view") : null);
+  permissionMode ?? (isReadOnly ? (allowComments ? 'comment' : 'view') : null);
