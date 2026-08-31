@@ -4,12 +4,13 @@
  * `rowIndexArr`/`colIndexArr` are sheet row/column indices in selection order.
  * `isMeaningful(r, c)` decides whether a cell contributes content (data, border, or
  * conditional format). Returns the sub-arrays spanning the first→last meaningful
- * position in each axis. If no cell is meaningful, the originals are returned unchanged
- * (so a deliberately-empty selection is not trimmed away).
+ * position in each axis. If no cell is meaningful (e.g. select-all of an empty sheet),
+ * the selection collapses to a single top-left cell so we never serialise a whole grid
+ * of blank cells.
  *
- * This is what stops a select-all of a mostly-empty sheet from serialising tens of
- * thousands of blank `<td>`s. Dropped rows/cols hold no data and no CSS, so the trim is
- * lossless — it matches Google Sheets' used-range clamp.
+ * This is what stops a select-all of a mostly-empty (or fully-empty) sheet from
+ * serialising thousands of blank `<td>`s. Dropped rows/cols hold no data and no CSS, so
+ * the trim is lossless — it matches Google Sheets' used-range clamp.
  */
 export function clampIndicesToUsedBounds(
   rowIndexArr: number[],
@@ -33,8 +34,12 @@ export function clampIndicesToUsedBounds(
   }
 
   if (maxRowPos === -Infinity) {
-    // No meaningful cell in the selection — leave it untouched.
-    return { rows: rowIndexArr, cols: colIndexArr };
+    // No meaningful cell in the selection — collapse to a single top-left cell so a
+    // select-all of an empty sheet does not serialise the entire blank grid.
+    return {
+      rows: rowIndexArr.length ? [rowIndexArr[0]] : [],
+      cols: colIndexArr.length ? [colIndexArr[0]] : [],
+    };
   }
 
   return {

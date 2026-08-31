@@ -167,37 +167,37 @@ export type Hooks = {
 
 export type CommentAnchorMove =
   | {
-      type: 'row' | 'column';
-      sheetId: string;
-      /** Prefixes that identify this sheet in comment keys (id, order, index). */
-      sheetKeys?: string[];
-      /** old index → new index for every row/col on the sheet */
-      indexMap: Record<number, number>;
-    }
+    type: 'row' | 'column';
+    sheetId: string;
+    /** Prefixes that identify this sheet in comment keys (id, order, index). */
+    sheetKeys?: string[];
+    /** old index → new index for every row/col on the sheet */
+    indexMap: Record<number, number>;
+  }
   | {
-      type: 'cells';
-      sheetId: string;
-      sheetKeys?: string[];
-      source: { row: [number, number]; column: [number, number] };
-      target: { row: [number, number]; column: [number, number] };
-    }
+    type: 'cells';
+    sheetId: string;
+    sheetKeys?: string[];
+    source: { row: [number, number]; column: [number, number] };
+    target: { row: [number, number]; column: [number, number] };
+  }
   | {
-      type: 'insert';
-      axis: 'row' | 'column';
-      sheetId: string;
-      sheetKeys?: string[];
-      index: number;
-      count: number;
-      direction: 'lefttop' | 'rightbottom';
-    }
+    type: 'insert';
+    axis: 'row' | 'column';
+    sheetId: string;
+    sheetKeys?: string[];
+    index: number;
+    count: number;
+    direction: 'lefttop' | 'rightbottom';
+  }
   | {
-      type: 'delete';
-      axis: 'row' | 'column';
-      sheetId: string;
-      sheetKeys?: string[];
-      start: number;
-      end: number;
-    };
+    type: 'delete';
+    axis: 'row' | 'column';
+    sheetId: string;
+    sheetKeys?: string[];
+    start: number;
+    end: number;
+  };
 
 type CommentUIDragFn = (
   e: React.MouseEvent<HTMLDivElement, MouseEvent>,
@@ -226,13 +226,13 @@ export type Settings = {
   sheetTabContextMenu?: string[];
   filterContextMenu?: string[];
   getCommentCellUI?:
-    | ((
-        row: number,
-        column: number,
-        dragHandler: CommentUIDragFn,
-        isHover?: boolean,
-      ) => React.ReactNode)
-    | null;
+  | ((
+    row: number,
+    column: number,
+    dragHandler: CommentUIDragFn,
+    isHover?: boolean,
+  ) => React.ReactNode)
+  | null;
   generateSheetId?: () => string;
   hooks?: Hooks;
   customToolbarItems?: {
@@ -402,8 +402,8 @@ export const defaultSettings: Required<Settings> = {
   customToolbarItems: [],
   currency: '$',
   getCommentCellUI: null,
-  onDuneChartEmbed: () => {},
-  onSheetCountChange: () => {},
+  onDuneChartEmbed: () => { },
+  onSheetCountChange: () => { },
   isAuthorized: false,
   isFlvReadOnly: false,
   isRTCActive: false,

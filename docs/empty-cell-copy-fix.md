@@ -7,10 +7,11 @@ mostly-empty sheet (e.g. select-all) serializes tens of thousands of blank cells
 produces up to ~83 MB of HTML. This is the highest-impact, lowest-risk slice of the
 broader copy-efficiency work in [`copy-mechanism-findings.md`](./copy-mechanism-findings.md).
 
-Out of scope here (tracked separately): the per-element `--tw-*` bloat added by
-`execCommand('copy')` (Phase 1 in the findings doc) and the rich-text `<span>`
-explosion (Issue 7). Those shrink each *real* cell; this fix stops us from emitting a
-huge number of *empty* cells in the first place.
+**Deliberately out of scope (do not touch):** the per-element `--tw-*` Tailwind
+properties added by `execCommand('copy')`. We are **keeping Tailwind** — the clipboard
+write path (`clipboard.writeHtml`) is unchanged. This fix does not shrink each cell; it
+only stops us from emitting a huge *number* of empty cells. The rich-text `<span>`
+explosion (Issue 7) is also separate and untouched here.
 
 ---
 
@@ -44,8 +45,10 @@ HTML, inside `rangeValueToHtml`. A cell is "meaningful" if any of:
 - a conditional-format rule styles it (`checkCF(r, c, cf_compute)`).
 
 Rows/columns outside that box carry no data and no CSS, so dropping them is lossless.
-If **no** cell in the selection is meaningful (a deliberately-empty selection), the
-range is left unchanged — preserving the "copy blanks to clear a target" behaviour.
+If **no** cell in the selection is meaningful (e.g. select-all of an empty sheet), the
+range collapses to a single top-left cell — so we never serialise a whole grid of blank
+cells. Internal same-session paste still uses the untrimmed in-memory copy range, so any
+"copy blanks to clear a target" behaviour inside dsheet is unaffected.
 
 This matches Google's used-range clamp and preserves the bounding box's internal
 geometry (relative cell positions, per-column widths, per-row heights, merges) exactly.
@@ -60,7 +63,8 @@ geometry (relative cell positions, per-column widths, per-row heights, merges) e
 
 ### Edge cases
 
-- **Empty selection** (no meaningful cell): range unchanged (no trim to nothing).
+- **Empty selection** (no meaningful cell): collapses to a single top-left cell (the
+  empty-sheet select-all case).
 - **Border-only / CF-only cells** outside the data box: kept (included in the
   bounding box via the border/CF predicates).
 - **Custom width/height on an empty trailing column/row** far outside the data box:
@@ -86,8 +90,14 @@ geometry (relative cell positions, per-column widths, per-row heights, merges) e
   of MB to the data box size; paste into a fresh sheet → identical data, styles,
   widths, heights, merges. Paste into Google Sheets/Excel → same visual result.
 
-## Follow-ups (separate work)
+## Scope note
 
-- Phase 1: direct clipboard write (`clipboardData.setData` / `navigator.clipboard.write`)
-  to remove the `--tw-*` per-element bloat — the remaining ~90% on the *kept* cells.
-- Issue 7: collapse rich-text `<span>` runs.
+By decision, **Tailwind is kept** and the clipboard write mechanism
+(`clipboard.writeHtml`) is left as-is (`execCommand`-based). So each emitted cell still
+carries the `--tw-*` block. This fix's whole job is to reduce how many cells are emitted:
+- **Empty sheet select-all:** whole grid → 1 cell.
+- **Any selection:** trimmed to the data bounding box (trailing/leading empty rows & cols
+  dropped; interior cells kept to preserve grid shape).
+
+Not addressed here (and not planned unless asked): per-cell `--tw-*` size, and the
+rich-text `<span>` run explosion (Issue 7).
