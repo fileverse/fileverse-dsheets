@@ -437,13 +437,13 @@ export const CurrencySelector = ({
                                       name={opt.icon}
                                       className="cds-icon"
                                     />
-                                    {opt.value === 'SOL' && (
+                                    {/* {opt.value === 'SOL' && (
                                       <SVGIcon
                                         name="solana"
                                         width={16}
                                         height={16}
                                       />
-                                    )}
+                                    )} */}
                                   </span>
                                 ) : (
                                   <span className="color-text-secondary">

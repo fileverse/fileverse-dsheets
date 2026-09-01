@@ -4,7 +4,7 @@ import { WorkbookInstance } from '@sheet-engine/react';
 const CRYPTO_MAP: Record<string, string> = {
   BTC: 'bitcoin',
   ETH: 'ethereum',
-  SOL: 'solana',
+  // SOL: 'solana',
 };
 
 export function numberToColumn(colNumber: number) {
@@ -25,7 +25,7 @@ export const useRefreshDenomination = ({
   const cryptoPriceRef = useRef<{
     bitcoin: Record<string, number>;
     ethereum: Record<string, number>;
-    solana: Record<string, number>;
+    // solana: Record<string, number>;
   } | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -66,7 +66,7 @@ export const useRefreshDenomination = ({
         ? cell.v?.m?.split(' ')[0]?.split('.')[1]?.length
         : 0;
       const coin = cell.v?.m?.split(' ')[1] as string;
-      const cryptoKey = CRYPTO_MAP[coin] as 'bitcoin' | 'ethereum' | 'solana';
+      const cryptoKey = CRYPTO_MAP[coin] as 'bitcoin' | 'ethereum';
       const price = cryptoPriceRef.current[cryptoKey]?.[cell.v?.baseCurrency];
       if (!price) return;
       cell.v.m = value.replace(

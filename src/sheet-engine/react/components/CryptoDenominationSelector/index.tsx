@@ -16,7 +16,7 @@ import { updateCellsDecimalFormat } from '../../utils/updateCellsDecimalFormat';
 const CRYPTO_OPTIONS = [
   { label: 'Bitcoin (BTC)', value: 'BTC', icon: 'Btc' },
   { label: 'Ethereum (ETH)', value: 'ETH', icon: 'Ethereum' },
-  { label: 'Solana (SOL)', value: 'SOL', icon: 'Solana' },
+  // { label: 'Solana (SOL)', value: 'SOL', icon: 'Solana' },
   // Add more as needed
 ];
 
@@ -162,9 +162,9 @@ const CryptoDenominationSelector: React.FC<CryptoDenominationSelectorProps> = ({
                   name={opt.icon}
                   className="cds-icon color-text-default"
                 />
-                {opt.value === 'SOL' && (
+                {/* {opt.value === 'SOL' && (
                   <SVGIcon name="solana" width={16} height={16} />
-                )}
+                )} */}
               </div>
             ))}
           </div>
