@@ -1,3 +1,4 @@
+import { toast } from '@fileverse/ui';
 import {
   defaultContext,
   defaultSettings,
@@ -1653,23 +1654,56 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
                 id: context.currentSheetId,
               }
               : null;
-          setContextWithProduce(
-            (draftCtx) => {
-              try {
-                if (insertRowColOp) {
-                  insertRowCol(draftCtx, insertRowColOp);
-                  draftCtx.luckysheet_select_save = range;
+          const runPaste = (pasteEvent: ClipboardEvent) => {
+            setContextWithProduce(
+              (draftCtx) => {
+                try {
+                  if (insertRowColOp) {
+                    insertRowCol(draftCtx, insertRowColOp);
+                    draftCtx.luckysheet_select_save = range;
+                  }
+                  if (startPaste) {
+                    startPaste = false;
+                    handlePaste(draftCtx, pasteEvent);
+                  }
+                } catch (err: any) {
+                  console.error(err);
                 }
-                if (startPaste) {
-                  startPaste = false;
-                  handlePaste(draftCtx, e);
-                }
-              } catch (err: any) {
-                console.error(err);
-              }
-            },
-            insertRowColOp ? { insertRowColOp } : {},
-          );
+              },
+              insertRowColOp ? { insertRowColOp } : {},
+            );
+          };
+
+          // Large pastes block the main thread while cells are parsed/laid out.
+          // Show a toast, then defer the heavy work a frame so it can paint before
+          // the UI freezes. handlePaste only reads clipboardData.getData/files and
+          // preventDefault, so a captured-string synthetic event drives it after the
+          // native event is gone.
+          const LARGE_PASTE_BYTES = 500_000;
+          if (txtdata.length > LARGE_PASTE_BYTES) {
+            e.preventDefault();
+            const htmlData = clipboardData!.getData('text/html');
+            const plainData = clipboardData!.getData('text/plain');
+            const deferredEvent = {
+              clipboardData: {
+                getData: (type: string) =>
+                  type === 'text/html' ? htmlData : plainData,
+                files: { length: 0 },
+              },
+              preventDefault: () => {},
+            } as unknown as ClipboardEvent;
+            toast({
+              title: 'Large content paste in progress',
+              variant: 'warning',
+              showCloseButton: true,
+              duration: 30 * 1000,
+            });
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => runPaste(deferredEvent)),
+            );
+          } else {
+            runPaste(e);
+          }
         }
         setContextWithProduce((ctx: any) => {
           if (ctx.luckysheet_selection_range) {

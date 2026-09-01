@@ -20,7 +20,9 @@ function parseTdBorderSide(
   td: HTMLTableCellElement,
   side: 'Top' | 'Bottom' | 'Left' | 'Right',
 ): [number, string] | null {
-  const shorthand = td.style[`border${side}` as keyof CSSStyleDeclaration] as string;
+  const shorthand = td.style[
+    `border${side}` as keyof CSSStyleDeclaration
+  ] as string;
   if (
     shorthand &&
     (shorthand.startsWith('0px') || shorthand.startsWith('0 '))
@@ -28,22 +30,37 @@ function parseTdBorderSide(
     return null;
   }
 
-  const width = td.style[`border${side}Width` as keyof CSSStyleDeclaration] as string;
+  const width = td.style[
+    `border${side}Width` as keyof CSSStyleDeclaration
+  ] as string;
   const borderStyle = td.style[
     `border${side}Style` as keyof CSSStyleDeclaration
   ] as string;
-  const color = td.style[`border${side}Color` as keyof CSSStyleDeclaration] as string;
+  const color = td.style[
+    `border${side}Color` as keyof CSSStyleDeclaration
+  ] as string;
 
-  if (!width || !borderStyle || borderStyle === 'none' || borderStyle === 'hidden') {
+  if (
+    !width ||
+    !borderStyle ||
+    borderStyle === 'none' ||
+    borderStyle === 'hidden'
+  ) {
     return null;
   }
 
   const nWidth = parseFloat(width);
-  if (Number.isNaN(nWidth) || nWidth < 1) return null;
+  // Reject only zero-width borders. A sub-1px value is still a real border — dsheet's
+  // own copy emits thin borders as `0.5pt` (external Sheets sends `1px`). Rejecting `< 1` here
+  // dropped dsheet→dsheet borders, so the light gridline showed through the inter-cell
+  // gaps as white lines. getQKBorder maps the width→thickness (0.5pt → thin) and
+  // returns type 0 for anything genuinely empty, which line 48 still filters.
+  if (Number.isNaN(nWidth) || nWidth <= 0) return null;
   if (isTransparentBorderColor(color)) return null;
 
   const qk = getQKBorder(width, borderStyle, color) as [number, string];
-  if (!qk || qk[0] === 0 || isTransparentBorderColor(String(qk[1]))) return null;
+  if (!qk || qk[0] === 0 || isTransparentBorderColor(String(qk[1])))
+    return null;
   return [qk[0], qk[1]];
 }
 
@@ -162,6 +179,11 @@ const getInlineStringSegmentsFromTd = (
     if (el.style?.cssText) {
       Array.from(el.style).forEach((prop) => {
         if (prop === 'font-size') return;
+        // Borders are cell-level (handled by applyBordersAndMerges). Never copy them
+        // onto a text run: convertCssToStyleList treats `border-bottom` as underline,
+        // so a cell's bottom border would wrongly underline all its text (external
+        // Sheets cells, which carry `border: 1px solid …`).
+        if (prop === 'border' || prop.startsWith('border-')) return;
         const val = el.style.getPropertyValue(prop);
         if (val) newCss[prop] = val;
       });
@@ -270,12 +292,7 @@ function applyBordersAndMerges(
 
       if (cellBorders.l || cellBorders.r || cellBorders.t || cellBorders.b) {
         const meaningful = filterMeaningfulBorderSides(cellBorders);
-        if (
-          meaningful.l ||
-          meaningful.r ||
-          meaningful.t ||
-          meaningful.b
-        ) {
+        if (meaningful.l || meaningful.r || meaningful.t || meaningful.b) {
           borderInfo[`${relativeRow}_${relativeCol}`] = meaningful;
         }
       }
@@ -423,13 +440,13 @@ const buildCellFromTd = (
     (fontWeight.toString() === '400' ||
       fontWeight === 'normal' ||
       _.isEmpty(fontWeight)) &&
-    !_.includes(styles['font-style'], 'bold') &&
-    (!styles['font-weight'] || styles['font-weight'] === '400')
+      !_.includes(styles['font-style'], 'bold') &&
+      (!styles['font-weight'] || styles['font-weight'] === '400')
       ? 0
       : 1;
   cell.it =
     (td.style.fontStyle === 'normal' || _.isEmpty(td.style.fontStyle)) &&
-    !_.includes(styles['font-style'], 'italic')
+      !_.includes(styles['font-style'], 'italic')
       ? 0
       : 1;
 
@@ -540,17 +557,24 @@ export function handlePastedTable(
   const containerDiv = document.createElement('div');
   containerDiv.innerHTML = html;
 
-  const tableColGropup = containerDiv.querySelectorAll('colgroup');
+  // Column widths live in different places depending on the source:
+  //  - dsheet copy:   one <colgroup width="72px"> per column (width on the colgroup)
+  //  - external Sheets: a single <colgroup> containing <col width="100"> per column
+  // Prefer the <col> elements (external); fall back to <colgroup> width attrs (dsheet).
+  const colEls = containerDiv.querySelectorAll('col');
+  const colGroupEls = containerDiv.querySelectorAll('colgroup');
+  const widthSources: Element[] =
+    colEls.length > 0 ? Array.from(colEls) : Array.from(colGroupEls);
 
-  tableColGropup.forEach((colGroup, index) => {
-    const colWidth = colGroup?.getAttribute('width');
+  widthSources.forEach((el, index) => {
+    const colWidth = el?.getAttribute('width');
     const intColWidth = parseInt(colWidth || '0', 10);
     if (intColWidth <= 0) return;
     const anchorCol = ctx.luckysheet_select_save![0].column[0];
     const absoluteCol = anchorCol + index;
     const defaultColW =
-      ctx.luckysheetfile[getSheetIndex(ctx, ctx.currentSheetId)!]?.defaultColWidth ??
-      ctx.defaultcollen;
+      ctx.luckysheetfile[getSheetIndex(ctx, ctx.currentSheetId)!]
+        ?.defaultColWidth ?? ctx.defaultcollen;
     if (intColWidth !== defaultColW) {
       setColumnWidth(ctx, { [absoluteCol]: intColWidth });
     }
@@ -601,9 +625,20 @@ export function handlePastedTable(
     const anchorRow = ctx.luckysheet_select_save![0].row[0];
     const targetRowIndex = anchorRow + localRowIndex;
 
+    // Row height lives in different places depending on the source:
+    //  - <tr height> attribute      (some external apps)
+    //  - <tr style="height:20px">   (external Sheets — inline style on the row)
+    //  - inline style on first <td> (dsheet copy)
+    // Prefer them in that order.
     const explicitRowHeightAttr = tr.getAttribute('height');
-    if (!_.isNil(explicitRowHeightAttr)) {
-      const explicitRowHeight = parseInt(explicitRowHeightAttr, 10);
+    const trInlineHeight = (tr as HTMLElement).style?.height || '';
+    const firstCellInlineHeight =
+      (tr.querySelector('td, th') as HTMLElement | null)?.style?.height || '';
+    const rowHeightRaw = !_.isNil(explicitRowHeightAttr)
+      ? explicitRowHeightAttr
+      : trInlineHeight || firstCellInlineHeight;
+    const parsedRowHeight = parseInt(rowHeightRaw, 10);
+    if (!Number.isNaN(parsedRowHeight) && parsedRowHeight > 0) {
       const defaultRowH = sheetFile.defaultRowHeight ?? ctx.defaultrowlen;
       const hasCustomRowHeight = _.has(
         sheetFile.config?.rowlen,
@@ -614,12 +649,12 @@ export function handlePastedTable(
         : defaultRowH;
 
       if (
-        explicitRowHeight !== defaultRowH &&
-        currentRowHeight !== explicitRowHeight
+        parsedRowHeight !== defaultRowH &&
+        currentRowHeight !== parsedRowHeight
       ) {
-        rowHeightsConfig[targetRowIndex] = explicitRowHeight;
+        rowHeightsConfig[targetRowIndex] = parsedRowHeight;
         setRowHeight(ctx, {
-          [String(targetRowIndex)]: explicitRowHeight,
+          [String(targetRowIndex)]: parsedRowHeight,
         });
       }
     }

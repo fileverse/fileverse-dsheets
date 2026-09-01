@@ -25,13 +25,6 @@ import {
   shouldHandleNonTableHtml,
 } from './paste-internals';
 
-function isExternalHtmlPaste(html: string): boolean {
-  return (
-    html.indexOf('fortune-copy-action-table') === -1 &&
-    html.indexOf('fortune-copy-action-span') === -1
-  );
-}
-
 function hasPendingCellCopy(ctx: Context): boolean {
   return (
     ctx.luckysheet_copy_save?.copyRange != null &&
@@ -130,12 +123,13 @@ export function handlePaste(ctx: Context, e: ClipboardEvent) {
     }
     const { internalFortunePaste } = fortunePaste;
 
-    if (
+    const useInternal =
       (txtdata.indexOf('fortune-copy-action-table') > -1 ||
         txtdata.indexOf('fortune-copy-action-span') > -1) &&
       hasPendingCellCopy(ctx) &&
-      internalFortunePaste
-    ) {
+      internalFortunePaste;
+
+    if (useInternal) {
       tryPasteFromInternalCellClipboard(ctx, pasteValuesOnly);
     } else {
       const shouldHandleAsHtml =
@@ -147,9 +141,14 @@ export function handlePaste(ctx: Context, e: ClipboardEvent) {
           ? txtdata
           : convertAnyHtmlToTable(txtdata);
         handlePastedTable(ctx, converted, pasteHandler);
-        if (hasNativeTable && !isExternalHtmlPaste(txtdata)) {
-          resizePastedCellsToContent(ctx);
-        }
+        // Previously the content auto-fit ran here for dsheet→dsheet (fortune) pastes.
+        // That OVERRODE the source geometry: measuring the whole pasted range (e.g. an
+        // entire sheet) inflated each column to its widest cell anywhere in the column
+        // and then collapsed tall wrapped rows measured at the inflated width. Now that
+        // handlePastedTable restores geometry exactly — column widths from <colgroup>,
+        // row heights from the first cell's inline style — the auto-fit is unnecessary
+        // and harmful for fortune pastes, so it is not run here. (External HTML pastes
+        // already did not resize here; that behaviour is unchanged.)
       } else if (
         clipboardData.files.length === 1 &&
         clipboardData.files[0].type.indexOf('image') > -1
