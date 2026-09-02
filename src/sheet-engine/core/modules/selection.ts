@@ -25,6 +25,7 @@ import { clearImageClipboard } from './image-clipboard';
 import { getBorderInfoCompute } from './border';
 import { checkCF, getComputeMap } from './ConditionFormat';
 import { clampIndicesToUsedBounds } from './copy-range-bounds';
+import { isClipboardMetadataRedundant } from '../utils/cell-persist-utils';
 import {
   escapeHTMLTag,
   getSheetIndex,
@@ -2292,11 +2293,12 @@ export function rangeValueToHtml(
           }
         }
 
-        const cellData = includeCellMetadata
-          ? encodeURIComponent(
-              JSON.stringify({ ...cell, _srcRow: r, _srcCol: c }),
-            )
-          : '';
+        const cellData =
+          includeCellMetadata && !isClipboardMetadataRedundant(cell)
+            ? encodeURIComponent(
+                JSON.stringify({ ...cell, _srcRow: r, _srcCol: c }),
+              )
+            : '';
         column = replaceHtml(column, { style, span, cellData });
 
         if (_.isNil(c_value)) {
