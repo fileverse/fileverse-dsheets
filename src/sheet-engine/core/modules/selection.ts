@@ -23,7 +23,8 @@ import { delFunctionGroup } from './formula';
 import clipboard from './clipboard';
 import { clearImageClipboard } from './image-clipboard';
 import { getBorderInfoCompute } from './border';
-import { getComputeMap } from './ConditionFormat';
+import { checkCF, getComputeMap } from './ConditionFormat';
+import { clampIndicesToUsedBounds } from './copy-range-bounds';
 import {
   escapeHTMLTag,
   getSheetIndex,
@@ -1941,8 +1942,8 @@ export function rangeValueToHtml(
   if (idx == null) return '';
   const sheet = ctx.luckysheetfile[idx];
 
-  const rowIndexArr: number[] = [];
-  const colIndexArr: number[] = [];
+  let rowIndexArr: number[] = [];
+  let colIndexArr: number[] = [];
 
   for (let s = 0; s < (ranges?.length ?? 0); s += 1) {
     const range = ranges![s];
@@ -1966,7 +1967,7 @@ export function rangeValueToHtml(
     }
   }
 
-  let borderInfoCompute;
+  let borderInfoCompute: Record<string, any> | undefined;
   if (sheet.config?.borderInfo && sheet.config.borderInfo.length > 0) {
     // 边框
     borderInfoCompute = getBorderInfoCompute(ctx, sheetId);
@@ -1975,6 +1976,19 @@ export function rangeValueToHtml(
   let cpdata = '';
   const d = sheet.data;
   if (!d) return null;
+
+  // Clamp the serialised range to the bounding box of cells that actually carry
+  // content (data, border, or conditional format). Stops a select-all of a mostly-
+  // empty sheet from emitting thousands of blank <td>s (the whole-sheet copy blowup).
+  // Trimmed cells hold no data and no CSS, so the copy stays lossless.
+  ({ rows: rowIndexArr, cols: colIndexArr } = clampIndicesToUsedBounds(
+    rowIndexArr,
+    colIndexArr,
+    (r, c) =>
+      d[r]?.[c] != null ||
+      (borderInfoCompute != null && borderInfoCompute[`${r}_${c}`] != null) ||
+      checkCF(r, c, cf_compute) != null,
+  ));
 
   let colgroup = '';
 
