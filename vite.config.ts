@@ -39,6 +39,10 @@ export default defineConfig({
       external: [
         'react',
         'react-dom',
+        // Subpath imports (react/jsx-runtime etc.) must stay external too —
+        // inlining them breaks under React 19 (React 18-only internals).
+        /^react\//,
+        /^react-dom\//,
         'yjs',
         /^yjs\//,
         'y-indexeddb',

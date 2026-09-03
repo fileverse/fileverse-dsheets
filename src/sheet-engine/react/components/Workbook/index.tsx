@@ -123,6 +123,7 @@ type AdditionalProps = {
   sidebarActivePanel?: string | null;
   sidebarPortalRegistry?: SidebarPortalRegistryHandle | null;
   sidebarPortalRenderers?: Record<string, SidebarPortalRenderer>;
+  toolbarTrailingContent?: React.ReactNode;
   theme?: ThemeKey;
 };
 
@@ -199,6 +200,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       sidebarActivePanel = null,
       sidebarPortalRegistry = null,
       sidebarPortalRenderers = {},
+      toolbarTrailingContent,
       theme,
       ...props
     },
@@ -212,6 +214,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
     const scrollbarY = useRef<HTMLDivElement>(null);
     const cellArea = useRef<HTMLDivElement>(null);
     const workbookContainer = useRef<HTMLDivElement>(null);
+    const workbookInstanceRef = useRef<WorkbookInstance | null>(null);
 
     const refs: RefValues = useMemo(
       () => ({
@@ -1337,8 +1340,8 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           }
         }
 
-        // @ts-expect-error later
-        const { getSelection, getSheet, setSelection } = ref.current;
+        const { getSelection, getSheet, setSelection } =
+          workbookInstanceRef.current as any;
         const currentSelection = getSelection()?.[0];
 
         // Mac: Cmd + Option + =/+ inserts based on full row/column selection.
@@ -1922,8 +1925,8 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
     // expose APIs
     useImperativeHandle(
       ref,
-      () =>
-        generateAPIs(
+      () => {
+        const workbookInstance = generateAPIs(
           context,
           setContextWithProduce,
           handleUndo,
@@ -1934,7 +1937,10 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           scrollbarY.current,
           globalCache.current,
           refs,
-        ),
+        );
+        workbookInstanceRef.current = workbookInstance;
+        return workbookInstance;
+      },
       [
         context,
         setContextWithProduce,
@@ -2045,6 +2051,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
                   setMoreItems={setMoreToolbarItems}
                   onMoreToolbarItemsClose={onMoreToolbarItemsClose}
                   moreToolbarItems={moreToolbarItems}
+                  trailingContent={toolbarTrailingContent}
                 />
               )}
               {mergedSettings.showFormulaBar && (

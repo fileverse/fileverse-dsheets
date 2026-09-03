@@ -4,6 +4,7 @@ import isEqual from 'lodash/isEqual';
 import { SheetChangePath, updateYdocSheetData } from '../utils/update-ydoc';
 import { shouldPersistCelldataCell } from '../../sheet-engine/core/utils/cell-persist-utils';
 import { applyCellFormatRangesCommits } from '../../sheet-engine/core/utils/mirror-cell-format-ranges';
+import { detachWorkbookData } from '../utils/detach-workbook-data';
 
 type SyncContext = {
   sheetEditorRef: React.MutableRefObject<WorkbookInstance | null>;
@@ -230,7 +231,7 @@ export const createSheetLengthChangeHandler = ({
       editorSheetLength > 1 &&
       docSheetLength > 0
     ) {
-      currentDataRef.current = sheets;
+      currentDataRef.current = detachWorkbookData(sheets);
       setTimeout(() => {
         const createdSheet = sheets[sheets.length - 1];
         const sheet = { ...createdSheet };
@@ -303,7 +304,9 @@ export const createSheetLengthChangeHandler = ({
       );
 
       if (removedIndex !== -1) {
-        currentDataRef.current = sheetEditorRef.current?.getAllSheets() || [];
+        currentDataRef.current = detachWorkbookData(
+          sheetEditorRef.current?.getAllSheets() || [],
+        );
         setTimeout(() => {
           ydocRef.current?.transact(() => {
             sheetArray.delete(removedIndex, 1);

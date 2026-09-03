@@ -13,5 +13,4 @@ export type {
   CollabErrorCode,
   CollabEvent,
   CollabContext,
-  CollabUser,
 } from './types';

@@ -9,24 +9,31 @@ import {
   snapshotDsheetDocument,
   unavailableDsheetContentSnapshot,
 } from '../../persistence-utils';
+import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
+import {
+  createCollaborationConnectionController,
+  mergePublishedContentIntoYdoc,
+} from './collaboration-lifecycle';
+
 export const useEditorSync = (
   dsheetId: string,
   enableIndexeddbSync = true,
   isReadOnly = false,
+  portalContent = '',
   collaboration?: CollaborationProps,
   onCollabUpdate?: (fullState: string, updateChunk: string) => void,
+  onIndexedDbError?: (error: Error) => void,
 ) => {
-  const ydocRef = useRef<Y.Doc | null>(null);
+  // Match dDoc: one Y.Doc is owned by this provider for its entire lifetime.
+  // A dsheetId change remounts EditorProvider at the component boundary.
+  const [ydoc] = useState(() => new Y.Doc());
+  const ydocRef = useRef<Y.Doc | null>(ydoc);
   const persistenceRef = useRef<IndexeddbPersistence | null>(null);
   const [syncStatus, setSyncStatus] = useState<
     'initializing' | 'syncing' | 'synced' | 'error'
   >('initializing');
-  const isSyncedRef = useRef<boolean>(false);
-
-  // Eager init — must exist before useSyncManager is called (hooks can't be conditional)
-  if (!ydocRef.current) {
-    ydocRef.current = new Y.Doc();
-  }
+  const [isContentBootstrapReady, setIsContentBootstrapReady] = useState(false);
+  const bootstrapGenerationRef = useRef(0);
 
   const activeCollab =
     collaboration?.enabled === true ? collaboration : undefined;
@@ -40,16 +47,25 @@ export const useEditorSync = (
     onCollabUpdateRef.current = onCollabUpdate;
   }, [onCollabUpdate]);
 
+  // IndexedDB owns the bootstrap lifecycle, so changing an error callback must
+  // not destroy and recreate the persistence provider.
+  const onIndexedDbErrorRef = useRef(onIndexedDbError);
+  useEffect(() => {
+    onIndexedDbErrorRef.current = onIndexedDbError;
+  }, [onIndexedDbError]);
+
   const {
     connect,
+    disconnect,
     isReady: isCollabReady,
     isSyncing: isCollabSyncing,
     terminateSession,
+    updateTitle,
     awareness,
     hasCollabContentInitialised,
     state: collabState,
   } = useSyncManager({
-    ydoc: ydocRef.current,
+    ydoc,
     services: collabServices,
     callbacks: collabCallbacks,
     onLocalUpdate: (fullState, chunk) => {
@@ -58,55 +74,87 @@ export const useEditorSync = (
     ignoredOrigins: [persistenceRef],
   });
 
-  // Stable ref to connect so the collab effect doesn't recreate on every render
-  const connectRef = useRef(connect);
-  useEffect(() => {
-    connectRef.current = connect;
-  }, [connect]);
-
-  // Always-current refs for collab state — read inside async/event callbacks
-  // to avoid stale closures (e.g. once('synced') capturing collab=false at mount)
-  const collabEnabledRef = useRef(collabEnabled);
-  const collaborationRef = useRef(collaboration);
-  collabEnabledRef.current = collabEnabled;
-  collaborationRef.current = collaboration;
-
   const initialiseEditorIndexedDB = useCallback(async () => {
-    if (!ydocRef.current) return;
+    const generation = ++bootstrapGenerationRef.current;
+    setSyncStatus('syncing');
+    setIsContentBootstrapReady(false);
 
     if (persistenceRef.current) {
+      try {
       await persistenceRef.current.destroy();
+      } catch (error) {
+        const indexedDbError =
+          error instanceof Error ? error : new Error(String(error));
+        console.error(
+          '[DSheet] IndexedDB persistence cleanup failed:',
+          indexedDbError,
+    );
+        onIndexedDbErrorRef.current?.(indexedDbError);
+      }
+      if (generation !== bootstrapGenerationRef.current) return;
+      persistenceRef.current = null;
     }
 
-    persistenceRef.current = new IndexeddbPersistence(
-      dsheetId,
-      ydocRef.current,
-    );
+    try {
+      // dDoc parity: host/published state is present in the one Y.Doc before
+      // IndexedDB replay and before SyncManager is allowed to connect.
+      mergePublishedContentIntoYdoc(ydoc, portalContent);
 
-    persistenceRef.current.once('synced', () => {
-      setSyncStatus('synced');
-      isSyncedRef.current = true;
-
-      // Read from refs — not from the closure — so we always get the value
-      // at fire time, not at callback-creation time. Fixes the collaborator
-      // race where collabEnabled becomes true after mount but before IDB sync.
-      if (collabEnabledRef.current && collaborationRef.current?.enabled) {
-        const collabFull = collaborationRef.current as Extract<
-          CollaborationProps,
-          { enabled: true }
-        >;
-        connectRef.current(collabFull.connection);
+      if (!isReadOnly && enableIndexeddbSync && dsheetId) {
+        try {
+          const persistence = new IndexeddbPersistence(dsheetId, ydoc);
+          // Capture before replay so SyncManager can identify this origin.
+          persistenceRef.current = persistence;
+          persistence.on('error', (error: unknown) => {
+            const indexedDbError =
+              error instanceof Error ? error : new Error(String(error));
+            console.error(
+              '[DSheet] IndexedDB persistence error:',
+              indexedDbError,
+            );
+            onIndexedDbErrorRef.current?.(indexedDbError);
+    });
+          await persistence.whenSynced;
+          if (generation !== bootstrapGenerationRef.current) return;
+        } catch (error) {
+          const indexedDbError =
+            error instanceof Error ? error : new Error(String(error));
+          console.error(
+            '[DSheet] IndexedDB initialization failed:',
+            indexedDbError,
+          );
+          const failedPersistence = persistenceRef.current;
+          persistenceRef.current = null;
+          if (failedPersistence) {
+            try {
+              await failedPersistence.destroy();
+            } catch {
+              // The provider is already unusable; local persistence is optional.
+            }
+          }
+          if (generation !== bootstrapGenerationRef.current) return;
+          onIndexedDbErrorRef.current?.(indexedDbError);
+          // Match dDoc: keep the merged Y.Doc and continue without IndexedDB.
+        }
       }
-    });
 
-    persistenceRef.current.on('error', (err: Error) => {
-      console.error('[DSheet] IndexedDB persistence error:', err);
+      // IndexedDB may contain a legacy plain-object sheet array. Persist its
+      // migration before connection so local-only diff seeding sends the same
+      // structure Fortune will render.
+      migrateSheetArrayIfNeeded(ydoc, ydoc.getArray(dsheetId));
+
+      if (generation !== bootstrapGenerationRef.current) return;
+      setSyncStatus('synced');
+      setIsContentBootstrapReady(true);
+    } catch (error) {
+      if (generation !== bootstrapGenerationRef.current) return;
+      console.error('[DSheet] Error bootstrapping editor content:', error);
       setSyncStatus('error');
-    });
-    // Intentionally excludes collabEnabled/connect — changing those must NOT
-    // destroy the ydoc. The separate collabEnabled effect handles late connects.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dsheetId]);
+      // Preserve the best state already merged into the Y.Doc for read-only
+      // fallback, but do not connect a room from an incomplete bootstrap.
+      setIsContentBootstrapReady(true);
+    }
+  }, [dsheetId, enableIndexeddbSync, isReadOnly, portalContent, ydoc]);
 
   const getContentSnapshot = useCallback(
     () =>
@@ -126,84 +174,70 @@ export const useEditorSync = (
     [dsheetId],
   );
 
-  // Doc-lifecycle effect: owns ydocRef only. Deps = [dsheetId] deliberately —
-  // recreating the doc on enableIndexeddbSync/isReadOnly changes is what let
-  // SyncManager (bound once, see useSyncManager) end up pointed at a stale,
-  // destroyed doc while the editor kept editing a new one. See collab
-  // stale-Y.Doc-split design doc for the full incident writeup.
+  // Doc-lifecycle effect: this exact document is also owned by SyncManager.
+  // The EditorProvider key handles document-id changes by remounting the whole
+  // lifecycle rather than rebinding only part of the editor.
   useEffect(() => {
-    if (!ydocRef.current) {
-      ydocRef.current = new Y.Doc();
-    }
-
     return () => {
-      if (ydocRef.current) {
-        ydocRef.current.destroy();
+      if (ydocRef.current === ydoc) {
+        ydoc.destroy();
         ydocRef.current = null;
       }
     };
-  }, [dsheetId]);
+  }, [ydoc]);
 
-  // Persistence effect: attaches/detaches IndexedDB sync on the existing doc.
-  // Never touches ydocRef — that's what keeps doc identity stable across
-  // enableIndexeddbSync/isReadOnly flips (e.g. content arriving post-mount).
+  // Content bootstrap effect: published state → IndexedDB replay → migration.
+  // Never replaces the Y.Doc — SyncManager, persistence, and Fortune share it.
   useEffect(() => {
-    if (isReadOnly) {
-      setSyncStatus('synced');
-      isSyncedRef.current = true;
+    void initialiseEditorIndexedDB();
+
+    return () => {
+      bootstrapGenerationRef.current += 1;
+      if (persistenceRef.current) {
+        void persistenceRef.current.destroy();
+        persistenceRef.current = null;
+      }
+    };
+  }, [initialiseEditorIndexedDB]);
+
+  const isSocketConnectedRef = useRef(false);
+
+  // dDoc's hybrid controller: persistent while livePresence/connectOnOpen is
+  // set; otherwise connect on the first local edit and idle-disconnect after
+  // the exact same warm period. Ordinary lifecycle cleanup never terminates a
+  // durable room — explicit owner termination stays on DSheetEditorHandle.
+  useEffect(() => {
+    if (!activeCollab || !isContentBootstrapReady || syncStatus !== 'synced') {
       return;
     }
 
-    if (enableIndexeddbSync && dsheetId) {
-      setSyncStatus('syncing');
-      try {
-        initialiseEditorIndexedDB();
-      } catch (error) {
-        console.error(
-          '[DSheet] Error setting up IndexedDB persistence:',
-          error,
-        );
-        setSyncStatus('error');
-      }
-    } else {
-      setSyncStatus('synced');
-      isSyncedRef.current = true;
-    }
+    const { connection } = activeCollab;
+    const ydoc = ydocRef.current;
+    const controller = createCollaborationConnectionController({
+      connection,
+      isSocketConnectedRef,
+      getIndexeddbOrigin: () => persistenceRef.current,
+      isBootstrapReady: isContentBootstrapReady,
+      connect,
+      disconnect,
+    });
+    ydoc?.on('update', controller.onYdocUpdate);
 
     return () => {
-      if (persistenceRef.current) {
-        persistenceRef.current.destroy();
-        persistenceRef.current = null;
-      }
-      isSyncedRef.current = false;
+      ydoc?.off('update', controller.onYdocUpdate);
+      controller.dispose();
     };
-  }, [dsheetId, enableIndexeddbSync, isReadOnly, initialiseEditorIndexedDB]);
-
-  // Separate effect: connect to collab when collaboration is enabled AFTER the
-  // ydoc/IDB is already synced (e.g. user clicks "Start Collaboration").
-  // Does NOT touch the ydoc — just calls connect() on the live ydoc.
-  // Cleanup disconnects the socket when collabEnabled flips back to false
-  // (owner clicks Stop) so edits stop flowing between peers.
-  useEffect(() => {
-    if (!collabEnabled || !collaboration?.enabled) return;
-    // If IDB hasn't synced yet, the once('synced') handler above will connect.
-    // Only call connect() here when IDB is already synced (late enable).
-    if (!isSyncedRef.current) return;
-
-    const collabFull = collaboration as Extract<
-      CollaborationProps,
-      { enabled: true }
-    >;
-    connectRef.current(collabFull.connection);
-
-    return () => {
-      // collabEnabled went false → tear down the socket connection.
-      // terminateSession (owner) broadcasts SESSION_TERMINATED to joiners
-      // before disconnecting; disconnect (joiner) just drops the socket.
-      terminateSession();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collabEnabled]);
+  }, [
+    activeCollab?.connection.roomKey,
+    activeCollab?.connection.roomId,
+    activeCollab?.connection.wsUrl,
+    activeCollab?.connection.livePresence,
+    activeCollab?.connection.connectOnOpen,
+    connect,
+    disconnect,
+    isContentBootstrapReady,
+    syncStatus,
+  ]);
 
   // Set local awareness user state once awareness is initialised
   useEffect(() => {
@@ -213,7 +247,9 @@ export const useEditorSync = (
     ).session;
     awareness.setLocalStateField('user', {
       name: session.username,
-      color: presenceColor(session.isEns, session.color),
+      color:
+        awareness.getLocalState()?.user?.color ??
+        presenceColor(session.isEns, session.color),
       isEns: session.isEns ?? false,
     });
   }, [awareness, collabEnabled]);
@@ -247,7 +283,8 @@ export const useEditorSync = (
     const localState = awareness.getLocalState();
     awareness.setLocalStateField('user', {
       ...(localState?.user ?? {}),
-      color: presenceColor(session.isEns),
+      color:
+        localState?.user?.color ?? presenceColor(session.isEns),
       isEns: true,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -257,7 +294,7 @@ export const useEditorSync = (
     ydocRef,
     persistenceRef,
     syncStatus,
-    isSyncedRef,
+    isContentBootstrapReady,
     refreshIndexedDB: initialiseEditorIndexedDB,
     getContentSnapshot,
     mergeContent,
@@ -266,6 +303,7 @@ export const useEditorSync = (
     isCollabReady,
     isCollabSyncing,
     terminateSession,
+    updateTitle,
     awareness,
     hasCollabContentInitialised,
   };

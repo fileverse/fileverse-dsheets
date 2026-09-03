@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { DEFAULT_SHEET_DATA } from './constants/shared-constants';
 import { useFortuneDocumentStyle } from './hooks/use-document-style';
 import {
+  type DSheetEditorHandle,
   DsheetProps,
   EditorValues,
   OnboardingHandlerType,
@@ -14,7 +15,7 @@ import { EditorWorkbook } from './components/editor-workbook';
 import { ApiKeyModal } from './components/api-key-modal/api-key-modal';
 import { useApplyTemplatesBtn } from './hooks/use-apply-templates';
 import { TransitionWrapper } from './components/transition-wrapper';
-import { PermissionChip } from './components/permission-chip';
+import { resolvePermissionChipMode } from './components/permission-chip-model';
 import '@sheet-engine/react/index.css';
 import './styles/index.css';
 import { useSidebar } from './components/sidebar/sidebar-context';
@@ -41,6 +42,7 @@ import { SmartContractReadingIntro } from './components/smart-contract/smart-con
 import { SmartContractReadingErrorToast } from './components/smart-contract/error-toast';
 import { SMART_CONTRACT_PANEL_ID } from './utils/smart-contract/constants';
 import './components/smart-contract/index.css';
+import { shouldInitializeDefaultWorkbook } from './hooks/collaboration-lifecycle';
 
 // Use the types defined in types.ts
 type OnboardingHandler = OnboardingHandlerType;
@@ -53,6 +55,10 @@ const EditorContent = ({
   setShowFetchURLModal,
   renderNavbar,
   isReadOnly,
+  permissionMode,
+  onEnterEdit,
+  onSignInToComment,
+  onViewerModeChange,
   allowSheetDownload,
   toggleTemplateSidebar,
   onboardingComplete,
@@ -75,6 +81,10 @@ const EditorContent = ({
   DsheetProps,
   | 'renderNavbar'
   | 'isReadOnly'
+  | 'permissionMode'
+  | 'onEnterEdit'
+  | 'onSignInToComment'
+  | 'onViewerModeChange'
   | 'allowSheetDownload'
   | 'toggleTemplateSidebar'
   | 'selectedTemplate'
@@ -96,10 +106,16 @@ const EditorContent = ({
   onSheetCountChange?: (sheetCount: number) => void;
   customPanels?: PanelConfig[];
 }) => {
+  const resolvedPermissionMode = resolvePermissionChipMode({
+    allowComments: !commentsConfig?.disabled,
+    isReadOnly: Boolean(isReadOnly),
+    permissionMode,
+  });
   const {
     loading,
     syncStatus,
     collabEnabled,
+    collabState,
     sheetEditorRef,
     currentDataRef,
     ydocRef,
@@ -311,7 +327,11 @@ const EditorContent = ({
     const yCellMap = new Y.Map();
 
     celldata.forEach((cell) => {
-      if (cell == null || typeof cell.r !== 'number' || typeof cell.c !== 'number') {
+      if (
+        cell == null ||
+        typeof cell.r !== 'number' ||
+        typeof cell.c !== 'number'
+      ) {
         return;
       }
       yCellMap.set(`${cell.r}_${cell.c}`, cell);
@@ -352,9 +372,18 @@ const EditorContent = ({
   useEffect(() => {
     if (!isNewSheet || !ydocRef.current || !dsheetId) return;
 
-    // Collaboration + IndexedDB must hydrate before an empty ydoc means "brand new".
-    if (collabEnabled) return;
-    if (syncStatus !== 'synced') return;
+    // An empty collaborative Y.Doc only means "brand new" after the durable
+    // room has hydrated. This avoids racing a default sheet into an existing
+    // room while still allowing a genuinely empty room to become editable.
+    if (
+      !shouldInitializeDefaultWorkbook(
+        syncStatus,
+        collabEnabled === true,
+        collabState?.status,
+      )
+    ) {
+      return;
+    }
 
     ydocRef.current.transact(() => {
       const sheetArray = ydocRef.current?.getArray(dsheetId);
@@ -378,6 +407,7 @@ const EditorContent = ({
     isNewSheet,
     syncStatus,
     collabEnabled,
+    collabState?.status,
     dsheetId,
     ydocRef,
     currentDataRef,
@@ -449,16 +479,6 @@ const EditorContent = ({
         </TransitionWrapper>
 
         <TransitionWrapper show={!loading && shouldRenderSheet} duration={1000}>
-          {/* Permission chip - only visible with real content */}
-          {isReadOnly && (
-            <div
-              className="dsheet-permission-chip-wrap absolute top-2 right-4 z-20"
-              data-testid="dsheet-permission-chip-wrap"
-            >
-              <PermissionChip allowComments={!commentsConfig?.disabled} />
-            </div>
-          )}
-
           <EditorWorkbook
             setShowFetchURLModal={setShowFetchURLModal}
             setFetchingURLData={setFetchingURLData}
@@ -479,6 +499,10 @@ const EditorContent = ({
             onSheetCountChange={onSheetCountChange}
             sidebarActivePanel={activePanel}
             sidebarPortalRegistry={sidebarPortalRegistry}
+            permissionMode={resolvedPermissionMode}
+            onEnterEdit={onEnterEdit}
+            onSignInToComment={onSignInToComment}
+            onViewerModeChange={onViewerModeChange}
             theme={theme}
           />
         </TransitionWrapper>
@@ -535,8 +559,14 @@ const EditorContent = ({
  * @param props - Component properties
  * @returns The SpreadsheetEditor component
  */
-const SpreadsheetEditor = ({
+const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
+  (
+    {
   isReadOnly = false,
+      permissionMode,
+      onEnterEdit,
+      onSignInToComment,
+      onViewerModeChange,
   allowSheetDownload,
   renderNavbar,
   enableIndexeddbSync,
@@ -573,11 +603,17 @@ const SpreadsheetEditor = ({
   smartContracts,
   theme,
   onContentSyncStatusChange,
-}: DsheetProps): JSX.Element => {
-  const [exportDropdownOpen, setExportDropdownOpen] = useState<boolean>(false);
+  onCollaborationInitializationComplete,
+      onIndexedDbError,
+    }: DsheetProps,
+    forwardedEditorRef,
+  ): JSX.Element => {
+    const [exportDropdownOpen, setExportDropdownOpen] =
+      useState<boolean>(false);
 
   return (
     <EditorProvider
+        key={dsheetId}
       setSelectedTemplate={setSelectedTemplate}
       getDocumentTitle={getDocumentTitle}
       updateDocumentTitle={updateDocumentTitle}
@@ -588,7 +624,8 @@ const SpreadsheetEditor = ({
       isReadOnly={isReadOnly}
       onContentUpdate={onContentUpdate}
       onChange={onChange}
-      externalEditorRef={externalSheetEditorRef}
+        externalEditorRef={forwardedEditorRef}
+        legacyEditorRef={externalSheetEditorRef}
       collaboration={collaboration}
       commentsConfig={commentsConfig}
       isAuthorized={isAuthorized}
@@ -599,6 +636,10 @@ const SpreadsheetEditor = ({
       onDataBlockEvent={onDataBlockEvent}
       smartContracts={smartContracts}
       onContentSyncStatusChange={onContentSyncStatusChange}
+      onCollaborationInitializationComplete={
+        onCollaborationInitializationComplete
+      }
+        onIndexedDbError={onIndexedDbError}
     >
       <EditorContent
         commentsConfig={commentsConfig}
@@ -608,6 +649,10 @@ const SpreadsheetEditor = ({
         setShowFetchURLModal={setShowFetchURLModal}
         setInputFetchURLDataBlock={setInputFetchURLDataBlock}
         isReadOnly={isReadOnly}
+          permissionMode={permissionMode}
+          onEnterEdit={onEnterEdit}
+          onSignInToComment={onSignInToComment}
+          onViewerModeChange={onViewerModeChange}
         allowSheetDownload={allowSheetDownload}
         toggleTemplateSidebar={toggleTemplateSidebar}
         onboardingComplete={onboardingComplete}
@@ -625,6 +670,9 @@ const SpreadsheetEditor = ({
       />
     </EditorProvider>
   );
-};
+  },
+);
+
+SpreadsheetEditor.displayName = 'SpreadsheetEditor';
 
 export default SpreadsheetEditor;

@@ -33,12 +33,18 @@ function isElementInView(container: Element, element: Element): boolean {
 // Component for displaying user name with ENS support
 const UserDisplayName: React.FC<{ userName?: string }> = ({ userName }) => {
   const { name: displayName, isEns } = useEnsStatus(userName);
+  const isWalletAddress = /^0x[a-fA-F0-9]{40}$/.test(displayName);
+  const visibleName = isWalletAddress
+    ? `${displayName.slice(0, 5)}...${displayName.slice(-4)}`
+    : displayName;
 
   return (
     <>
-      {displayName}
+      <span className="min-w-0 truncate" title={displayName}>
+        {visibleName}
+      </span>
       {isEns && (
-        <div title="Verified ENS name" className="flex items-center">
+        <div title="Verified ENS name" className="flex shrink-0 items-center">
           <LucideIcon name="BadgeCheck" size="sm" className="text-blue-500" />
         </div>
       )}
@@ -485,12 +491,12 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
           unauthenticatedFallback ?? null
         ) : (
           <>
-        <div className="flex justify-start items-center gap-2">
-          <div className="flex items-center justify-center w-6 h-6">
+        <div className="flex min-w-0 items-center justify-start gap-2">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center">
             <Avatar key={userName} size="md" content="text" alt={userName} />
           </div>
-          <div className="flex flex-col p-2">
-            <span className="text-body-sm-bold inline-flex items-center gap-1 force-font">
+          <div className="flex min-w-0 flex-1 flex-col p-2">
+            <span className="text-body-sm-bold force-font inline-flex min-w-0 items-center gap-1">
               <UserDisplayName userName={userName} />
             </span>
           </div>

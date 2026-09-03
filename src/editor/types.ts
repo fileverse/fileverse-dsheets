@@ -13,6 +13,8 @@ import type { DSheetContentSnapshot } from '../persistence';
 
 export type { ThemeKey } from '@sheet-engine/core/theme';
 
+export type DSheetPermissionMode = 'view' | 'comment' | 'edit';
+
 export type {
   CommentThread,
   CommentReply,
@@ -33,6 +35,16 @@ export interface EditorValues {
   openPanel: (panelId: string) => void; // NEW
   closePanel: () => void; // NEW
 }
+
+export type DSheetEditorHandle = WorkbookInstance & {
+  refreshIndexedDB: () => Promise<void>;
+  terminateSession: () => void;
+  updateCollaboratorName: (name: string) => void;
+  updateSessionTitle: (args: {
+    encryptedTitle: string;
+    documentTitle: string;
+  }) => void;
+};
 
 export interface PanelConfig {
   id: string;
@@ -91,9 +103,23 @@ export interface DsheetProps {
   onContentUpdate?: () => void;
   onChange?: (updateData: SheetUpdateData, encodedUpdate?: string) => void;
   collaboration?: CollaborationProps;
+  /** Called when local IndexedDB persistence fails. The editor and durable
+   * collaboration continue using the in-memory Y.Doc, matching dDoc. */
+  onIndexedDbError?: (error: Error) => void;
   username?: string;
   portalContent?: string;
   isReadOnly?: boolean;
+  /** Permission status displayed above the toolbar. When omitted, read-only
+   * sheets retain the existing View/View-and-comment behavior. */
+  permissionMode?: DSheetPermissionMode;
+  /** Called when a read-only consumer asks to elevate to edit mode. The host
+   * owns access proof, loading, errors, and the resulting mode transition. */
+  onEnterEdit?: () => void;
+  /** Called when an invited commenter needs to authenticate before the host can
+   * recover comment capability. */
+  onSignInToComment?: () => void;
+  /** Lets the host toggle a recovered commenter between comment and view mode. */
+  onViewerModeChange?: (mode: 'comment' | 'view') => void;
   allowSheetDownload?: boolean;
   isTemplateOpen?: boolean;
   selectedTemplate?: string;
@@ -104,9 +130,8 @@ export interface DsheetProps {
   setForceSheetRender?: React.Dispatch<React.SetStateAction<number>>;
   commentsConfig?: CommentsConfig;
   toggleTemplateSidebar?: () => void;
-  sheetEditorRef?: RefObject<
-    WorkbookInstance & { refreshIndexedDB: () => Promise<void> }
-  >;
+  /** Legacy ref prop. Standard React refs are also supported. */
+  sheetEditorRef?: React.Ref<DSheetEditorHandle>;
   /** Override where datablock API keys are stored (default: localStorage). */
   apiKeyStorage?: ApiKeyStorage;
   /** Optional lifecycle events for analytics / side-effects. */
@@ -119,6 +144,9 @@ export interface DsheetProps {
   onContentSyncStatusChange?: (
     status: 'initializing' | 'syncing' | 'synced' | 'error',
   ) => void;
+  /** Fires once the first collaboration sync has been reconciled with the
+   * workbook, or when that reconciliation fails. */
+  onCollaborationInitializationComplete?: (result: 'ready' | 'error') => void;
   editorStateRef?: React.MutableRefObject<{
     refreshIndexedDB: () => Promise<void>;
     getContentSnapshot: () => DSheetContentSnapshot;

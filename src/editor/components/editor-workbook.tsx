@@ -1,24 +1,20 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Workbook } from '@sheet-engine/react';
-import type { SidebarPortalRegistryHandle, SidebarPortalRenderer } from '@sheet-engine/react';
+import type {
+  SidebarPortalRegistryHandle,
+  SidebarPortalRenderer,
+} from '@sheet-engine/react';
 import type { ThemeKey } from '@sheet-engine/core/theme';
 import { Cell } from '@sheet-engine/react';
-import {
-  TOOL_BAR_ITEMS,
-  CELL_CONTEXT_MENU_ITEMS,
-  HEADER_CONTEXT_MENU_ITEMS,
-  DEFAULT_SHEET_DATA,
-} from '../constants/shared-constants';
+import { DEFAULT_SHEET_DATA } from '../constants/shared-constants';
 import {
   getCustomToolbarItems,
   getReadOnlyCustomToolbarItems,
 } from '../utils/custom-toolbar-item';
 import { useEditor } from '../contexts/editor-context';
 import { useCollabAwareness } from '../hooks/use-collab-awareness';
-import {
-  afterUpdateCell,
-} from '../utils/after-update-cell';
+import { afterUpdateCell } from '../utils/after-update-cell';
 import { dataVerificationYdocUpdate } from '../utils/data-verification-ydoc-update';
 import { liveQueryListYdocUpdate } from '../utils/live-query-list-ydoc-update';
 import { calcChainYdocUpdate } from '../utils/calc-chain-ydoc-update';
@@ -43,6 +39,8 @@ import { handleExportToJSON } from '../utils/json-export';
 import { useXLSXImport } from '../hooks/use-xlsx-import';
 import { usehandleHomepageRedirect } from '../hooks/use-homepage-redirect';
 import { OnboardingHandlerType } from '../types';
+import type { DSheetPermissionMode } from '../types';
+import { PermissionChip } from './permission-chip';
 import {
   createAfterColRowChangesHandler,
   createAfterColorChangesHandler,
@@ -59,6 +57,8 @@ import {
   closeCellCommentPopup,
 } from '../utils/cell-comment-marker';
 import { getCurrentSheetIdSafe } from '../utils/sheet-editor-safe';
+import { detachWorkbookData } from '../utils/detach-workbook-data';
+import { getWorkbookControlItems } from './editor-workbook-controls';
 import {
   commentKeyMovesById,
   remapCommentAnchors,
@@ -99,6 +99,10 @@ interface EditorWorkbookProps {
   sidebarActivePanel?: string | null;
   sidebarPortalRegistry?: SidebarPortalRegistryHandle | null;
   sidebarPortalRenderers?: Record<string, SidebarPortalRenderer>;
+  permissionMode?: DSheetPermissionMode | null;
+  onEnterEdit?: () => void;
+  onSignInToComment?: () => void;
+  onViewerModeChange?: (mode: 'comment' | 'view') => void;
   theme?: ThemeKey;
 }
 
@@ -124,6 +128,10 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
   sidebarActivePanel = null,
   sidebarPortalRegistry = null,
   sidebarPortalRenderers = {},
+  permissionMode = null,
+  onEnterEdit,
+  onSignInToComment,
+  onViewerModeChange,
   theme,
 }) => {
   const {
@@ -142,9 +150,10 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     handleLiveQuery,
     setIsDataLoaded,
     awareness,
-    onCollaboratorsChange,
     collabEnabled,
+    isLiveCollabSession,
     collabIsOwner,
+    setSheetEditorRef,
     remoteUpdateRef,
     apiKeyStorage,
     openApiKeyModal,
@@ -307,7 +316,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     awarenessRef.current = awareness;
   }, [awareness]);
 
-  useCollabAwareness(awareness, sheetEditorRef, onCollaboratorsChange);
+  useCollabAwareness(awareness, sheetEditorRef);
 
   const onboardingLsKey =
     onboardingCompleteLocalStorageKey ?? 'onboardingComplete';
@@ -377,17 +386,12 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     updateDocumentTitle,
   });
 
-  const cellContextMenu = isReadOnly
-    ? allowComments
-      ? ['comment', 'copy']
-      : ['copy']
-    : CELL_CONTEXT_MENU_ITEMS;
-  const headerContextMenu = isReadOnly ? ['filter'] : HEADER_CONTEXT_MENU_ITEMS;
-  const toolbarItems = isReadOnly
-    ? allowComments
-      ? ['filter', 'sort', 'comment']
-      : ['filter', 'sort']
-    : TOOL_BAR_ITEMS;
+  const { cellContextMenu, headerContextMenu, toolbarItems } =
+    getWorkbookControlItems({
+      isReadOnly,
+      allowComments,
+      isRTCActive: isLiveCollabSession,
+    });
 
   const syncContext = {
     sheetEditorRef,
@@ -410,34 +414,37 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     [dsheetId, handleOnChangePortalUpdate],
   );
 
-  // Memoize stable Workbook props; sidebar portal props are merged after to avoid
-  // rebuilding customToolbarItems (which glitches the toolbar) on panel switches.
-  const workbookElement = useMemo(() => {
-    // Create a unique key to force re-render when needed
-    const workbookKey = `workbook-${dsheetId}-${forceSheetRender}`;
-
-    // Use actual data if available, otherwise fallback to default data only in edit mode
-    const data =
+  const workbookData = useMemo(() => {
+    const sourceData =
       currentDataRef.current && currentDataRef.current.length > 0
         ? currentDataRef.current
         : isReadOnly
           ? []
           : DEFAULT_SHEET_DATA;
 
+    return detachWorkbookData(sourceData);
+  }, [dsheetId, forceSheetRender, isReadOnly]);
+
+  // Memoize stable Workbook props; sidebar portal props are merged after to avoid
+  // rebuilding customToolbarItems (which glitches the toolbar) on panel switches.
+  const workbookElement = useMemo(() => {
+    // Create a unique key to force re-render when needed
+    const workbookKey = `workbook-${dsheetId}-${forceSheetRender}`;
+
     return (
       // @ts-ignore
       <Workbook
         isFlvReadOnly={isReadOnly}
-        isRTCActive={collabEnabled}
+        isRTCActive={isLiveCollabSession}
         isAuthorized={isAuthorized}
         theme={theme}
         key={workbookKey}
-        ref={sheetEditorRef}
+        ref={setSheetEditorRef}
         suppressInitialCellSelection={
           !effectiveOnboardingComplete && !!onboardingHandler
         }
         // @ts-ignore
-        data={data}
+        data={workbookData}
         toolbarItems={toolbarItems}
         cellContextMenu={cellContextMenu}
         headerContextMenu={headerContextMenu}
@@ -445,6 +452,21 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
         getCommentCellUI={getCommentCellUI}
         showFormulaBar={true}
         showToolbar={true}
+        toolbarTrailingContent={
+          permissionMode ? (
+            <div
+              className="dsheet-permission-chip-wrap fortune-toolbar-item"
+              data-testid="dsheet-permission-chip-wrap"
+            >
+              <PermissionChip
+                mode={permissionMode}
+                onEnterEdit={onEnterEdit}
+                onSignInToComment={onSignInToComment}
+                onViewerModeChange={onViewerModeChange}
+              />
+            </div>
+          ) : null
+        }
         lang={'en'}
         rowHeaderWidth={60}
         columnHeaderHeight={24}
@@ -687,6 +709,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     );
   }, [
     forceSheetRender,
+    workbookData,
     isReadOnly,
     allowSheetDownload,
     toggleTemplateSidebar,
@@ -698,7 +721,15 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     getCommentCellUI,
     syncStatus,
     isAuthorized,
+    collabEnabled,
+    isLiveCollabSession,
+    collabIsOwner,
+    setSheetEditorRef,
     dataBlockCalcFunction,
+    permissionMode,
+    onEnterEdit,
+    onSignInToComment,
+    onViewerModeChange,
     theme,
     handleOnChangePortalUpdate,
   ]);

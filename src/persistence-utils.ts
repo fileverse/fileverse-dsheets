@@ -26,6 +26,37 @@ export type DSheetContentReadOptions = {
 const toError = (error: unknown) =>
   error instanceof Error ? error : new Error(String(error));
 
+/**
+ * Apply a full dSheet artifact without rebuilding its shared types. Keeping the
+ * original Yjs structs is required for independently bootstrapped peers to
+ * converge instead of inserting duplicate workbook data.
+ */
+export const mergeDsheetEncodedContent = (
+  doc: Y.Doc,
+  encodedState: string,
+  origin: unknown = 'dsheet-package-ingress',
+): boolean => {
+  const update = toUint8Array(encodedState);
+  const validationDoc = new Y.Doc();
+  try {
+    Y.applyUpdate(validationDoc, update);
+  } finally {
+    validationDoc.destroy();
+  }
+
+  let changed = false;
+  const onUpdate = () => {
+    changed = true;
+  };
+  doc.on('update', onUpdate);
+  try {
+    Y.applyUpdate(doc, update, origin);
+    return changed;
+  } finally {
+    doc.off('update', onUpdate);
+  }
+};
+
 export const withDsheetPersistenceTimeout = async <T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -84,19 +115,8 @@ export const mergeDsheetContentIntoDocument = (
     );
   }
 
-  let update: Uint8Array;
-  const validationDoc = new Y.Doc();
   try {
-    update = toUint8Array(encodedState);
-    Y.applyUpdate(validationDoc, update);
-  } catch (error) {
-    return unavailableDsheetContentSnapshot(dsheetId, 'corrupt', error);
-  } finally {
-    validationDoc.destroy();
-  }
-
-  try {
-    Y.applyUpdate(doc, update, 'dsheet-package-ingress');
+    mergeDsheetEncodedContent(doc, encodedState, 'dsheet-package-ingress');
     return snapshotDsheetDocument(dsheetId, doc);
   } catch (error) {
     return unavailableDsheetContentSnapshot(dsheetId, 'corrupt', error);

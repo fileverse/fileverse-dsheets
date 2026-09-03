@@ -9,7 +9,14 @@ export { FLVURL } from '@fileverse-dev/formulajs';
 export { loadLocale } from '@sheet-engine/core';
 
 // Types
-export type { ErrorMessageHandlerReturnType, DataBlockEvent, DataBlockEventType, ApiKeyStorage } from './editor/types';
+export type {
+  ErrorMessageHandlerReturnType,
+  DataBlockEvent,
+  DataBlockEventType,
+  ApiKeyStorage,
+  DSheetEditorHandle,
+  DSheetPermissionMode,
+} from './editor/types';
 export type { PanelConfig, PanelId, BuiltInPanelType } from './editor/types';
 export type {
   CommentThread,
@@ -46,6 +53,11 @@ export type {
   CollabErrorCode,
   CollabUser,
 } from './sync-local/types';
+export { fetchSessionState, seedSession } from './sync-local/session-tools';
+export {
+  encryptForRoomKey,
+  decryptForRoomKey,
+} from './sync-local/crypto/room-key';
 
 // Constants
 export {

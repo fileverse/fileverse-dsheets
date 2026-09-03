@@ -15,6 +15,7 @@ export const useSyncManager = (config: SyncManagerConfig) => {
   const [collabState, setCollabState] = useState<CollabState>(INITIAL_STATE);
 
   const managerRef = useRef<SyncManager | null>(null);
+  const hasReachedReadyRef = useRef(false);
 
   if (!managerRef.current) {
     managerRef.current = new SyncManager(config, setCollabState);
@@ -92,6 +93,29 @@ export const useSyncManager = (config: SyncManagerConfig) => {
     };
   }, []);
 
+  // Hard tab-close: beacon the last pending edits (local y-indexeddb covers same-device
+  // reopen; this closes the cross-device tail). pagehide fires on mobile/bfcache where
+  // beforeunload does not.
+  useEffect(() => {
+    const onPageHide = () => {
+      managerRef.current?.fireBeacon();
+    };
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function'
+    ) {
+      window.addEventListener('pagehide', onPageHide);
+    }
+    return () => {
+      if (
+        typeof window !== 'undefined' &&
+        typeof window.removeEventListener === 'function'
+      ) {
+        window.removeEventListener('pagehide', onPageHide);
+      }
+    };
+  }, []);
+
   const connect = useCallback(
     (connectConfig: CollabConnectionConfig) => {
       manager.connect(connectConfig).catch((err) => {
@@ -107,28 +131,39 @@ export const useSyncManager = (config: SyncManagerConfig) => {
   }, [manager]);
 
   const terminateSession = useCallback(() => {
-    void manager.terminateSession().catch((err) => {
-      console.warn(
-        'useSyncManager: terminateSession failed (session reset locally)',
-        err,
-      );
-    });
+    manager.terminateSession();
   }, [manager]);
+
+  const updateTitle = useCallback(
+    (args: { encryptedTitle: string; documentTitle: string }) => {
+      manager.updateTitle(args).catch((err) => {
+        console.error('useSyncManager: updateTitle failed', err);
+      });
+    },
+    [manager],
+  );
 
   const isSyncing = collabState.status === 'syncing';
   const isReady = collabState.status === 'ready' && !!awareness;
 
-  // Content is initialised once we've reached 'ready' at least once.
-  // During reconnection we pass through 'reconnecting' — content is still
-  // present locally so we keep this true.
+  if (collabState.status === 'idle' || collabState.status === 'connecting') {
+    hasReachedReadyRef.current = false;
+  } else if (collabState.status === 'ready') {
+    hasReachedReadyRef.current = true;
+  }
+
+  // Reconnecting can now happen during initial sync, before content has loaded.
+  // Only treat reconnecting as initialized after this connection reached ready.
   const hasCollabContentInitialised =
-    collabState.status === 'ready' || collabState.status === 'reconnecting';
+    collabState.status === 'ready' ||
+    (collabState.status === 'reconnecting' && hasReachedReadyRef.current);
 
   return {
     state: collabState,
     connect,
     disconnect,
     terminateSession,
+    updateTitle,
     isReady,
     isSyncing,
     awareness,

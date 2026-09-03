@@ -3,7 +3,7 @@
 [![NPM](https://img.shields.io/npm/v/@fileverse-dev/dsheet)](https://www.npmjs.com/package/@fileverse-dev/dsheet)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-[dsheets.new](http://dsheets.new/) is your end-to-end encrypted alternative to Google Sheets & Excel. Use it to read, manipulate, and even write financial data, in real-time. Built on the same middleware as ddocs.new, the app is privacy-focused, sovereign, and gives you full control over your data. 
+[dsheets.new](http://dsheets.new/) is your end-to-end encrypted alternative to Google Sheets & Excel. Use it to read, manipulate, and even write financial data, in real-time. Built on the same middleware as ddocs.new, the app is privacy-focused, sovereign, and gives you full control over your data.
 
 ## 𓆣 Features include:
 - End-to-end encryption

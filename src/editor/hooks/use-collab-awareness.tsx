@@ -3,22 +3,18 @@ import { removeAwarenessStates } from 'y-protocols/awareness.js';
 import type { Awareness } from 'y-protocols/awareness';
 import { WorkbookInstance } from '@sheet-engine/react';
 import { COLLAB_PRESENCE_COLORS, presenceColor } from '../../constants';
-import type { CollabUser } from '../../sync-local/types';
 
 /**
  * Reads remote cursor positions from Yjs awareness and keeps Fortune sheet's
  * native presence list in sync. Fortune renders colored cell borders + username
  * labels automatically via context.presences[].
  *
- * Also emits the full collaborator list (including the local user) via
- * `onCollaboratorsChange` so host apps can render navbar chips. This mirrors
- * ddoc's editor-layer awareness handler, which maps awareness.states →
- * `{ clientId, ...user }` and fires on every awareness update + once on mount.
+ * The host collaborator roster is emitted by SocketClient from the
+ * authoritative server room-members list. This hook owns only cell cursors.
  */
 export const useCollabAwareness = (
   awareness: Awareness | null | undefined,
   sheetEditorRef: React.MutableRefObject<WorkbookInstance | null>,
-  onCollaboratorsChange?: (collaborators: CollabUser[]) => void,
 ) => {
   const colorRef = useRef(
     COLLAB_PRESENCE_COLORS[
@@ -26,62 +22,12 @@ export const useCollabAwareness = (
     ],
   );
 
-  // Keep the callback in a ref so the awareness effect doesn't re-subscribe
-  // whenever the host passes a new function identity.
-  const onCollaboratorsChangeRef = useRef(onCollaboratorsChange);
-  onCollaboratorsChangeRef.current = onCollaboratorsChange;
-
-  // Tracks the last emitted roster signature so we only notify the host when
-  // the *set of people* changes (join / leave / rename) — NOT on every cursor
-  // move or awareness heartbeat. Emitting on every update would re-render the
-  // host tree continuously, wiping Fortune's imperatively-added presences
-  // (remote cursors would vanish until the next cell change re-broadcast).
-  const lastRosterSigRef = useRef<string>('');
-
   // Tracks the last presence set actually written to Fortune. The awareness
   // heartbeat (and every remote cursor move) fires a 'change' on a fixed
   // cadence; without this guard we'd removePresences + addPresences on each
   // one — even when nothing changed — forcing a full Workbook re-render that
   // visibly repaints filter overlays. Skip the churn when the set is identical.
   const lastPresenceSigRef = useRef<string>('');
-
-  // Emit collaborator list (incl. local user) only when the roster changes.
-  useEffect(() => {
-    if (!awareness) return;
-
-    const emitCollaborators = () => {
-      const collaborators: CollabUser[] = [];
-      awareness.getStates().forEach((state, clientId) => {
-        const user = state?.user;
-        if (!user || !user.name) return;
-        collaborators.push({
-          clientId,
-          name: user.name,
-          color: user.color || '#3DA5F4',
-          isEns: user.isEns ?? false,
-        });
-      });
-
-      // Signature excludes cursor position so cursor moves don't re-notify.
-      const sig = collaborators
-        .map((c) => `${c.clientId}:${c.name}:${c.color}`)
-        .sort()
-        .join('|');
-      if (sig === lastRosterSigRef.current) return;
-      lastRosterSigRef.current = sig;
-
-      onCollaboratorsChangeRef.current?.(collaborators);
-    };
-
-    awareness.on('update', emitCollaborators);
-    emitCollaborators(); // fire once so local user shows immediately
-
-    return () => {
-      awareness.off('update', emitCollaborators);
-      lastRosterSigRef.current = '';
-      onCollaboratorsChangeRef.current?.([]);
-    };
-  }, [awareness]);
 
   // Sync remote awareness states → Fortune addPresences / removePresences
   useEffect(() => {
@@ -203,9 +149,6 @@ export const useCollabAwareness = (
       clearInterval(heartbeatInterval);
       clearInterval(staleCleanupInterval);
       awareness.off('change', handleChange);
-
-      // Remove local state so other peers stop seeing this cursor
-      removeAwarenessStates(awareness, [awareness.clientID], 'hook unmount');
 
       // Clear all presences from Fortune on teardown
       sheetEditorRef.current?.removePresences(
