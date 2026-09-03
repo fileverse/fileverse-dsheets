@@ -17,8 +17,6 @@ import {
   deleteComment,
   showHideComment,
   showHideAllComments,
-  autoSelectionFormula,
-  handleSum,
   captureLinkEditorOpenSnapshot,
   locale,
   handleMerge,
@@ -36,7 +34,6 @@ import {
   clearFilter,
   toggleViewerFilter,
   applyLocation,
-  insertDuneChart,
   getFormulaEditorOwner,
   Cell,
   api,
@@ -73,9 +70,7 @@ import { LocationCondition } from '../LocationCondition';
 import CustomButton from './CustomButton';
 import { CustomColor } from './CustomColor';
 import { FormatSearch } from '../FormatSearch';
-import DuneChartsInputModal from '../DuneChartsInputModal/DuneChartsInputModal';
 import MoreItemsContaier from './MoreItemsContainer';
-import CryptoDenominationSelector from '../CryptoDenominationSelector';
 import { getGroupedCurrencyOptions, CRYPTO_OPTIONS } from '../../constants';
 import { buildFiatCurrencyFormat } from '@sheet-engine/core';
 import { convertCellsToCrypto } from '../../utils/convertCellsToCrypto';
@@ -442,13 +437,13 @@ export const CurrencySelector = ({
                                       name={opt.icon}
                                       className="cds-icon"
                                     />
-                                    {opt.value === 'SOL' && (
+                                    {/* {opt.value === 'SOL' && (
                                       <SVGIcon
                                         name="solana"
                                         width={16}
                                         height={16}
                                       />
-                                    )}
+                                    )} */}
                                   </span>
                                 ) : (
                                   <span className="color-text-secondary">
@@ -504,6 +499,9 @@ const Toolbar: React.FC<{
     const [toolbarWrapIndex, setToolbarWrapIndex] = useState(-1);
     const [rightToolbarWidth, setRightToolbarWidth] = useState(30);
     const [showDuneModal, setShowDuneModal] = useState(false);
+    const [itemLocations, setItemLocations] = useState<number[]>([]);
+    // const [showDuneModal, setShowDuneModal] = useState(false);
+    const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1480);
     const { showDialog, hideDialog } = useDialog();
     const { showAlert, hideAlert } = useAlert();
 
@@ -2093,7 +2091,6 @@ const Toolbar: React.FC<{
         handleRedo,
         flowdata,
         formula,
-        showDuneModal,
         merge,
         border,
         freezen,
@@ -2219,7 +2216,7 @@ const Toolbar: React.FC<{
                 ))}
               {/* Keep the permission status adjacent to the package tools. */}
               {trailingContent}
-              <Button
+              {/* <Button
                 iconId="dune"
                 tooltip="Insert Dune Chart"
                 key="dune-charts"
@@ -2231,8 +2228,8 @@ const Toolbar: React.FC<{
                   backgroundColor: '#F4603E2E',
                   borderRadius: '8px',
                 }}
-              />
-              <span style={{ display: 'inline-block', position: 'relative' }}>
+              /> */}
+              {/* <span style={{ display: 'inline-block', position: 'relative' }}>
                 <CryptoDenominationSelector>
                   <Button
                     iconId="crypto"
@@ -2244,7 +2241,7 @@ const Toolbar: React.FC<{
                     }}
                   />
                 </CryptoDenominationSelector>
-              </span>
+              </span> */}
             </>
           )}
           {settings.customToolbarItems.length === 0 && trailingContent}
@@ -2268,7 +2265,7 @@ const Toolbar: React.FC<{
                 </CustomButton>
               );
             })}
-          {showDuneModal && (
+          {/* {showDuneModal && (
             <DuneChartsInputModal
               isOpen={showDuneModal}
               onSubmit={(url) => {
@@ -2282,7 +2279,7 @@ const Toolbar: React.FC<{
               placeholder="Paste here any Dune chart link for some magic"
               submitText="Add Dune chart"
             />
-          )}
+          )} */}
         </div>
       </div>
     );

@@ -21,6 +21,10 @@ import { jfrefreshgrid } from './refresh';
 import { CFSplitRange } from './ConditionFormat';
 import { functionMoveReference } from './formula';
 import { moveCellFormatRanges, rangesEqual } from '../utils/range-format';
+import {
+  getSheetCommentKeyPrefixes,
+  notifyCommentAnchorMove,
+} from '../utils/comment-anchor-move';
 
 const dragCellThreshold = 8;
 
@@ -764,6 +768,20 @@ export function onCellsMoveEnd(
   // };
 
   jfrefreshgrid(ctx, d, range);
+
+  notifyCommentAnchorMove(ctx, {
+    type: 'cells',
+    sheetId: String(file?.id ?? ctx.currentSheetId),
+    sheetKeys: getSheetCommentKeyPrefixes(file, index),
+    source: {
+      row: [range[0].row[0], range[0].row[1]],
+      column: [range[0].column[0], range[0].column[1]],
+    },
+    target: {
+      row: [range[1].row[0], range[1].row[1]],
+      column: [range[1].column[0], range[1].column[1]],
+    },
+  });
 
   // selectHightlightShow();
 

@@ -12,6 +12,10 @@ import { ySheetArrayToPlain } from '../utils/update-ydoc';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
 import { applyCommentMarkers } from '../utils/apply-comment-markers';
 import {
+  applyYdocCommentAnchors,
+  getCommentAnchorsYMap,
+} from '../utils/comment-anchors-ydoc';
+import {
   beginRemoteApply,
   endRemoteApplyAfterPaint,
   runUnderRemoteApply,
@@ -76,6 +80,35 @@ export const useEditorData = (
     allowCommentsRef.current = allowComments;
   }, [allowComments]);
 
+  const commentsForMarkers = useCallback(
+    (data?: object | null) =>
+      applyYdocCommentAnchors(
+        data ?? commentDataRef.current,
+        ydocRef.current,
+        dsheetId,
+      ),
+    [dsheetId, ydocRef],
+  );
+
+  const restampCommentMarkers = useCallback((): boolean => {
+    const anchored = commentsForMarkers();
+    const allow = allowCommentsRef.current;
+    const skipEmpty = !anchored || Object.keys(anchored).length === 0;
+    const setContext = sheetEditorRef?.current?.getWorkbookSetContext?.();
+    const appliedLive = typeof setContext === 'function';
+    if (skipEmpty) return appliedLive;
+    if (!appliedLive) return false;
+    // Overlay only: mutate `ps` on the live Immer draft. Never replace
+    // luckysheetfile / currentDataRef or remount — that rewrites cell data
+    // after row/column drag and duplicates or drops values.
+    setContext((ctx: any) => {
+      if (ctx?.luckysheetfile) {
+        applyCommentMarkers(ctx.luckysheetfile, anchored, allow);
+      }
+    });
+    return true;
+  }, [commentsForMarkers, sheetEditorRef]);
+
   const { handleLiveQuery, initialiseLiveQueryData } = useLiveQuery(
     sheetEditorRef,
     apiKeyStorage,
@@ -122,11 +155,8 @@ export const useEditorData = (
         return;
       }
 
-      applyCommentMarkers(
-        plain,
-        commentDataRef.current,
-        allowCommentsRef.current,
-      );
+      const anchoredCommentData = commentsForMarkers(commentDataRef.current);
+      applyCommentMarkers(plain, anchoredCommentData, allowCommentsRef.current);
       currentDataRef.current = plain;
       initialiseLiveQueryData(plain);
       syncDataBlockCalcFromPlain(plain);
@@ -146,49 +176,57 @@ export const useEditorData = (
     isContentBootstrapReady,
     setForceSheetRender,
     syncDataBlockCalcFromPlain,
+    commentsForMarkers,
     ydocRef,
   ]);
 
-  // Apply comment data if provided (do this before any other initialization)
+  // Stamp markers onto the live workbook. Comments often arrive before the
+  // sheet engine has mounted, so retry until getWorkbookSetContext exists.
   useEffect(() => {
-    if (!ydocRef.current || !dsheetId) {
-      return;
-    }
+    if (!dsheetId) return undefined;
     try {
-      const currentDocData = ydocRef.current.getArray(dsheetId);
-      const currentData = ySheetArrayToPlain(
-        // @ts-ignore
-        currentDocData as Y.Array<Y.Map>,
-      );
-      if (currentData.length > 0 && syncStatus === 'synced') {
-        applyCommentMarkers(currentDataRef.current, commentData, allowComments);
-
-        const setContext = sheetEditorRef?.current?.getWorkbookSetContext();
-        if (sheetEditorRef.current !== null && setContext) {
-          setContext((ctx: any) => {
-            applyCommentMarkers(ctx.luckysheetfile, commentData, allowComments);
-          });
-        } else if (syncStatus === 'synced') {
-          applyCommentMarkers(currentData, commentData, allowComments);
-          currentDataRef.current = currentData;
-          if (setForceSheetRender) {
-            setForceSheetRender((prev) => prev + 1);
-          }
+      if (restampCommentMarkers()) return undefined;
+      const hasComments =
+        !!commentData && Object.keys(commentData as object).length > 0;
+      if (!hasComments || !currentDataRef.current?.length) return undefined;
+      setForceSheetRender?.((prev) => prev + 1);
+      let tries = 0;
+      const id = window.setInterval(() => {
+        tries += 1;
+        if (restampCommentMarkers() || tries > 40) {
+          window.clearInterval(id);
         }
-      }
+      }, 100);
+      return () => window.clearInterval(id);
     } catch (error) {
       console.error('[DSheet] Error processing comment data:', error);
+      return undefined;
     }
   }, [
+    restampCommentMarkers,
     commentData,
     dsheetId,
-    ydocRef,
-    isReadOnly,
     isDataLoaded,
     setIsDataLoaded,
     allowComments,
     syncStatus,
+    setForceSheetRender,
   ]);
+
+  // Re-stamp markers when published comment anchors land in ydoc (viewer load).
+  useEffect(() => {
+    const ydoc = ydocRef.current;
+    if (!ydoc || !dsheetId) return undefined;
+    const map = getCommentAnchorsYMap(ydoc, dsheetId);
+    const restamp = () => {
+      restampCommentMarkers();
+    };
+    map.observe(restamp);
+    restamp();
+    return () => {
+      map.unobserve(restamp);
+    };
+  }, [restampCommentMarkers, dsheetId, ydocRef, syncStatus]);
 
   // Attach listener for YJS data changes
   useEffect(() => {
@@ -710,7 +748,7 @@ export const useEditorData = (
             const plain = ySheetArrayToPlain(sheetArray as any);
             applyCommentMarkers(
               plain,
-              commentDataRef.current,
+              commentsForMarkers(),
               allowCommentsRef.current,
             );
             currentDataRef.current = plain;
@@ -955,7 +993,7 @@ export const useEditorData = (
           const plain = ySheetArrayToPlain(sheetArray as any);
           applyCommentMarkers(
             plain,
-            commentDataRef.current,
+            commentsForMarkers(),
             allowCommentsRef.current,
           );
           currentDataRef.current = plain;
@@ -1141,6 +1179,7 @@ export const useEditorData = (
     setForceSheetRender,
     sheetEditorRef,
     syncDataBlockCalcFromPlain,
+    commentsForMarkers,
   ]);
 
   // Rebuild the full plain snapshot from the current Yjs doc and force a Workbook
@@ -1162,7 +1201,7 @@ export const useEditorData = (
 
         applyCommentMarkers(
           plain,
-          commentDataRef.current,
+          commentsForMarkers(),
           allowCommentsRef.current,
         );
         currentDataRef.current = plain;
@@ -1193,6 +1232,7 @@ export const useEditorData = (
       syncDataBlockCalcFromPlain,
       initialiseLiveQueryData,
       setForceSheetRender,
+      commentsForMarkers,
     ],
   );
 

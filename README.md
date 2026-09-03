@@ -1,21 +1,19 @@
-# Fileverse DSheet
+# Fileverse dSheets
 
 [![NPM](https://img.shields.io/npm/v/@fileverse-dev/dsheet)](https://www.npmjs.com/package/@fileverse-dev/dsheet)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-[dsheets.new](http://dsheets.new/) is your decentralised alternative to google sheets & excel. Use it to read, manipulate, and even write onchain data, in real-time. Built on the same middleware as ddocs.new, the app is privacy-first, self-sovereign, and gives you full control over your data <3 
+[dsheets.new](http://dsheets.new/) is your end-to-end encrypted alternative to Google Sheets & Excel. Use it to read, manipulate, and even write financial data, in real-time. Built on the same middleware as ddocs.new, the app is privacy-focused, sovereign, and gives you full control over your data.
 
-## 👩‍🏭 Features:
+## 𓆣 Features include:
 - End-to-end encryption
 - Local & peer-to-peer storage
-- Query live data from APIs & smart contracts  
-- Write onchain: simulate + submit transactions (V0.3)
+- Query live data from APIs & even smart contracts
+- Enable dark mode and other color themes
 - Use a familiar spreadsheets interface & functions (VLOOKUP, INDEX, MATCH…)
-- Granular access permissions (email, wallet, ENS)
+- Granular access permissions (e.g., give view, comment, edit, suggest access to specific email addresses)
 
-[**Try Live Demo →**](https://fileverse-dsheet.vercel.app/)
-
-![image](https://github.com/user-attachments/assets/b3953811-3e02-43ac-9e8e-ee0c3923a22f)
+<img width="1532" height="974" alt="dsheetsnew" src="https://github.com/user-attachments/assets/8bd67463-e999-41f4-b414-9d017fbf9466" />
 
 
 ## Installation

@@ -23,8 +23,10 @@ export type {
   CommentReply,
   CommentActionParams,
   CommentsConfig,
+  CommentAnchorMove,
 } from './editor/types/comments';
 export { CommentAction } from './editor/types/comments';
+export { remapCommentAnchors } from './editor/utils/remap-comment-anchors';
 export { CommentsContent } from './editor/components/comments/comment-sidebar';
 export { CommentCellUI } from './editor/components/comments/comment-cell-popup';
 export { useEnsStatus } from './editor/components/comments/ens/use-ens-status';

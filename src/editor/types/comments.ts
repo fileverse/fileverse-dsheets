@@ -1,4 +1,7 @@
 import React from 'react';
+import type { CommentAnchorMove } from '../../sheet-engine/core/settings';
+
+export type { CommentAnchorMove };
 
 export interface CommentThread {
   id: string;
@@ -12,6 +15,8 @@ export interface CommentThread {
   replies: CommentReply[];
   isResolved?: boolean;
   isDeleted?: boolean;
+  /** IPFS/indexer hash — stable across local `comment-*` ids and on-chain uuids. */
+  contentHash?: string;
 }
 
 export interface CommentReply {
@@ -45,11 +50,16 @@ export interface CommentsConfig {
   commentsData: Record<string, CommentThread>; // key: `${sheetId}_${row}_${col}` or `WITHOUT_CELL_n`
   onSendComment: (key: string, textareaId: string) => void;
   onCommentAction: (action: CommentActionParams) => void;
+  /**
+   * Called after row/column drag-drop or a cell-range move so the host can
+   * remap comment keys. Use `remapCommentAnchors` from the package.
+   */
+  onCellPositionsChanged?: (move: CommentAnchorMove) => void;
   userName?: string;
   ownerAddress?: string;
   currentUserAddress?: string; // for permission author-match
   isOwner?: boolean; // owner can delete/resolve anything
-  isAuthenticated?: boolean; // default true; false → unauthenticatedFallback in the cell popup
+  isAuthenticated?: boolean; // default true; false → unauthenticatedFallback for compose only; existing threads stay visible
   unauthenticatedFallback?: React.ReactNode;
   ensResolutionUrl?: string; // mainnet RPC URL; enables ENS name + verified badge. Omit → raw names.
   disabled?: boolean;
@@ -124,6 +134,8 @@ export interface CommentCellUIProps {
   dragHandler: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
   isHover?: boolean;
   disabled?: boolean;
+  isAuthenticated?: boolean;
+  unauthenticatedFallback?: React.ReactNode;
 }
 
 export interface CommentsContentProps {

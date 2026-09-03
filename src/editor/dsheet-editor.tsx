@@ -32,6 +32,10 @@ import { useMediaQuery } from 'usehooks-ts';
 import { CommentsContent } from './components/comments/comment-sidebar';
 import { setEnsResolutionUrl } from './components/comments/ens/ens-cache';
 import { CommentsConfig } from './types/comments';
+import {
+  applyYdocCommentAnchors,
+  getCommentAnchorsYMap,
+} from './utils/comment-anchors-ydoc';
 import { SmartContractModal } from './components/smart-contract/smart-contract-modal';
 import { SmartContractListView } from './components/smart-contract/smart-contract-view-list';
 import { SmartContractReadingIntro } from './components/smart-contract/smart-contract-reading-intro';
@@ -143,6 +147,29 @@ const EditorContent = ({
     useState(0);
   const isMobile = useMediaQuery('(max-width: 840px)', { defaultValue: false });
 
+  const [commentAnchorsVersion, setCommentAnchorsVersion] = useState(0);
+  useEffect(() => {
+    const ydoc = ydocRef.current;
+    if (!ydoc || !dsheetId) return undefined;
+    const map = getCommentAnchorsYMap(ydoc, dsheetId);
+    const bump = () => setCommentAnchorsVersion((v) => v + 1);
+    map.observe(bump);
+    bump();
+    return () => {
+      map.unobserve(bump);
+    };
+  }, [dsheetId, ydocRef, syncStatus]);
+
+  const anchoredCommentsData = useMemo(
+    () =>
+      applyYdocCommentAnchors(
+        commentsConfig?.commentsData,
+        ydocRef.current,
+        dsheetId || '',
+      ),
+    [commentsConfig?.commentsData, commentAnchorsVersion, dsheetId, ydocRef],
+  );
+
   const builtInPanels: PanelConfig[] = [
     ...(smartContract.enabled
       ? [
@@ -175,7 +202,7 @@ const EditorContent = ({
             <CommentsContent
               sheetEditorRef={sheetEditorRef}
               userName={commentsConfig.userName}
-              commentsData={commentsConfig.commentsData}
+              commentsData={anchoredCommentsData}
               onSendComment={commentsConfig.onSendComment}
               onCommentAction={commentsConfig.onCommentAction}
               ownerAddress={commentsConfig.ownerAddress}

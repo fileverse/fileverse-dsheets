@@ -1,11 +1,12 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { DSheetEditor, WorkbookInstance, CommentAction } from '../../src/index';
+import { DSheetEditor, WorkbookInstance, CommentAction, remapCommentAnchors } from '../../src/index';
 import type {
   CollaborationProps,
   CollabState,
   CommentThread,
   CommentActionParams,
+  CommentAnchorMove,
 } from '../../src/index';
 import {
   Button,
@@ -110,6 +111,10 @@ function App() {
     },
     [dsheetId],
   );
+
+  const onCellPositionsChanged = useCallback((move: CommentAnchorMove) => {
+    setCommentsData((prev) => remapCommentAnchors(prev, move));
+  }, []);
 
   const onCommentAction = useCallback((a: CommentActionParams) => {
     setCommentsData((prev) => {
@@ -454,6 +459,7 @@ function App() {
                   commentsData,
                   onSendComment,
                   onCommentAction,
+                  onCellPositionsChanged,
                   userName: 'demo-user',
                   currentUserAddress: 'demo-user',
                   isOwner: true,

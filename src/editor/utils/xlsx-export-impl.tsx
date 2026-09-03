@@ -401,6 +401,27 @@ export const handleExportToXLSX = async (
         applyBordersToWorksheet(worksheet, sheet.config.borderInfo);
       }
 
+      // STUB FORMAT-ONLY CELLS
+      // xlsx-js-style drops any cell that has no type `t` — so a styled but
+      // valueless cell (e.g. a black background on an empty cell)
+      // is written with no <c> element and loses
+      // its fill on export. Give such cells an empty-string type so the writer
+      // emits `<c .. t="str"><v></v></c>` and preserves the style.
+      Object.keys(worksheet).forEach((key) => {
+        if (key.startsWith('!')) return;
+        const cell = worksheet[key];
+        if (
+          cell &&
+          cell.s &&
+          cell.t == null &&
+          cell.v == null &&
+          cell.f == null
+        ) {
+          cell.t = 's';
+          cell.v = '';
+        }
+      });
+
       const subSheetName =
         sheet.name.length > 30 ? sheet.name.slice(0, 30) : sheet.name;
 

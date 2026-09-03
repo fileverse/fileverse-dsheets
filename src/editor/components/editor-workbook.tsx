@@ -59,6 +59,14 @@ import {
 import { getCurrentSheetIdSafe } from '../utils/sheet-editor-safe';
 import { detachWorkbookData } from '../utils/detach-workbook-data';
 import { getWorkbookControlItems } from './editor-workbook-controls';
+import {
+  commentKeyMovesById,
+  remapCommentAnchors,
+} from '../utils/remap-comment-anchors';
+import {
+  applyYdocCommentAnchors,
+  writeCommentAnchorsToYdoc,
+} from '../utils/comment-anchors-ydoc';
 // import { useEditorData } from '../hooks/use-editor-data';
 // Use the types defined in types.ts
 type OnboardingHandler = OnboardingHandlerType;
@@ -151,6 +159,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     openApiKeyModal,
     onDataBlockEvent,
     smartContract,
+    handleOnChangePortalUpdate,
   } = useEditor();
 
   const localUserEditRef = useRef(false);
@@ -164,6 +173,33 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
   commentsConfigRef.current = commentsConfig;
   const hasComments = !!commentsConfig;
   const allowComments = !commentsConfig?.disabled;
+
+  // One-shot: if this doc has no published comment anchors yet, seed them
+  // from the owner's current keys (including locally remapped ones) so the
+  // next save/publish is visible to viewers. Skip once the map exists so
+  // adding a comment does not dirty ydoc.
+  useEffect(() => {
+    if (isReadOnly || !commentsConfig?.commentsData) return;
+    if (collabEnabled && !collabIsOwner) return;
+    const ydoc = ydocRef.current;
+    if (!ydoc) return;
+    writeCommentAnchorsToYdoc({
+      ydoc,
+      dsheetId,
+      commentsData: commentsConfig.commentsData,
+      handleContentPortal: handleOnChangePortalUpdate,
+      skipUnmapped: true,
+    });
+  }, [
+    isReadOnly,
+    collabEnabled,
+    collabIsOwner,
+    commentsConfig?.commentsData,
+    dsheetId,
+    ydocRef,
+    handleOnChangePortalUpdate,
+    syncStatus,
+  ]);
 
   const removeCommentFromCell = useCallback(
     (row: number, col: number) => {
@@ -189,8 +225,12 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
       const isAuthed = cfg.isAuthenticated ?? true;
       const sheetId = getCurrentSheetIdSafe(sheetEditorRef);
       const key = `${sheetId}_${row}_${col}`;
-      const comment = cfg.commentsData[key];
-      if (!isAuthed) return cfg.unauthenticatedFallback ?? null;
+      const commentsData = applyYdocCommentAnchors(
+        cfg.commentsData,
+        ydocRef.current,
+        dsheetId,
+      );
+      const comment = commentsData[key];
       return (
         <CommentCellUI
           row={row}
@@ -209,6 +249,8 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
           dragHandler={dragHandler}
           isHover={isHover}
           disabled={cfg.disabled}
+          isAuthenticated={isAuthed}
+          unauthenticatedFallback={cfg.unauthenticatedFallback}
         />
       );
     };
@@ -319,8 +361,6 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
       delete window.setForceRenderEditor;
     };
   }, [isReadOnly]);
-
-  const { handleOnChangePortalUpdate } = useEditor();
 
   // Initialize XLSX import functionality
   const { handleXLSXUpload } = useXLSXImport({
@@ -631,6 +671,23 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
           // @ts-ignore Fortune Hooks type misses this runtime hook.
           afterHideChanges: handleAfterHideChanges,
           afterColRowChanges: handleAfterColRowChanges,
+          afterCommentAnchorMove: (move) => {
+            const cfg = commentsConfigRef.current;
+            const current = applyYdocCommentAnchors(
+              cfg?.commentsData ?? {},
+              ydocRef.current,
+              dsheetId,
+            );
+            const remapped = remapCommentAnchors(current, move);
+            writeCommentAnchorsToYdoc({
+              ydoc: ydocRef.current,
+              dsheetId,
+              commentsData: remapped,
+              keyMoves: commentKeyMovesById(current, remapped),
+              handleContentPortal: handleOnChangePortalUpdate,
+            });
+            cfg?.onCellPositionsChanged?.(move);
+          },
           afterShowGridLinesChange: guardRemoteEcho(() => {
             syncCurrentSheetField(syncContext, 'showGridLines');
           }),
@@ -674,6 +731,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     onSignInToComment,
     onViewerModeChange,
     theme,
+    handleOnChangePortalUpdate,
   ]);
 
   return React.cloneElement(workbookElement, {

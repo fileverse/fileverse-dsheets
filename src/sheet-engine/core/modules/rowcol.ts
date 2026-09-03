@@ -25,6 +25,10 @@ import {
   getInsertRowColSnapshotBounds,
   snapshotPersistedCelldataInRange,
 } from '../utils/ydoc-celldata-changes';
+import {
+  getSheetCommentKeyPrefixes,
+  notifyCommentAnchorMove,
+} from '../utils/comment-anchor-move';
 
 const refreshLocalMergeData = (merge_new: Record<string, any>, file: Sheet) => {
   Object.entries(merge_new).forEach(([, v]) => {
@@ -1639,6 +1643,16 @@ export function insertRowCol(
     );
   }
 
+  notifyCommentAnchorMove(ctx, {
+    type: 'insert',
+    axis: type,
+    sheetId: String(file.id ?? id),
+    sheetKeys: getSheetCommentKeyPrefixes(file, curOrder),
+    index,
+    count,
+    direction,
+  });
+
   // if (type === "row") {
   //   const scrollLeft = $("#luckysheet-cell-main").scrollLeft();
   //   const scrollTop = $("#luckysheet-cell-main").scrollTop();
@@ -2695,6 +2709,15 @@ export function deleteRowCol(
     d.length,
     d[0]?.length ?? 0,
   );
+
+  notifyCommentAnchorMove(ctx, {
+    type: 'delete',
+    axis: type,
+    sheetId: String(file.id ?? id),
+    sheetKeys: getSheetCommentKeyPrefixes(file, curOrder),
+    start,
+    end,
+  });
 
   if (file.id === ctx.currentSheetId) {
     ctx.config = cfg;

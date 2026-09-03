@@ -746,6 +746,13 @@ export class FormulaCache {
   }
 
   tryGetCellAsNumber(cell: Cell) {
+    // Inline rich-text cells (e.g. hyperlinked text) keep their display text in
+    // `ct.s` segments; `v` is not reliably a plain string. Return the joined
+    // segment text so text predicates like ISTEXT see a real string.
+    if (cell?.ct?.t === 'inlineStr' && Array.isArray(cell.ct.s)) {
+      return (cell.ct.s as { v?: string }[]).map((s) => s?.v ?? '').join('');
+    }
+
     const rawV = cell?.v;
     const normalizedV =
       typeof rawV === 'string' ? rawV.trim().replace(/,/g, '') : rawV;
