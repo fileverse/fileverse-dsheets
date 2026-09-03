@@ -59,6 +59,15 @@ const cloneCellTemplateStripContent = (cell: any) => {
   delete t.f;
   delete t.ps;
   delete t.hl;
+  // Inline-string cells (e.g. xlsx-imported hyperlinks) carry their text AND link
+  // inside ct.s[].link. That is content, not style — dropping v/m alone would still
+  // copy the link into the inserted row. Strip the inline payload and its root
+  // underline/color decoration.
+  if (t.ct?.t === 'inlineStr') {
+    delete t.ct;
+    delete t.fc;
+    delete t.un;
+  }
   return t;
 };
 
