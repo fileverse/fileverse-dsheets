@@ -128,7 +128,7 @@ export const getFiatGeckoId = (
 const COINGECKO_IDS: Record<string, string> = {
   BTC: 'bitcoin',
   ETH: 'ethereum',
-  SOL: 'solana',
+  // SOL: 'solana',
   // add more as needed
 };
 

@@ -12,7 +12,7 @@ export const API_KEY_PLACEHOLDER: Record<string, string> = Object.fromEntries(
 export const CRYPTO_OPTIONS = [
   { label: 'Bitcoin (BTC)', value: 'BTC', icon: 'Btc', type: 'crypto' },
   { label: 'Ethereum (ETH)', value: 'ETH', icon: 'Ethereum', type: 'crypto' },
-  { label: 'Solana (SOL)', value: 'SOL', icon: 'Solana', type: 'crypto' },
+  // { label: 'Solana (SOL)', value: 'SOL', icon: 'Solana', type: 'crypto' },
   // Add more cryptos as needed
 ];
 

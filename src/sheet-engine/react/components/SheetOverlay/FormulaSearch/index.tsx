@@ -149,9 +149,8 @@ const FormulaSearch: React.FC<FormulaSearchProps> = ({
 
   return (
     <div
-      className={`flex color-border-default border flex-col luckysheet-formula-search-c-p custom-scroll ${
-        from === 'fx' ? 'fx-search' : 'cell-search'
-      }`}
+      className={`flex color-border-default border flex-col luckysheet-formula-search-c-p custom-scroll ${from === 'fx' ? 'fx-search' : 'cell-search'
+        }`}
       id="luckysheet-formula-search-c-p"
       style={{
         top,
@@ -198,18 +197,6 @@ const FormulaSearch: React.FC<FormulaSearchProps> = ({
                     Signup/Login
                   </span>
                 </p>
-                <div className="flex gap-2 mt-2 mb-2">
-                  {unfilteredDefaultCandidates.map((v, index) => {
-                    return (
-                      <img
-                        key={index}
-                        src={v.LOGO}
-                        alt="Service Logo"
-                        style={{ width: '16px', height: '16px' }}
-                      />
-                    );
-                  })}
-                </div>
               </div>
             )}
           </>
@@ -225,9 +212,8 @@ const FormulaSearch: React.FC<FormulaSearchProps> = ({
                   style={{
                     cursor: 'pointer',
                   }}
-                  className={`luckysheet-formula-search-item ${
-                    index === 0 ? 'luckysheet-formula-search-item-active' : ''
-                  }`}
+                  className={`luckysheet-formula-search-item ${index === 0 ? 'luckysheet-formula-search-item-active' : ''
+                    }`}
                 >
                   <div
                     style={{ display: 'flex', justifyContent: 'space-between' }}
@@ -309,9 +295,8 @@ const FormulaSearch: React.FC<FormulaSearchProps> = ({
                   <div
                     key={v.n}
                     data-func={v.n}
-                    className={`luckysheet-formula-search-item ${
-                      index === 0 ? 'luckysheet-formula-search-item-active' : ''
-                    }`}
+                    className={`luckysheet-formula-search-item ${index === 0 ? 'luckysheet-formula-search-item-active' : ''
+                      }`}
                   >
                     <div
                       style={{
@@ -414,18 +399,6 @@ const FormulaSearch: React.FC<FormulaSearchProps> = ({
                         Signup/Login
                       </span>
                     </p>
-                    <div className="flex gap-2 mt-2 mb-2">
-                      {unfilteredDefaultCandidates.map((v, index) => {
-                        return (
-                          <img
-                            key={index}
-                            src={v.LOGO}
-                            alt="Service Logo"
-                            style={{ width: '16px', height: '16px' }}
-                          />
-                        );
-                      })}
-                    </div>
                   </div>
                 )}
               </span>
