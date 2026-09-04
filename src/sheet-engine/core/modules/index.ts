@@ -31,6 +31,7 @@ export { moveToEnd, getRangeRectsByCharacterOffset } from './cursor';
 // date base locale
 export {
   getDateBaseLocale,
+  getCanonicalDateDisplayFormat,
   getCanonicalDateEditFormat,
   getDateEditFormatForCell,
   isUsDateBaseLocale,

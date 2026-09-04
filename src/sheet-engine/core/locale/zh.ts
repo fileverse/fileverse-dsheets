@@ -11229,18 +11229,18 @@ export default {
     // { "text": "货币整数", "value": "¥####", "example": "¥1200" },
     { text: '万元2位小数', value: 'w0.00', example: '2万2500.55' },
     { text: '', value: 'split', example: '' },
-    { text: '日期', value: 'yyyy-MM-dd', example: '2017-11-29' },
+    { text: '日期', value: 'd/M/yyyy', example: '29/11/2017' },
     { text: '时间', value: 'hh:mm AM/PM', example: '3:00 PM' },
     { text: '时间24H', value: 'hh:mm', example: '15:00' },
     {
       text: '日期时间',
-      value: 'yyyy-MM-dd hh:mm AM/PM',
-      example: '2017-11-29 3:00 PM',
+      value: 'd/M/yyyy hh:mm AM/PM',
+      example: '29/11/2017 3:00 PM',
     },
     {
       text: '日期时间24H',
-      value: 'yyyy-MM-dd hh:mm',
-      example: '2017-11-29 15:00',
+      value: 'd/M/yyyy hh:mm',
+      example: '29/11/2017 15:00',
     },
     { text: '', value: 'split', example: '' },
     {
@@ -11252,8 +11252,8 @@ export default {
   ],
   dateFmtList: [
     {
-      name: '1930-08-05',
-      value: 'yyyy-MM-dd',
+      name: '5/8/1930',
+      value: 'd/M/yyyy',
     },
     {
       name: '1930/8/5',

@@ -11219,18 +11219,18 @@ export default {
       example: `${currency}1,200.09`,
     },
     { text: '', value: 'split', example: '' },
-    { text: 'Date', value: 'yyyy-MM-dd', example: '2017-11-29' },
+    { text: 'Date', value: 'd/M/yyyy', example: '29/11/2017' },
     { text: 'Time', value: 'hh:mm AM/PM', example: '3:00 PM' },
     { text: 'Time 24H', value: 'hh:mm', example: '15:00' },
     {
       text: 'Date time',
-      value: 'yyyy-MM-dd hh:mm AM/PM',
-      example: '2017-11-29 3:00 PM',
+      value: 'd/M/yyyy hh:mm AM/PM',
+      example: '29/11/2017 3:00 PM',
     },
     {
       text: 'Date time 24 H',
-      value: 'yyyy-MM-dd hh:mm',
-      example: '2017-11-29 15:00',
+      value: 'd/M/yyyy hh:mm',
+      example: '29/11/2017 15:00',
     },
     { text: '', value: 'split', example: '' },
     {
@@ -11242,6 +11242,14 @@ export default {
   ],
   dateFmtList: [
     {
+      name: '5/8/1930',
+      value: 'd/M/yyyy',
+    },
+    {
+      name: '05/08/1930',
+      value: 'dd/MM/yyyy',
+    },
+    {
       name: '1930-08-05',
       value: 'yyyy-MM-dd',
     },
@@ -11250,12 +11258,8 @@ export default {
       value: 'yyyy/MM/dd',
     },
     {
-      name: '08-05',
-      value: 'MM-dd',
-    },
-    {
-      name: '8-5',
-      value: 'M-d',
+      name: '5-8',
+      value: 'd-M',
     },
     {
       name: '13:30:30',

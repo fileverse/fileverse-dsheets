@@ -11250,18 +11250,18 @@ export default {
     { text: 'मुद्रा', value: `${currency}0.00`, example: `${currency}1200.09` },
 
     { text: '', value: 'split', example: '' },
-    { text: 'दिनांक', value: 'yyyy-MM-dd', example: '2017-11-29' },
+    { text: 'दिनांक', value: 'd/M/yyyy', example: '29/11/2017' },
     { text: 'समय', value: 'hh:mm AM/PM', example: '3:00 PM' },
     { text: '24 घंटे का समय', value: 'hh:mm', example: '15:00' },
     {
       text: 'दिनांक समय',
-      value: 'yyyy-MM-dd hh:mm AM/PM',
-      example: '2017-11-29 3:00 PM',
+      value: 'd/M/yyyy hh:mm AM/PM',
+      example: '29/11/2017 3:00 PM',
     },
     {
       text: 'दिनांक समय 24 घंटे',
-      value: 'yyyy-MM-dd hh:mm',
-      example: '2017-11-29 15:00',
+      value: 'd/M/yyyy hh:mm',
+      example: '29/11/2017 15:00',
     },
     { text: '', value: 'split', example: '' },
     {
@@ -11273,8 +11273,8 @@ export default {
   ],
   dateFmtList: [
     {
-      name: '1930-08-05',
-      value: 'yyyy-MM-dd',
+      name: '5/8/1930',
+      value: 'd/M/yyyy',
     },
     {
       name: '1930/8/5',

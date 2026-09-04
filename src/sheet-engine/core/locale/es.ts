@@ -11217,26 +11217,26 @@ export default {
     { text: 'Moneda', value: `${currency}0.00`, example: `${currency}1200.09` },
 
     { text: '', value: 'split', example: '' },
-    { text: 'Fecha', value: 'yyyy-MM-dd', example: '2017-11-29' },
+    { text: 'Fecha', value: 'd/M/yyyy', example: '29/11/2017' },
     { text: 'Hora', value: 'hh:mm AM/PM', example: '3:00 PM' },
     { text: 'Hora 24H', value: 'hh:mm', example: '15:00' },
     {
       text: 'Fecha Hora',
-      value: 'yyyy-MM-dd hh:mm AM/PM',
-      example: '2017-11-29 3:00 PM',
+      value: 'd/M/yyyy hh:mm AM/PM',
+      example: '29/11/2017 3:00 PM',
     },
     {
       text: 'Fecha Hora 24 H',
-      value: 'yyyy-MM-dd hh:mm',
-      example: '2017-11-29 15:00',
+      value: 'd/M/yyyy hh:mm',
+      example: '29/11/2017 15:00',
     },
     { text: '', value: 'split', example: '' },
     { text: 'Formatos personalizados', value: 'fmtOtherSelf', example: 'más' },
   ],
   dateFmtList: [
     {
-      name: '1930-08-05',
-      value: 'yyyy-MM-dd',
+      name: '5/8/1930',
+      value: 'd/M/yyyy',
     },
     {
       name: '1930/8/5',

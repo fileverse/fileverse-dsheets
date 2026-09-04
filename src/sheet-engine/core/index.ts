@@ -87,6 +87,7 @@ export {
   getRangeRectsByCharacterOffset,
   // date base locale
   getDateBaseLocale,
+  getCanonicalDateDisplayFormat,
   getCanonicalDateEditFormat,
   getDateEditFormatForCell,
   isUsDateBaseLocale,

@@ -137,8 +137,14 @@ const WEEKDAY_NAMES_RE =
   'monday|tuesday|wednesday|thursday|friday|saturday|sunday';
 const WEEKDAY_ABBR_RE = 'mon|tue|wed|thu|fri|sat|sun';
 
+/**
+ * Excel / Google Sheets two-digit year window:
+ * 00–29 → 2000–2029, 30–99 → 1930–1999.
+ * e.g. 12/12/13 → 2013, 12/12/31 → 1931.
+ */
 function parseTwoDigitYear(twoDigitYear: string): number {
-  return 2000 + Number(twoDigitYear);
+  const yy = Number(twoDigitYear);
+  return yy <= 29 ? 2000 + yy : 1900 + yy;
 }
 
 function isValidDateParts(year: number, month: number, day: number): boolean {
@@ -338,32 +344,53 @@ export function detectDateFormat(str: string): DateFormatInfo | null {
     }
   }
 
-  // D-M-YYYY / DD-MM-YYYY (day-first)
+  // Dash-separated with 4-digit year (base-order aware). UK: D-M-YYYY, US: M-D-YYYY.
   m = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec(s);
   if (m) {
     const p1 = +m[1];
     const p2 = +m[2];
     const y = +m[3];
-    if (p1 <= 31 && p2 <= 12 && isValidDateParts(y, p2, p1)) {
+    const mo = prefersUsDateOrder ? p1 : p2;
+    const d = prefersUsDateOrder ? p2 : p1;
+    if (mo <= 12 && d <= 31 && isValidDateParts(y, mo, d)) {
       return {
         year: y,
-        month: p2,
-        day: p1,
+        month: mo,
+        day: d,
         hours: 0,
         minutes: 0,
         seconds: 0,
-        formatType: m[1].length === 1 ? 'd-M-yyyy' : 'dd-MM-yyyy',
+        formatType: prefersUsDateOrder
+          ? m[1].length === 1
+            ? 'M-d-yyyy'
+            : 'MM-dd-yyyy'
+          : m[1].length === 1
+            ? 'd-M-yyyy'
+            : 'dd-MM-yyyy',
       };
     }
   }
 
-  // dd.MM.yyyy: 25.02.2026 (only when first part > 12 to avoid ambiguity)
+  // Dot-separated with 4-digit year (base-order aware). Unambiguous only when
+  // the day-side part is > 12 so month/day cannot swap.
   m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(s);
   if (m) {
     const p1 = +m[1];
     const p2 = +m[2];
     const y = +m[3];
-    if (p1 > 12 && isValidDateParts(y, p2, p1)) {
+    if (prefersUsDateOrder) {
+      if (p2 > 12 && isValidDateParts(y, p1, p2)) {
+        return {
+          year: y,
+          month: p1,
+          day: p2,
+          hours: 0,
+          minutes: 0,
+          seconds: 0,
+          formatType: 'MM.dd.yyyy',
+        };
+      }
+    } else if (p1 > 12 && isValidDateParts(y, p2, p1)) {
       return {
         year: y,
         month: p2,
@@ -477,13 +504,15 @@ export function detectDateFormat(str: string): DateFormatInfo | null {
     }
   }
 
-  // D-M-YY / DD-MM-YY (day-first)
+  // Dash-separated with 2-digit year (base-order aware)
   m = /^(\d{1,2})-(\d{1,2})-(\d{2})$/.exec(s);
   if (m) {
-    const d = +m[1];
-    const mo = +m[2];
+    const p1 = +m[1];
+    const p2 = +m[2];
     const y = parseTwoDigitYear(m[3]);
-    if (d <= 31 && mo <= 12 && isValidDateParts(y, mo, d)) {
+    const mo = prefersUsDateOrder ? p1 : p2;
+    const d = prefersUsDateOrder ? p2 : p1;
+    if (mo <= 12 && d <= 31 && isValidDateParts(y, mo, d)) {
       return {
         year: y,
         month: mo,
@@ -491,17 +520,26 @@ export function detectDateFormat(str: string): DateFormatInfo | null {
         hours: 0,
         minutes: 0,
         seconds: 0,
-        formatType: m[1].length === 1 ? 'd-M-yy' : 'dd-MM-yy',
+        formatType: prefersUsDateOrder
+          ? m[1].length === 1
+            ? 'M-d-yy'
+            : 'MM-dd-yy'
+          : m[1].length === 1
+            ? 'd-M-yy'
+            : 'dd-MM-yy',
       };
     }
   }
 
-  // M D YYYY / MM DD YYYY
+  // Space-separated numeric (base-order aware). UK: D M YYYY, US: M D YYYY.
+  // Unambiguous wrong-order values (e.g. UK input "2 25 2026") stay text.
   m = /^(\d{1,2})\s+(\d{1,2})\s+(\d{4})$/.exec(s);
   if (m) {
-    const mo = +m[1];
-    const d = +m[2];
+    const p1 = +m[1];
+    const p2 = +m[2];
     const y = +m[3];
+    const mo = prefersUsDateOrder ? p1 : p2;
+    const d = prefersUsDateOrder ? p2 : p1;
     if (isValidDateParts(y, mo, d)) {
       return {
         year: y,
@@ -510,7 +548,13 @@ export function detectDateFormat(str: string): DateFormatInfo | null {
         hours: 0,
         minutes: 0,
         seconds: 0,
-        formatType: m[1].length === 1 ? 'M d yyyy' : 'MM dd yyyy',
+        formatType: prefersUsDateOrder
+          ? m[1].length === 1
+            ? 'M d yyyy'
+            : 'MM dd yyyy'
+          : m[1].length === 1
+            ? 'd M yyyy'
+            : 'dd MM yyyy',
       };
     }
   }
