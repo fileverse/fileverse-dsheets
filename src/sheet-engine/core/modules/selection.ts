@@ -23,7 +23,9 @@ import { delFunctionGroup } from './formula';
 import clipboard from './clipboard';
 import { clearImageClipboard } from './image-clipboard';
 import { getBorderInfoCompute } from './border';
-import { getComputeMap } from './ConditionFormat';
+import { checkCF, getComputeMap } from './ConditionFormat';
+import { clampIndicesToUsedBounds } from './copy-range-bounds';
+import { isClipboardMetadataRedundant } from '../utils/cell-persist-utils';
 import {
   escapeHTMLTag,
   getSheetIndex,
@@ -1941,8 +1943,8 @@ export function rangeValueToHtml(
   if (idx == null) return '';
   const sheet = ctx.luckysheetfile[idx];
 
-  const rowIndexArr: number[] = [];
-  const colIndexArr: number[] = [];
+  let rowIndexArr: number[] = [];
+  let colIndexArr: number[] = [];
 
   for (let s = 0; s < (ranges?.length ?? 0); s += 1) {
     const range = ranges![s];
@@ -1966,7 +1968,7 @@ export function rangeValueToHtml(
     }
   }
 
-  let borderInfoCompute;
+  let borderInfoCompute: Record<string, any> | undefined;
   if (sheet.config?.borderInfo && sheet.config.borderInfo.length > 0) {
     // 边框
     borderInfoCompute = getBorderInfoCompute(ctx, sheetId);
@@ -1975,6 +1977,19 @@ export function rangeValueToHtml(
   let cpdata = '';
   const d = sheet.data;
   if (!d) return null;
+
+  // Clamp the serialised range to the bounding box of cells that actually carry
+  // content (data, border, or conditional format). Stops a select-all of a mostly-
+  // empty sheet from emitting thousands of blank <td>s (the whole-sheet copy blowup).
+  // Trimmed cells hold no data and no CSS, so the copy stays lossless.
+  ({ rows: rowIndexArr, cols: colIndexArr } = clampIndicesToUsedBounds(
+    rowIndexArr,
+    colIndexArr,
+    (r, c) =>
+      d[r]?.[c] != null ||
+      (borderInfoCompute != null && borderInfoCompute[`${r}_${c}`] != null) ||
+      checkCF(r, c, cf_compute) != null,
+  ));
 
   let colgroup = '';
 
@@ -1999,12 +2014,17 @@ export function rangeValueToHtml(
         let span = '';
 
         if (r === rowIndexArr[0]) {
+          // When a column carries no explicit width, the grid renders it at the
+          // sheet's default width — so the clipboard must serialize THAT default,
+          // not a hardcoded value. Emitting a wrong fallback (e.g. 72) silently
+          // resizes columns on the next paste when the real default differs.
+          const fallbackColW = sheet.defaultColWidth ?? ctx.defaultcollen;
           if (
             _.isNil(sheet.config) ||
             _.isNil(sheet.config.columnlen) ||
             _.isNil(sheet.config.columnlen[c.toString()])
           ) {
-            colgroup += '<colgroup width="72px"></colgroup>';
+            colgroup += `<colgroup width="${fallbackColW}px"></colgroup>`;
           } else {
             colgroup += `<colgroup width="${
               sheet.config.columnlen[c.toString()]
@@ -2013,12 +2033,15 @@ export function rangeValueToHtml(
         }
 
         if (c === colIndexArr[0]) {
+          // Same as column width: fall back to the sheet's default row height,
+          // not a hardcoded value, so default-height rows round-trip losslessly.
+          const fallbackRowH = sheet.defaultRowHeight ?? ctx.defaultrowlen;
           if (
             _.isNil(sheet.config) ||
             _.isNil(sheet.config.rowlen) ||
             _.isNil(sheet.config.rowlen[r.toString()])
           ) {
-            style += 'height:19px;';
+            style += `height:${fallbackRowH}px;`;
           } else {
             style += `height:${sheet.config.rowlen[r.toString()]}px;`;
           }
@@ -2278,11 +2301,12 @@ export function rangeValueToHtml(
           }
         }
 
-        const cellData = includeCellMetadata
-          ? encodeURIComponent(
-              JSON.stringify({ ...cell, _srcRow: r, _srcCol: c }),
-            )
-          : '';
+        const cellData =
+          includeCellMetadata && !isClipboardMetadataRedundant(cell)
+            ? encodeURIComponent(
+                JSON.stringify({ ...cell, _srcRow: r, _srcCol: c }),
+              )
+            : '';
         column = replaceHtml(column, { style, span, cellData });
 
         if (_.isNil(c_value)) {
@@ -2339,12 +2363,17 @@ export function rangeValueToHtml(
         column += '';
 
         if (r === rowIndexArr[0]) {
+          // When a column carries no explicit width, the grid renders it at the
+          // sheet's default width — so the clipboard must serialize THAT default,
+          // not a hardcoded value. Emitting a wrong fallback (e.g. 72) silently
+          // resizes columns on the next paste when the real default differs.
+          const fallbackColW = sheet.defaultColWidth ?? ctx.defaultcollen;
           if (
             _.isNil(sheet.config) ||
             _.isNil(sheet.config.columnlen) ||
             _.isNil(sheet.config.columnlen[c.toString()])
           ) {
-            colgroup += '<colgroup width="72px"></colgroup>';
+            colgroup += `<colgroup width="${fallbackColW}px"></colgroup>`;
           } else {
             colgroup += `<colgroup width="${
               sheet.config.columnlen[c.toString()]
@@ -2353,12 +2382,15 @@ export function rangeValueToHtml(
         }
 
         if (c === colIndexArr[0]) {
+          // Same as column width: fall back to the sheet's default row height,
+          // not a hardcoded value, so default-height rows round-trip losslessly.
+          const fallbackRowH = sheet.defaultRowHeight ?? ctx.defaultrowlen;
           if (
             _.isNil(sheet.config) ||
             _.isNil(sheet.config.rowlen) ||
             _.isNil(sheet.config.rowlen[r.toString()])
           ) {
-            style += 'height:19px;';
+            style += `height:${fallbackRowH}px;`;
           } else {
             style += `height:${sheet.config.rowlen[r.toString()]}px;`;
           }

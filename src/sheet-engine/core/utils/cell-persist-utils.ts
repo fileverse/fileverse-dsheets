@@ -88,6 +88,46 @@ export function shouldPersistCelldataCell(
   return hasCellMeaningfulContent(cell);
 }
 
+// Cell format attrs that getStyleByCell (modules/cell.ts) emits as CSS and
+// buildCellFromTd (paste-table-helpers.ts) parses back. Kept in sync with those
+// two functions: emitting a new attr as CSS on the copy side AND parsing it on
+// the paste side means adding the attr here. `ct` (number format) and `tr`
+// (rotation) are intentionally excluded — the emitted <td> CSS has no channel
+// for them, so a cell carrying them must keep its `data-fortune-cell` blob.
+export const CSS_SAFE_CLIPBOARD_ATTRS = [
+  "bg",
+  "ht",
+  "tb",
+  "ff",
+  "vt",
+  "fs",
+  "fc",
+  "bl",
+  "it",
+  "un",
+  "cl",
+] as const;
+
+const CSS_SAFE_CLIPBOARD_ATTR_SET = new Set<string>(CSS_SAFE_CLIPBOARD_ATTRS);
+
+/**
+ * True when a cell's `data-fortune-cell` clipboard blob is redundant: the cell
+ * has no persistable content and its only format attrs are ones the emitted
+ * `<td>` CSS already carries, so cross-document paste reconstructs it losslessly
+ * from CSS alone. Cells with content, or with a non-CSS format channel
+ * (`ct` / `tr`), return false and keep their blob.
+ */
+export function isClipboardMetadataRedundant(
+  cell: Cell | string | number | boolean | null | undefined,
+): boolean {
+  if (shouldPersistCelldataCell(cell)) return false;
+  const attrs = extractCellFormatAttrs(cell);
+  if (attrs == null) return true;
+  return Object.keys(attrs).every((key) =>
+    CSS_SAFE_CLIPBOARD_ATTR_SET.has(key),
+  );
+}
+
 export function celldataEntryEqual(existing: unknown, next: unknown): boolean {
   if (existing === next) return true;
   if (existing == null || next == null) return false;
