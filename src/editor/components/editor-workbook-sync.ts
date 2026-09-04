@@ -285,6 +285,15 @@ export const createSheetLengthChangeHandler = ({
         if (sheet.color != null) {
           ySheet.set('color', sheet.color);
         }
+        if (sheet.defaultRowHeight != null) {
+          ySheet.set('defaultRowHeight', sheet.defaultRowHeight);
+        }
+        if (sheet.defaultColWidth != null) {
+          ySheet.set('defaultColWidth', sheet.defaultColWidth);
+        }
+        if (sheet.zoomRatio != null) {
+          ySheet.set('zoomRatio', sheet.zoomRatio);
+        }
 
         ydocRef.current?.transact(() => {
           sheetArray.push([ySheet]);
