@@ -1092,28 +1092,36 @@ const Toolbar: React.FC<{
                     gap: 4,
                   }}
                 >
-                  {items.map(({ title }) => (
-                    <IconButton
-                      key={title}
-                      isActive={
-                        _.find(items, (item) => `${item.value}` === `${cell?.ht}`)
-                          ?.title === title
-                      }
-                      icon={getLucideIcon(title)}
-                      variant="ghost"
-                      onClick={() => {
-                        setContext((ctx) => {
-                          handleHorizontalAlign(
-                            ctx,
-                            refs.cellInput.current!,
-                            title.replace('align-', ''),
-                          );
-                        });
-                        setOpen(false);
-                      }}
-                      tabIndex={0}
-                    />
-                  ))}
+                  {items.map(({ title }) => {
+                    const active =
+                      _.find(
+                        items,
+                        (item) => `${item.value}` === `${cell?.ht}`,
+                      )?.title === title;
+                    return (
+                      <IconButton
+                        key={title}
+                        isActive={active}
+                        className={active ? 'color-text-on-brand' : undefined}
+                        style={
+                          active ? { backgroundColor: '#FFDF0A' } : undefined
+                        }
+                        icon={getLucideIcon(title)}
+                        variant="ghost"
+                        onClick={() => {
+                          setContext((ctx) => {
+                            handleHorizontalAlign(
+                              ctx,
+                              refs.cellInput.current!,
+                              title.replace('align-', ''),
+                            );
+                          });
+                          setOpen(false);
+                        }}
+                        tabIndex={0}
+                      />
+                    );
+                  })}
                 </Select>
               )}
             </Combo>
@@ -1158,28 +1166,36 @@ const Toolbar: React.FC<{
                     gap: 4,
                   }}
                 >
-                  {items.map(({ title }) => (
-                    <IconButton
-                      key={title}
-                      isActive={
-                        _.find(items, (item) => `${item.value}` === `${cell?.vt}`)
-                          ?.title === title
-                      }
-                      icon={getLucideIcon(title)}
-                      variant="ghost"
-                      onClick={() => {
-                        setContext((ctx) => {
-                          handleVerticalAlign(
-                            ctx,
-                            refs.cellInput.current!,
-                            title.replace('align-', ''),
-                          );
-                        });
-                        setOpen(false);
-                      }}
-                      tabIndex={0}
-                    />
-                  ))}
+                  {items.map(({ title }) => {
+                    const active =
+                      _.find(
+                        items,
+                        (item) => `${item.value}` === `${cell?.vt}`,
+                      )?.title === title;
+                    return (
+                      <IconButton
+                        key={title}
+                        isActive={active}
+                        className={active ? 'color-text-on-brand' : undefined}
+                        style={
+                          active ? { backgroundColor: '#FFDF0A' } : undefined
+                        }
+                        icon={getLucideIcon(title)}
+                        variant="ghost"
+                        onClick={() => {
+                          setContext((ctx) => {
+                            handleVerticalAlign(
+                              ctx,
+                              refs.cellInput.current!,
+                              title.replace('align-', ''),
+                            );
+                          });
+                          setOpen(false);
+                        }}
+                        tabIndex={0}
+                      />
+                    );
+                  })}
                 </Select>
               )}
             </Combo>
@@ -1840,30 +1856,37 @@ const Toolbar: React.FC<{
                     gap: 4,
                   }}
                 >
-                  {items.map(({ iconId, value }) => (
-                    <IconButton
-                      key={value}
-                      isActive={curr.value === value}
-                      icon={getLucideIcon(iconId)}
-                      variant="ghost"
-                      onClick={() => {
-                        setContext((ctx) => {
-                          const d = getFlowdata(ctx);
-                          if (d == null) return;
-                          updateFormat(
-                            ctx,
-                            refs.cellInput.current!,
-                            d,
-                            'tb',
-                            value,
-                            refs.canvas.current!.getContext('2d')!,
-                          );
-                        });
-                        setOpen(false);
-                      }}
-                      tabIndex={0}
-                    />
-                  ))}
+                  {items.map(({ iconId, value }) => {
+                    const active = curr.value === value;
+                    return (
+                      <IconButton
+                        key={value}
+                        isActive={active}
+                        className={active ? 'color-text-on-brand' : undefined}
+                        style={
+                          active ? { backgroundColor: '#FFDF0A' } : undefined
+                        }
+                        icon={getLucideIcon(iconId)}
+                        variant="ghost"
+                        onClick={() => {
+                          setContext((ctx) => {
+                            const d = getFlowdata(ctx);
+                            if (d == null) return;
+                            updateFormat(
+                              ctx,
+                              refs.cellInput.current!,
+                              d,
+                              'tb',
+                              value,
+                              refs.canvas.current!.getContext('2d')!,
+                            );
+                          });
+                          setOpen(false);
+                        }}
+                        tabIndex={0}
+                      />
+                    );
+                  })}
                 </Select>
               )}
             </Combo>

@@ -37,7 +37,7 @@ const CustomButton: React.FC<Props> = ({
         data-testid={`toolbar-cta-${iconName ?? 'custom'}`}
       >
         <span
-          className={`fortune-toolbar-button__icon fortune-toolbar-button__icon--${iconNameClass}`}
+          className={`fortune-toolbar-button__icon fortune-toolbar-button__icon--${iconNameClass} ${selected ? 'color-text-on-brand' : ''}`}
           data-icon-name={iconName ?? undefined}
         >
           <CustomIcon

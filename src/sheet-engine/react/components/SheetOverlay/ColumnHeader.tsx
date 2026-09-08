@@ -28,6 +28,13 @@ import React, {
 import WorkbookContext from '../../context';
 import SVGIcon from '../SVGIcon';
 import { useColumnDragAndDrop } from './drag_and_drop/column-helpers';
+import { getActiveTheme } from '@sheet-engine/core/theme';
+
+// Dark-surface themes: on these the light selection tint must `screen` (lighten)
+// instead of `multiply` (darken), so the canvas header letter keeps ~its default
+// color instead of being darkened into the highlight. The entire-selection case
+// uses the constant brand yellow, which always `multiply`s to stay readable.
+const DARK_THEMES = ['dark', 'theme-green'];
 
 const ColumnHeader: React.FC = () => {
   const { context, setContext, refs } = useContext(WorkbookContext);
@@ -565,27 +572,35 @@ const ColumnHeader: React.FC = () => {
           )}
         </div>
       ) : null}
-      {selectedLocation.map(({ col, col_pre, c1, c2 }, i) => (
-        <div
-          className={`fortune-col-header-selected ${isEntireColumnSelection ? 'color-bg-brand' : 'color-bg-tertiary'}`}
-          key={i}
-          style={_.assign(
-            {
-              left: col_pre,
-              width: col - col_pre - 1,
-              display: 'block',
-              // backgroundColor: "#EFC703",
-              mixBlendMode: 'multiply' as const,
-            },
-            fixColumnStyleOverflowInFreeze(
-              context,
-              c1,
-              c2,
-              refs.globalCache.freezen?.[context.currentSheetId],
-            ),
-          )}
-        />
-      ))}
+      {selectedLocation.map(({ col, col_pre, c1, c2 }, i) => {
+        const overlayBlend: React.CSSProperties['mixBlendMode'] =
+          isEntireColumnSelection
+            ? 'multiply'
+            : DARK_THEMES.includes(getActiveTheme())
+              ? 'screen'
+              : 'multiply';
+        return (
+          <div
+            className={`fortune-col-header-selected ${isEntireColumnSelection ? 'color-bg-brand' : 'color-bg-tertiary'}`}
+            key={i}
+            style={_.assign(
+              {
+                left: col_pre,
+                width: col - col_pre - 1,
+                display: 'block',
+                // backgroundColor: "#EFC703",
+                mixBlendMode: overlayBlend,
+              },
+              fixColumnStyleOverflowInFreeze(
+                context,
+                c1,
+                c2,
+                refs.globalCache.freezen?.[context.currentSheetId],
+              ),
+            )}
+          />
+        );
+      })}
       {/* placeholder to overflow the container, making the container scrollable */}
       <div
         className="luckysheet-cols-h-cells luckysheetsheetchange"
