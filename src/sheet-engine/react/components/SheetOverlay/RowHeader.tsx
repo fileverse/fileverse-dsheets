@@ -26,6 +26,9 @@ import React, {
 } from 'react';
 import WorkbookContext from '../../context';
 import { useRowDragAndDrop } from './drag_and_drop/row-helpers';
+import { getActiveTheme } from '@sheet-engine/core/theme';
+
+const DARK_THEMES = ['dark', 'theme-green'];
 
 type HoverLoc = { row: number; row_pre: number; row_index: number };
 type SelectedLoc = { row: number; row_pre: number; r1: number; r2: number };
@@ -523,26 +526,34 @@ const RowHeader: React.FC = () => {
           )}
         />
       ) : null}
-      {selectedLocation.map(({ row, row_pre, r1, r2 }, i) => (
-        <div
-          className={`fortune-row-header-selected ${isEntireRowSelection ? 'color-bg-brand' : 'color-bg-tertiary'}`}
-          key={i}
-          style={_.assign(
-            {
-              top: row_pre,
-              height: row - row_pre - 1,
-              display: 'block',
-              mixBlendMode: 'multiply' as const,
-            },
-            fixRowStyleOverflowInFreeze(
-              context,
-              r1,
-              r2,
-              refs.globalCache.freezen?.[context.currentSheetId],
-            ),
-          )}
-        />
-      ))}
+      {selectedLocation.map(({ row, row_pre, r1, r2 }, i) => {
+        const overlayBlend: React.CSSProperties['mixBlendMode'] =
+          isEntireRowSelection
+            ? 'multiply'
+            : DARK_THEMES.includes(getActiveTheme())
+              ? 'screen'
+              : 'multiply';
+        return (
+          <div
+            className={`fortune-row-header-selected ${isEntireRowSelection ? 'color-bg-brand' : 'color-bg-tertiary'}`}
+            key={i}
+            style={_.assign(
+              {
+                top: row_pre,
+                height: row - row_pre - 1,
+                display: 'block',
+                mixBlendMode: overlayBlend,
+              },
+              fixRowStyleOverflowInFreeze(
+                context,
+                r1,
+                r2,
+                refs.globalCache.freezen?.[context.currentSheetId],
+              ),
+            )}
+          />
+        );
+      })}
       {/* placeholder to overflow the container, making the container scrollable */}
       <div
         style={{ height: context.rh_height, width: 1 }}

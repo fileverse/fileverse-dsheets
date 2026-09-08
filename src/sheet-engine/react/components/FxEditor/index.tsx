@@ -99,7 +99,7 @@ const FxEditor: React.FC = () => {
       : null;
   const lockedFormulaSearchTop =
     formulaSearchActiveCellKey &&
-    formulaSearchTopLockRef.current?.cellKey === formulaSearchActiveCellKey
+      formulaSearchTopLockRef.current?.cellKey === formulaSearchActiveCellKey
       ? formulaSearchTopLockRef.current.top
       : null;
   const prevCellUpdate = usePrevious<any[]>(context.luckysheetCellUpdate);
@@ -345,7 +345,7 @@ const FxEditor: React.FC = () => {
         setFormulaEditorOwner(draftCtx, 'fx');
         const last =
           draftCtx.luckysheet_select_save![
-            draftCtx.luckysheet_select_save!.length - 1
+          draftCtx.luckysheet_select_save!.length - 1
           ];
 
         const row_index = last.row_focus;
@@ -601,8 +601,8 @@ const FxEditor: React.FC = () => {
             createRangeHightlight(
               draftCtx,
               refs.fxInput.current?.innerHTML ||
-                refs.cellInput.current?.innerHTML ||
-                '',
+              refs.cellInput.current?.innerHTML ||
+              '',
             );
             if (!onForeignSheet) {
               moveHighlightCell(draftCtx, 'down', 0, 'rangeOfSelect');
@@ -786,7 +786,7 @@ const FxEditor: React.FC = () => {
                 draftCtx.luckysheet_select_save = _.cloneDeep(selSnapshot);
                 const lastSel =
                   draftCtx.luckysheet_select_save[
-                    draftCtx.luckysheet_select_save.length - 1
+                  draftCtx.luckysheet_select_save.length - 1
                   ];
                 lastSel.row_focus = lastCellUpdate[0];
                 lastSel.column_focus = lastCellUpdate[1];
