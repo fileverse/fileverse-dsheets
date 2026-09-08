@@ -3,6 +3,10 @@
   "private": false,
   "description": "DSheet",
   "version": "4.1.7",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fileverse/fileverse-dsheets.git"
+  },
   "main": "dist/index.es.js",
   "module": "dist/index.es.js",
   "exports": {
