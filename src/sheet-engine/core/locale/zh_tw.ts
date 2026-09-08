@@ -11287,6 +11287,7 @@ export default {
     '華文新魏',
     '華文行楷',
     '華文隸書',
+    'Calibri',
   ],
   fontjson: {
     'times new roman': 0,
@@ -11311,6 +11312,7 @@ export default {
     stxingkai: 11,
     華文隸書: 12,
     stliti: 12,
+    calibri: 13,
   },
   border: {
     borderTop: '上框線',
