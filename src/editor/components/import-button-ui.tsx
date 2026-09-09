@@ -16,18 +16,22 @@ import { ExportMenuSection } from './export-menu-section';
 import './import-button.scss';
 const MAX_FILE_SIZE = 4 * 1024 * 1024;
 
-/** Import modes that only apply to CSV; invalid if XLSX is selected. */
+/** Import modes that only apply to CSV; invalid if XLSX/ODS is selected. */
 const CSV_ONLY_IMPORT_TYPES = new Set([
   'replace-current-sheet',
   'append-to-current-sheet',
   'replace-data-at-selected-cell',
 ]);
 
+const WORKBOOK_IMPORT_EXTENSIONS = new Set(['xlsx', 'ods']);
+
 export const CustomButton = ({
   setExportDropdownOpen,
   handleCSVUpload,
   handleXLSXUpload,
+  handleODSUpload,
   handleExportToXLSX,
+  handleExportToODS,
   handleExportToCSV,
   handleExportToJSON,
 }: {
@@ -43,7 +47,13 @@ export const CustomButton = ({
     file: any,
     importType: string,
   ) => void | Promise<void>;
+  handleODSUpload: (
+    event: ChangeEventHandler<HTMLInputElement> | undefined,
+    file: any,
+    importType: string,
+  ) => void | Promise<void>;
   handleExportToXLSX: () => void;
+  handleExportToODS: () => void;
   handleExportToCSV: () => void;
   handleExportToJSON: () => void;
 }) => {
@@ -56,19 +66,20 @@ export const CustomButton = ({
   const [separatorType, setSeparatorType] = useState('auto');
 
   useEffect(() => {
-    if (extension !== 'xlsx') return;
+    if (!WORKBOOK_IMPORT_EXTENSIONS.has(extension)) return;
     setImportType((prev) =>
       CSV_ONLY_IMPORT_TYPES.has(prev) ? 'new-dsheet' : prev,
     );
   }, [extension]);
 
   const handleApplyData = async () => {
-    if (extension === 'xlsx') {
+    if (extension === 'xlsx' || extension === 'ods') {
       if (file && importType === 'new-dsheet') {
         const url = URL.createObjectURL(file);
+        const queryKey = extension === 'ods' ? 'ods' : 'xlsx';
         setTimeout(() => {
           window.open(
-            `/sheet/create?xlsx=${encodeURIComponent(url)}`,
+            `/sheet/create?${queryKey}=${encodeURIComponent(url)}`,
             '_blank',
           );
         }, 0);
@@ -76,7 +87,9 @@ export const CustomButton = ({
       } else {
         setIsImporting(true);
         try {
-          await Promise.resolve(handleXLSXUpload(undefined, file, importType));
+          const upload =
+            extension === 'ods' ? handleODSUpload : handleXLSXUpload;
+          await Promise.resolve(upload(undefined, file, importType));
         } finally {
           setIsImporting(false);
           setOpenImportTypeModal(false);
@@ -140,6 +153,7 @@ export const CustomButton = ({
         <ExportMenuSection
           handleExportToJSON={handleExportToJSON}
           handleExportToXLSX={handleExportToXLSX}
+          handleExportToODS={handleExportToODS}
           handleExportToCSV={handleExportToCSV}
           onItemClick={() => setIsOpen(false)}
         />
@@ -177,6 +191,38 @@ export const CustomButton = ({
               data-testid="import-xlsx-input"
               onChange={(e) => {
                 setExtension('xlsx');
+                setFile(e.target.files?.[0]);
+                setImportType('new-dsheet');
+                setOpenImportTypeModal(true);
+                setIsOpen(false);
+                e.target.value = '';
+              }}
+              style={{ display: 'none' }}
+            />
+          </div>
+          <div className="btn dsheet-import-actions">
+            <button
+              type="button"
+              className="dsheet-btn dsheet-btn--import-ods hover:color-bg-default-hover h-8 rounded p-2 w-full text-left flex items-center justify-start space-x-2 transition"
+              data-testid="import-ods-button"
+            >
+              <LucideIcon name="FileExport" />
+              <label
+                htmlFor="ods-upload"
+                className="dsheet-label text-body-sm w-full cursor-pointer"
+              >
+                <span className="dsheet-text dsheet-text--body">
+                  Import .ods
+                </span>
+              </label>
+            </button>
+            <input
+              type="file"
+              accept=".ods"
+              id="ods-upload"
+              data-testid="import-ods-input"
+              onChange={(e) => {
+                setExtension('ods');
                 setFile(e.target.files?.[0]);
                 setImportType('new-dsheet');
                 setOpenImportTypeModal(true);
@@ -318,7 +364,8 @@ export const CustomButton = ({
                         csvOnly: true,
                       },
                     ].map((cat) => {
-                      const isDisabled = cat.csvOnly && extension === 'xlsx';
+                      const isDisabled =
+                        cat.csvOnly && WORKBOOK_IMPORT_EXTENSIONS.has(extension);
                       return (
                         <SelectItem
                           key={cat.id}

@@ -42,6 +42,7 @@ import {
   updateContextWithSheetData,
   jfrefreshgrid,
 } from '@sheet-engine/core';
+import { clearMeasureTextCache } from '@sheet-engine/core/modules/text';
 import { applyCellFormatRangesToData, getCellFormatRangeGridBounds } from '@sheet-engine/core/utils/range-format';
 import { applyMergeConfigToData } from '@sheet-engine/core/utils/merge-hydrate';
 import { activePalette, setActiveGridPalette, type ThemeKey } from '@sheet-engine/core/theme';
@@ -922,6 +923,30 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
         });
       }
     }, [theme, setContextWithProduce]);
+
+    // Webfonts (e.g. Calibri → Carlito) may resolve after the first canvas paint.
+    // Reload Calibri and redraw so committed cells don't stay stuck on the Arial fallback.
+    useEffect(() => {
+      if (typeof document === 'undefined' || !document.fonts?.load) return;
+      let cancelled = false;
+      const refreshAfterFonts = () => {
+        if (cancelled) return;
+        clearMeasureTextCache();
+        setContextWithProduce((draftCtx) => {
+          jfrefreshgrid(draftCtx, null, undefined);
+        });
+      };
+      Promise.all([
+        document.fonts.load('10pt "Calibri"'),
+        document.fonts.load('bold 10pt "Calibri"'),
+        document.fonts.ready,
+      ])
+        .then(refreshAfterFonts)
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }, [setContextWithProduce]);
 
     const currentSheet = useMemo(() => {
       return context?.luckysheetfile?.find(

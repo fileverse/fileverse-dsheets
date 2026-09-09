@@ -1,9 +1,56 @@
+/* System / webfont faces.
+ *
+ * Calibri is Microsoft-proprietary and often missing (macOS without Office).
+ * Carlito is metric-compatible and used as the webfont fallback so canvas +
+ * DOM both render a Calibri-like face when the system font is unavailable.
+ */
 
-/* System Font Faces */
 @font-face {
   font-family: 'Calibri';
-  src: local('Calibri');
+  font-style: normal;
+  font-weight: 400;
   font-display: swap;
+  src:
+    local('Calibri'),
+    url('@fontsource/carlito/files/carlito-latin-400-normal.woff2')
+      format('woff2'),
+    url('@fontsource/carlito/files/carlito-latin-400-normal.woff') format('woff');
+}
+
+@font-face {
+  font-family: 'Calibri';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src:
+    local('Calibri Italic'),
+    url('@fontsource/carlito/files/carlito-latin-400-italic.woff2')
+      format('woff2'),
+    url('@fontsource/carlito/files/carlito-latin-400-italic.woff') format('woff');
+}
+
+@font-face {
+  font-family: 'Calibri';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src:
+    local('Calibri Bold'),
+    url('@fontsource/carlito/files/carlito-latin-700-normal.woff2')
+      format('woff2'),
+    url('@fontsource/carlito/files/carlito-latin-700-normal.woff') format('woff');
+}
+
+@font-face {
+  font-family: 'Calibri';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src:
+    local('Calibri Bold Italic'),
+    url('@fontsource/carlito/files/carlito-latin-700-italic.woff2')
+      format('woff2'),
+    url('@fontsource/carlito/files/carlito-latin-700-italic.woff') format('woff');
 }
 
 @font-face {

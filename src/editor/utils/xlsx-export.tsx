@@ -15,3 +15,13 @@ export const handleExportToXLSX = async (
   const { handleExportToXLSX: runExport } = await import('./xlsx-export-impl');
   return runExport(workbookRef, ydocRef, dsheetId, getDocumentTitle);
 };
+
+export const handleExportToODS = async (
+  workbookRef: MutableRefObject<WorkbookInstance | null>,
+  ydocRef: MutableRefObject<Y.Doc | null>,
+  dsheetId: string,
+  getDocumentTitle?: (dsheetId: string) => Promise<string>,
+): Promise<void> => {
+  const { handleExportToODS: runExport } = await import('./xlsx-export-impl');
+  return runExport(workbookRef, ydocRef, dsheetId, getDocumentTitle);
+};

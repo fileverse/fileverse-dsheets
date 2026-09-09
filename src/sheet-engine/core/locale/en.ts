@@ -11285,10 +11285,16 @@ export default {
   fontFamily: {
     MicrosoftYaHei: 'YaHei',
   },
-  fontarray: ['Arial', 'Times New Roman', 'Tahoma', 'Verdana'],
+  fontarray: ['Arial', 'Times New Roman', 'Tahoma', 'Verdana', 'Calibri'],
   // fontjson MUST match fontarray index order (used to map a pasted font-family
   // name back to an ff index). Arial=0 here to match fontarray[0]='Arial'.
-  fontjson: { arial: 0, 'times new roman': 1, tahoma: 2, verdana: 3 },
+  fontjson: {
+    arial: 0,
+    'times new roman': 1,
+    tahoma: 2,
+    verdana: 3,
+    calibri: 4,
+  },
   border: {
     borderTop: 'Top border',
     borderBottom: 'Bottom border',

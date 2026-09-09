@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import { handleCSVUpload } from './csv-import';
 import { removeFileExtension } from './export-filename';
 
-export type SpreadsheetImportFileType = 'xlsx' | 'csv';
+export type SpreadsheetImportFileType = 'xlsx' | 'csv' | 'ods';
 
 export type ImportSpreadsheetFileOptions = {
   type: SpreadsheetImportFileType;
@@ -86,6 +86,12 @@ export async function importSpreadsheetFile(
         { suppressUiWarnings: true },
       );
     } else {
+      let importFile = file;
+      if (options.type === 'ods') {
+        const { convertOdsFileToXlsxFile } = await import('./ods-to-xlsx');
+        importFile = await convertOdsFileToXlsxFile(file);
+      }
+
       const { runXlsxFileUpload } = await import(
         '../hooks/use-xlsx-import-impl'
       );
@@ -102,7 +108,7 @@ export async function importSpreadsheetFile(
           setFilterToastShown: noopSetState,
         },
         undefined,
-        file,
+        importFile,
         'new-dsheet',
         {
           generateSheetId: generateId,
