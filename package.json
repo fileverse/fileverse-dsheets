@@ -2,7 +2,7 @@
   "name": "@fileverse-dev/dsheet",
   "private": false,
   "description": "DSheet",
-  "version": "4.1.7-ods-a",
+  "version": "4.1.8",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fileverse/fileverse-dsheets.git"
