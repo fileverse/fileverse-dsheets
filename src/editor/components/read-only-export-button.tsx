@@ -15,6 +15,7 @@ type ReadOnlyExportButtonProps = ExportHandlers & {
 export const ReadOnlyExportButton = ({
   setExportDropdownOpen,
   handleExportToXLSX,
+  handleExportToODS,
   handleExportToCSV,
   handleExportToJSON,
 }: ReadOnlyExportButtonProps) => {
@@ -53,6 +54,7 @@ export const ReadOnlyExportButton = ({
         <ExportMenuSection
           handleExportToJSON={handleExportToJSON}
           handleExportToXLSX={handleExportToXLSX}
+          handleExportToODS={handleExportToODS}
           handleExportToCSV={handleExportToCSV}
           onItemClick={() => setIsOpen(false)}
           testIdPrefix="export-only"

@@ -33,7 +33,7 @@ import { updateYdocSheetData, SheetChangePath } from '../utils/update-ydoc';
 import { applyCellFormatRangesCommits } from '../../sheet-engine/core/utils/mirror-cell-format-ranges';
 import { invalidateFormulaWorkerSnapshot } from '../../sheet-engine/core/modules/formula-worker-bridge';
 import { handleCSVUpload } from '../utils/csv-import';
-import { handleExportToXLSX } from '../utils/xlsx-export';
+import { handleExportToXLSX, handleExportToODS } from '../utils/xlsx-export';
 import { handleExportToCSV } from '../utils/csv-export';
 import { handleExportToJSON } from '../utils/json-export';
 import { useXLSXImport } from '../hooks/use-xlsx-import';
@@ -362,8 +362,8 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     };
   }, [isReadOnly]);
 
-  // Initialize XLSX import functionality
-  const { handleXLSXUpload } = useXLSXImport({
+  // Initialize XLSX / ODS import functionality
+  const { handleXLSXUpload, handleODSUpload } = useXLSXImport({
     sheetEditorRef,
     ydocRef,
     setForceSheetRender,
@@ -377,6 +377,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     setIsDataLoaded,
     setSelectedTemplate,
     handleXLSXUpload,
+    handleODSUpload,
     handleCSVUpload,
     ydocRef,
     dsheetId,
@@ -478,6 +479,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
               ? getReadOnlyCustomToolbarItems({
                 setExportDropdownOpen,
                 handleExportToXLSX,
+                handleExportToODS,
                 handleExportToCSV,
                 handleExportToJSON,
                 sheetEditorRef,
@@ -497,7 +499,10 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
               handleCSVUpload,
               // @ts-ignore
               handleXLSXUpload,
+              // @ts-ignore
+              handleODSUpload,
               handleExportToXLSX,
+              handleExportToODS,
               handleExportToCSV,
               handleExportToJSON,
               sheetEditorRef,

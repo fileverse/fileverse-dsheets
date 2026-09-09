@@ -88,6 +88,37 @@ export const handleExportToXLSX = async (
   dsheetId: string,
   getDocumentTitle?: (dsheetId: string) => Promise<string>,
 ) => {
+  return exportFortuneWorkbook(
+    workbookRef,
+    ydocRef,
+    dsheetId,
+    getDocumentTitle,
+    'xlsx',
+  );
+};
+
+export const handleExportToODS = async (
+  workbookRef: MutableRefObject<WorkbookInstance | null>,
+  ydocRef: MutableRefObject<Y.Doc | null>,
+  dsheetId: string,
+  getDocumentTitle?: (dsheetId: string) => Promise<string>,
+) => {
+  return exportFortuneWorkbook(
+    workbookRef,
+    ydocRef,
+    dsheetId,
+    getDocumentTitle,
+    'ods',
+  );
+};
+
+const exportFortuneWorkbook = async (
+  workbookRef: MutableRefObject<WorkbookInstance | null>,
+  ydocRef: MutableRefObject<Y.Doc | null>,
+  dsheetId: string,
+  getDocumentTitle: ((dsheetId: string) => Promise<string>) | undefined,
+  format: 'xlsx' | 'ods',
+) => {
   if (!workbookRef.current || !ydocRef.current) return;
 
   try {
@@ -441,6 +472,26 @@ export const handleExportToXLSX = async (
 
     const title = (await getDocumentTitle?.(dsheetId)) || 'Untitled';
 
+    // ODS: SheetJS can write OpenDocument directly. Skip the ExcelJS pass
+    // (validations / CF / images) — those are XLSX-specific today.
+    if (format === 'ods') {
+      const odsBuffer: ArrayBuffer = XLSXWrite(workbook, {
+        bookType: 'ods',
+        type: 'array',
+        compression: true,
+      });
+      const blob = new Blob([odsBuffer], {
+        type: 'application/vnd.oasis.opendocument.spreadsheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title}.ods`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
     // Pass 1: write to buffer with xlsx-js-style (preserves all cell styling)
     const xlsxBuffer: ArrayBuffer = XLSXWrite(workbook, {
       bookType: 'xlsx',
@@ -647,7 +698,7 @@ export const handleExportToXLSX = async (
       description:
         error instanceof Error && error.message
           ? error.message
-          : 'Something went wrong while exporting to .xlsx. Please try again.',
+          : `Something went wrong while exporting to .${format}. Please try again.`,
       variant: 'error',
       showCloseButton: true,
       duration: 10 * 1000,

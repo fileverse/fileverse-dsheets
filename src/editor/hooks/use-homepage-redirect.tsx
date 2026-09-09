@@ -6,6 +6,7 @@ export const usehandleHomepageRedirect = ({
   setIsDataLoaded,
   setSelectedTemplate,
   handleXLSXUpload,
+  handleODSUpload,
   handleCSVUpload,
   ydocRef,
   dsheetId,
@@ -17,6 +18,7 @@ export const usehandleHomepageRedirect = ({
   setIsDataLoaded: React.Dispatch<React.SetStateAction<boolean>>;
   setSelectedTemplate?: React.Dispatch<React.SetStateAction<string>>;
   handleXLSXUpload: any;
+  handleODSUpload: any;
   handleCSVUpload: any;
   ydocRef: React.RefObject<Y.Doc | null>;
   dsheetId: string;
@@ -44,6 +46,31 @@ export const usehandleHomepageRedirect = ({
         .finally(() => {
           setIsDataLoaded(true);
           params.delete('xlsx');
+          window.history.replaceState(
+            {},
+            '',
+            `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`,
+          );
+        });
+    }
+
+    const odsFileUrl = params.get('ods');
+
+    if (odsFileUrl) {
+      setIsDataLoaded(false);
+      fetch(odsFileUrl)
+        .then((res) => res.blob())
+        .then((blob) => {
+          const file = new File([blob], 'import.ods');
+          if (file) {
+            Promise.resolve(handleODSUpload(undefined, file)).finally(() => {
+              setIsDataLoaded(true);
+            });
+          }
+        })
+        .finally(() => {
+          setIsDataLoaded(true);
+          params.delete('ods');
           window.history.replaceState(
             {},
             '',

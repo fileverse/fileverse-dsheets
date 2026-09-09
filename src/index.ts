@@ -76,7 +76,7 @@ export {
   type ImportSpreadsheetFileResult,
   type SpreadsheetImportFileType,
 } from './editor/utils/spreadsheet-import';
-export { handleExportToXLSX } from './editor/utils/xlsx-export';
+export { handleExportToXLSX, handleExportToODS } from './editor/utils/xlsx-export';
 export { handleExportToCSV } from './editor/utils/csv-export';
 export { handleExportToJSON } from './editor/utils/json-export';
 export { useXLSXImport } from './editor/hooks/use-xlsx-import';
