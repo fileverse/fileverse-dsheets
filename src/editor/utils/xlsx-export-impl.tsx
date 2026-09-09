@@ -20,6 +20,10 @@ import {
   concatInlineStrRunsText,
   getFirstHyperlinkEntry,
 } from './xlsx-hyperlink-inline';
+import {
+  sanitizeWorksheetForOds,
+  toSheetJsCellType,
+} from './ods-export-sanitize';
 
 function sheetModelHasFilter(sheetModel: any): boolean {
   const filter = sheetModel?.filter;
@@ -261,9 +265,8 @@ const exportFortuneWorkbook = async (
         // -----------------------------
         if (v.ct) {
           if (v.ct.fa) newCell.z = v.ct.fa;
-          // inlineStr is handled above; map 'd' → 'n' for dates; pass through other types
           if (v.ct.t && v.ct.t !== 'inlineStr') {
-            newCell.t = v.ct.t === 'd' ? 'n' : v.ct.t;
+            newCell.t = toSheetJsCellType(v.ct.t, newCell.v);
           }
         }
 
@@ -466,6 +469,10 @@ const exportFortuneWorkbook = async (
         );
       }
       usedSheetNames.add(subSheetName);
+
+      if (format === 'ods') {
+        sanitizeWorksheetForOds(worksheet);
+      }
 
       XLSXUtil.book_append_sheet(workbook, worksheet, subSheetName);
     });
