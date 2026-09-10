@@ -275,6 +275,9 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
     onSendComment(newKey, 'sidebar-comment-add');
   }, [commentsData, onSendComment]);
 
+  const hasVisibleComments = Object.keys(filteredComments).length > 0;
+  const showGuestJoinCentered = !isAuthenticated && !hasVisibleComments;
+
   const [isHovered, setIsHovered] = React.useState(new Set<string>());
 
   const handleHover = (key: string) => {
@@ -288,8 +291,9 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
   };
 
   return (
-    <div>
-      {/* Filter Bar */}
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      {/* Filter Bar — hidden on the guest join empty state to match Figma */}
+      {!showGuestJoinCentered && (
       <div className="flex items-center gap-2 px-2 py-2 border-b color-border-default">
         <DynamicDropdown
           align="start"
@@ -352,10 +356,16 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
           }
         />
       </div>
+      )}
 
       {/* Comments List */}
-      <div className="flex flex-col h-[calc(100vh-445px)] overflow-y-auto no-scrollbar">
-        {Object.entries(filteredComments)
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto no-scrollbar">
+        {showGuestJoinCentered ? (
+          <div className="flex flex-1 items-center justify-center px-4">
+            {unauthenticatedFallback ?? null}
+          </div>
+        ) : (
+        Object.entries(filteredComments)
           .sort(([, a], [, b]) => {
             const dateA = new Date(a?.createdAt ?? '').getTime();
             const dateB = new Date(b?.createdAt ?? '').getTime();
@@ -482,10 +492,12 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
                 )}
               </div>
             );
-          })}
+          })
+        )}
       </div>
 
-      {/* New Comment Section */}
+      {/* New Comment Section — guest empty state centers join UI in the list above */}
+      {!showGuestJoinCentered && (
       <div className="border-t p-2 space-lg">
         {!isAuthenticated ? (
           unauthenticatedFallback ?? null
@@ -520,6 +532,7 @@ export const CommentsContent: React.FC<CommentsContentProps> = ({
           </>
         )}
       </div>
+      )}
     </div>
   );
 };

@@ -42,6 +42,17 @@ export const CommentCellUI: React.FC<CommentCellUIProps> = ({
     removeCommentFromCell(row, col);
   };
 
+  const cellLoginFallback = (() => {
+    if (!unauthenticatedFallback) return null;
+    if (React.isValidElement(unauthenticatedFallback)) {
+      return React.cloneElement(
+        unauthenticatedFallback as React.ReactElement<{ fromCell?: boolean }>,
+        { fromCell: true },
+      );
+    }
+    return unauthenticatedFallback;
+  })();
+
   // No comment yet — nothing to show in read-only mode (can't add one).
   if (!comment && disabled) {
     return null;
@@ -49,7 +60,11 @@ export const CommentCellUI: React.FC<CommentCellUIProps> = ({
 
   // No comment yet — join/login before composing.
   if (!comment && !isAuthenticated) {
-    return <>{unauthenticatedFallback ?? null}</>;
+    return (
+      <div className="flex w-[298px] max-w-[298px] min-w-0 flex-col overflow-hidden color-bg-default border color-border-default border-radius-sm p-3 box-border">
+        {cellLoginFallback}
+      </div>
+    );
   }
 
   // No comment yet — always show the input regardless of hover/click,
@@ -162,8 +177,8 @@ export const CommentCellUI: React.FC<CommentCellUIProps> = ({
             </div>
           </div>
         ) : !isAuthenticated ? (
-          <div className="space-sm color-bg-secondary">
-            {unauthenticatedFallback ?? null}
+          <div className="space-sm color-bg-secondary min-w-0 overflow-hidden">
+            {cellLoginFallback}
           </div>
         ) : comment.isResolved ? (
           <div className="space-sm color-bg-secondary">
