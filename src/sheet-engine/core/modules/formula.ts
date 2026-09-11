@@ -107,7 +107,7 @@ function formulaDebugStable(value: any) {
   }
   return preview;
 }
-const simpleSheetName = '[A-Za-z0-9_\u00C0-\u02AF]+';
+const simpleSheetName = "[^'!:]+";
 const quotedSheetName = "'(?:(?!').|'')*'";
 const sheetNameRegexp = `(${simpleSheetName}|${quotedSheetName})!`;
 // Used for sheet-qualified refs like `'Sheet 1'!A1`, `'Sheet'!A:A`, `'Sheet'!1:1`.
