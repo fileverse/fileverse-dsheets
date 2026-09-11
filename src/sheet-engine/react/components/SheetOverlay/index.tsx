@@ -363,6 +363,15 @@ const SheetOverlay: React.FC = () => {
     });
   }, [setContext]);
 
+  // Note: this debounce only ever fires the "hide" branch of showLinkCard (link == null
+  // clears ctx.linkCard) — when hovering an actual link, showLinkCard is called
+  // synchronously below and this debounced call is invoked with skip=true just to cancel
+  // any pending hide from a previous non-link hover. So this wait controls how long the
+  // hover-preview card lingers after the mouse leaves the linked cell; keep it short so the
+  // card disappears quickly, while still bridging the small gap the pointer crosses when
+  // moving from the cell down into the card itself.
+  const LINK_CARD_HIDE_DELAY_MS = 100;
+
   const debouncedShowLinkCard = useMemo(
     () =>
       _.debounce(
@@ -378,7 +387,7 @@ const SheetOverlay: React.FC = () => {
             showLinkCard(draftCtx, r, c, undefined, isEditing);
           });
         },
-        800,
+        LINK_CARD_HIDE_DELAY_MS,
       ),
     [setContext],
   );

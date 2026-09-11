@@ -61,7 +61,13 @@ export const CommentCellUI: React.FC<CommentCellUIProps> = ({
   // No comment yet — join/login before composing.
   if (!comment && !isAuthenticated) {
     return (
-      <div className="flex w-[298px] max-w-[298px] min-w-0 flex-col overflow-hidden color-bg-default border color-border-default border-radius-sm p-3 box-border">
+      <div
+        className="luckysheet-mousedown-cancel flex w-[298px] max-w-[298px] min-w-0 flex-col overflow-visible color-bg-default border color-border-default border-radius-sm p-3 box-border"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
+        onKeyUp={(e) => e.stopPropagation()}
+      >
         {cellLoginFallback}
       </div>
     );
