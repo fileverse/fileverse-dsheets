@@ -49,7 +49,9 @@ export const EditorRightSidebar = ({
           />
         </div>
       </RightSidebarHeader>
-      {activePanelConfig?.content}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {activePanelConfig?.content}
+      </div>
     </RightSidebar>
   );
 };
