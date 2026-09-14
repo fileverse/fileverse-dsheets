@@ -63,7 +63,9 @@ import {
   isInsertDateShortcut,
   isInsertDateTimeShortcut,
   isInsertTimeShortcut,
+  isRedoShortcut,
   isSelectAllShortcut,
+  isUndoShortcut,
   isUsInsertDateTimeQuoteShortcut,
 } from './keyboard-shortcut-utils';
 import { jfrefreshgrid } from '../modules/refresh';
@@ -634,8 +636,8 @@ export function handleWithCtrlOrMetaKey(
       // $("#luckysheet-rich-text-editor").html(value);
       // luckysheetRangeLast($("#luckysheet-rich-text-editor")[0]);
       handleFormulaInput(ctx, fxInput, cellInput, e.keyCode);
-    } else if (e.code === 'KeyZ') {
-      // Ctrl + shift + z 重做
+    } else if (isRedoShortcut(e)) {
+      // Ctrl + shift + z 重做 (layout-aware: AZERTY types "z" on KeyW)
       handleRedo();
       e.stopPropagation();
       return;
@@ -785,8 +787,8 @@ export function handleWithCtrlOrMetaKey(
 
     e.stopPropagation();
     return;
-  } else if (e.code === 'KeyZ') {
-    // Ctrl + Z  撤销
+  } else if (isUndoShortcut(e)) {
+    // Ctrl + Z  撤销 (layout-aware: AZERTY types "z" on KeyW)
     handleUndo();
     e.stopPropagation();
     return;
