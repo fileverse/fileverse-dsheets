@@ -1,3 +1,5 @@
+import { isUndoRedoShortcut } from '@sheet-engine/core/events/keyboard-shortcut-utils';
+
 export function moveCursorToEnd(editableDiv: HTMLDivElement) {
   editableDiv.focus(); // Ensure the element is focused
 
@@ -68,6 +70,8 @@ export function getSelectionOffsets(editableDiv: HTMLDivElement): {
  */
 export function isEditorUndoRedoKeyEvent(e: KeyboardEvent): boolean {
   if (!e.metaKey && !e.ctrlKey) return false;
+  // Layout-aware (AZERTY types "z" on the KeyW slot, QWERTZ swaps Y/Z).
+  if (isUndoRedoShortcut(e)) return true;
   if (e.code === 'KeyZ' || e.code === 'KeyY') return true;
   return e.keyCode === 90 || e.keyCode === 89;
 }

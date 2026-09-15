@@ -64,6 +64,7 @@ import {
   isStrictFormulaEditorText,
   isFormulaCompleteAtCaret,
 } from '../SheetOverlay/helper';
+import { matchUndoRedoShortcut } from '@sheet-engine/core/events/keyboard-shortcut-utils';
 import { isFormulaSegmentBoundaryKey } from '../SheetOverlay/formula-segment-boundary';
 
 const FxEditor: React.FC = () => {
@@ -644,9 +645,9 @@ const FxEditor: React.FC = () => {
       }
 
       if ((e.metaKey || e.ctrlKey) && context.luckysheetCellUpdate.length > 0) {
-        if (e.code === 'KeyZ' || e.code === 'KeyY') {
-          const isRedo =
-            e.code === 'KeyY' || (e.code === 'KeyZ' && (e as any).shiftKey);
+        const undoRedo = matchUndoRedoShortcut(e as unknown as KeyboardEvent);
+        if (undoRedo) {
+          const isRedo = undoRedo === 'redo';
           // Always intercept undo/redo in-editor to avoid native browser
           // history fighting our snapshot stack.
           e.preventDefault();

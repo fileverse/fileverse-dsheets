@@ -378,6 +378,53 @@ export function isOpenShortcutsModalShortcut(e: KeyboardEvent): boolean {
   );
 }
 
+/**
+ * The Latin letter a chord resolves to, layout-aware.
+ *
+ * `code` is the *US physical slot*, so it is wrong on non-QWERTY layouts:
+ * on AZERTY the key labelled Z is `KeyW` (and `KeyZ` types "w"); on QWERTZ
+ * `KeyZ` types "y" and `KeyY` types "z". `key` carries the character the
+ * user actually typed, so prefer it, and fall back to the physical slot only
+ * for layouts whose `key` is not a Latin letter (Cyrillic, Greek, …).
+ */
+export function letterForShortcut(e: KeyboardEvent): string | null {
+  const { key } = e;
+  if (typeof key === 'string' && /^[a-z]$/i.test(key)) return key.toLowerCase();
+  const slot = /^Key([A-Z])$/.exec(e.code || '');
+  return slot ? slot[1].toLowerCase() : null;
+}
+
+/**
+ * Undo / redo — Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z (redo), Ctrl/Cmd+Y (redo).
+ * Returns which action the chord means, or null. AZERTY/QWERTZ safe.
+ */
+export function matchUndoRedoShortcut(
+  e: KeyboardEvent,
+): 'undo' | 'redo' | null {
+  if (!hasMod(e)) return null;
+  if (isImeOrDeadKey(e)) return null;
+
+  const letter = letterForShortcut(e);
+  if (letter === 'z') return e.shiftKey ? 'redo' : 'undo';
+  if (letter === 'y' && !e.shiftKey) return 'redo';
+  return null;
+}
+
+/** Cmd/Ctrl+Z — undo (AZERTY/QWERTZ safe). */
+export function isUndoShortcut(e: KeyboardEvent): boolean {
+  return matchUndoRedoShortcut(e) === 'undo';
+}
+
+/** Cmd/Ctrl+Shift+Z or Ctrl/Cmd+Y — redo (AZERTY/QWERTZ safe). */
+export function isRedoShortcut(e: KeyboardEvent): boolean {
+  return matchUndoRedoShortcut(e) === 'redo';
+}
+
+/** True for any undo/redo chord, regardless of direction. */
+export function isUndoRedoShortcut(e: KeyboardEvent): boolean {
+  return matchUndoRedoShortcut(e) != null;
+}
+
 /** Label which engine shortcut would match (best-effort; for host debug tooling). */
 export function describeMatchedShortcut(e: KeyboardEvent): string | null {
   if (

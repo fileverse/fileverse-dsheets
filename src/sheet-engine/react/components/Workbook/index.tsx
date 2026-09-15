@@ -59,6 +59,7 @@ import {
   isInsertTimeShortcut,
   isSelectAllShortcut,
   isUsInsertDateTimeQuoteShortcut,
+  matchUndoRedoShortcut,
 } from '@sheet-engine/core/events/keyboard-shortcut-utils';
 import {
   FORMULA_ASYNC_CHUNK_SIZE,
@@ -1560,27 +1561,21 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
         // handling undo and redo ahead because handleUndo and handleRedo
         // themselves are calling setContext, and should not be nested
         // in setContextWithProduce.
-        if (
-          (e.ctrlKey || e.metaKey) &&
-          e.code === 'KeyZ' &&
+        // Layout-aware: `code` is the US physical slot, so AZERTY (Z on
+        // KeyW) / QWERTZ (Y and Z swapped) need the typed character instead.
+        const undoRedo =
           context.luckysheetCellUpdate.length === 0
-        ) {
-          if (e.shiftKey) {
-            handleRedo();
-          } else {
-            handleUndo();
-          }
+            ? matchUndoRedoShortcut(nativeEvent)
+            : null;
+        if (undoRedo === 'undo') {
+          handleUndo();
           e.stopPropagation();
           return;
         }
-        if (
-          (e.ctrlKey || e.metaKey) &&
-          e.code === 'KeyY' &&
-          context.luckysheetCellUpdate.length === 0
-        ) {
+        if (undoRedo === 'redo') {
           handleRedo();
           e.stopPropagation();
-          e.preventDefault();
+          if (!e.shiftKey) e.preventDefault();
           return;
         }
         setContextWithProduce((draftCtx) => {

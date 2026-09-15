@@ -79,6 +79,7 @@ import {
   isFormulaCompleteAtCaret,
   isEditorUndoRedoKeyEvent,
 } from './helper';
+import { matchUndoRedoShortcut } from '@sheet-engine/core/events/keyboard-shortcut-utils';
 import { isFormulaSegmentBoundaryKey } from './formula-segment-boundary';
 import { LucideIcon } from './LucideIcon';
 
@@ -1629,8 +1630,9 @@ const InputBox: React.FC = () => {
       // }
 
       if ((e.metaKey || e.ctrlKey) && context.luckysheetCellUpdate.length > 0) {
-        if (e.code === 'KeyZ' || e.code === 'KeyY') {
-          const isRedo = e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey);
+        const undoRedo = matchUndoRedoShortcut(e as unknown as KeyboardEvent);
+        if (undoRedo) {
+          const isRedo = undoRedo === 'redo';
 
           // Always intercept undo/redo in-editor to prevent native
           // contenteditable history from fighting our snapshot stack.
