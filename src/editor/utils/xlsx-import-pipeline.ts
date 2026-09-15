@@ -100,6 +100,22 @@ function parseA1Address(address: string): { row: number; col: number } | null {
   const col = col1Based - 1;
   return { row, col };
 }
+function quoteSheetNameInRef(formula: string): string {
+  const bang = formula.indexOf('!');
+  if (bang <= 0) return formula;
+  const namePart = formula.slice(0, bang);
+  const rangePart = formula.slice(bang + 1);
+  // Range half must be a valid A1 / A1:B2 / A:A / 1:1 (with optional $).
+  const rangeRe =
+    /^(\$?[A-Za-z]+\$?\d+|\$?[A-Za-z]+|\$?\d+)(:(\$?[A-Za-z]+\$?\d+|\$?[A-Za-z]+|\$?\d+))?$/;
+  if (!rangeRe.test(rangePart)) return formula;
+  // Already quoted.
+  if (namePart.startsWith("'") && namePart.endsWith("'")) return formula;
+  // Simple names (no spaces/special chars) don't need quoting.
+  if (/^[A-Za-z0-9_À-ʯ]+$/.test(namePart)) return formula;
+  const escaped = namePart.replace(/'/g, "''");
+  return `'${escaped}'!${rangePart}`;
+}
 
 /** Map ExcelJS DataValidation to project dataVerification entry (row_column key format) */
 function excelDataValidationToSheetEntry(
@@ -120,8 +136,8 @@ function excelDataValidationToSheetEntry(
   const rawFormula =
     Array.isArray(dv.formulae) && dv.formulae.length > 0
       ? String(dv.formulae[0])
-          .replace(/^["']|["']$/g, '')
-          .replace(/["']/g, '')
+        .replace(/^["']|["']$/g, '')
+        .replace(/["']/g, '')
       : '';
   const parts = rawFormula
     .split(',')
@@ -140,6 +156,9 @@ function excelDataValidationToSheetEntry(
     type = 'checkbox';
     value1 = parts[0];
     value2 = parts[1];
+  } else if (type === 'dropdown') {
+    // Re-quote spaced sheet names in cell-range sources (no-op for literal lists).
+    value1 = quoteSheetNameInRef(value1);
   }
 
   // When no color is preset (e.g. from XLSX): one color per option; use predefined list up to 12, then Light Gray for the rest
@@ -644,12 +663,12 @@ export async function parseXlsxWorkbook(
     number,
     {
       type:
-        | 'row'
-        | 'column'
-        | 'both'
-        | 'rangeRow'
-        | 'rangeColumn'
-        | 'rangeBoth';
+      | 'row'
+      | 'column'
+      | 'both'
+      | 'rangeRow'
+      | 'rangeColumn'
+      | 'rangeBoth';
       range: { row_focus: number; column_focus: number };
     }
   > = {};
