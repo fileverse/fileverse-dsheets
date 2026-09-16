@@ -462,8 +462,9 @@
 .luckysheet-bottom-controll-row {
   position: absolute;
   height: 30px;
-  /*width: 400px;*/
-  /* background: #000; */
+  width: 100%;
+  line-height: 20px;
+  background-color: hsl(var(--color-bg-default));
   bottom: 38px;
   left: 0px;
   z-index: 1000;
