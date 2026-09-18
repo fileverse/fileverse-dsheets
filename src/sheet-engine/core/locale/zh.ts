@@ -11256,6 +11256,14 @@ export default {
       value: 'd/M/yyyy',
     },
     {
+      name: '05/08/1930',
+      value: 'dd/MM/yyyy',
+    },
+    {
+      name: '1930-08-05',
+      value: 'yyyy-MM-dd',
+    },
+    {
       name: '1930/8/5',
       value: 'yyyy/MM/dd',
     },
@@ -11264,12 +11272,8 @@ export default {
       value: 'yyyy"年"M"月"d"日"',
     },
     {
-      name: '08-05',
-      value: 'MM-dd',
-    },
-    {
-      name: '8-5',
-      value: 'M-d',
+      name: '5-8',
+      value: 'd-M',
     },
     {
       name: '8月5日',
