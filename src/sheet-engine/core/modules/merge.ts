@@ -98,8 +98,13 @@ export function mergeCells(
 
               fv[`${mc_r}_${mc_c}`] = _.cloneDeep(cell) || {};
             } else {
-              // let cell_clone = fv[mc_r + "_" + mc_c];
-              const cell_clone = _.cloneDeep(fv[`${mc_r}_${mc_c}`]);
+              // The anchor cell may not have been visited yet in this pass (e.g. the
+              // selection only partially overlaps the merged block, or spans multiple
+              // disjoint ranges), so `fv` might not have it cached. Fall back to reading
+              // the anchor straight from the grid instead of assuming traversal order,
+              // so a stray/partial merge reference never crashes the merge operation.
+              const anchorCell = fv[`${mc_r}_${mc_c}`] ?? d[mc_r]?.[mc_c];
+              const cell_clone = _.cloneDeep(anchorCell) || {};
 
               delete cell_clone.v;
               delete cell_clone.m;
@@ -172,8 +177,13 @@ export function mergeCells(
 
                 fv[`${mc_r}_${mc_c}`] = _.cloneDeep(cell) || {};
               } else {
-                // let cell_clone = fv[mc_r + "_" + mc_c];
-                const cell_clone = _.cloneDeep(fv[`${mc_r}_${mc_c}`]);
+                // The anchor cell may not have been visited yet in this pass (e.g. the
+                // selection only partially overlaps the merged block, or spans multiple
+                // disjoint ranges), so `fv` might not have it cached. Fall back to reading
+                // the anchor straight from the grid instead of assuming traversal order,
+                // so a stray/partial merge reference never crashes the merge operation.
+                const anchorCell = fv[`${mc_r}_${mc_c}`] ?? d[mc_r]?.[mc_c];
+                const cell_clone = _.cloneDeep(anchorCell) || {};
 
                 delete cell_clone.v;
                 delete cell_clone.m;
