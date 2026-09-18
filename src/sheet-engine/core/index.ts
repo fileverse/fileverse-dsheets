@@ -373,6 +373,7 @@ export type { FilterDate, FilterValue, FilterColor } from './modules';
 // utils
 export {
   getFreezeState,
+  getFrozenPixelBounds,
   toggleFreeze,
   indexToColumnChar,
   escapeScriptTag,

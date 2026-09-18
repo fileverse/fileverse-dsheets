@@ -12,7 +12,7 @@ export {
   extractFormulaCellOps,
 } from './patch';
 export type { PatchOptions, ChangedSheet } from './patch';
-export { getFreezeState, toggleFreeze } from './freeze';
+export { getFreezeState, getFrozenPixelBounds, toggleFreeze } from './freeze';
 export type { FreezeType } from './freeze';
 
 export function generateRandomSheetName(
