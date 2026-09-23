@@ -66,6 +66,7 @@ import CellDatePicker from './CellDatePicker';
 import usePrevious from '../../hooks/usePrevious';
 import { useFormulaEditorHistory } from '../../hooks/useFormulaEditorHistory';
 import { useRerenderOnFormulaCaret } from '../../hooks/useRerenderOnFormulaCaret';
+import { useLastFormulaCaretOffset } from '../../hooks/useLastFormulaCaretOffset';
 import {
   moveCursorToEnd,
   getCursorPosition,
@@ -1045,6 +1046,11 @@ const InputBox: React.FC = () => {
     }
   }, [context.rangeDialog?.show, context.luckysheetCellUpdate]);
 
+  const lastCellCaretOffsetRef = useLastFormulaCaretOffset(
+    refs.cellInput,
+    context.luckysheetCellUpdate.length > 0,
+  );
+
   // After keeping formula edit open across a sheet switch, restore focus/caret so
   // bare `=` keyboard ref picking continues (tabs steal focus from contenteditable).
   useEffect(() => {
@@ -1061,6 +1067,17 @@ const InputBox: React.FC = () => {
 
     requestAnimationFrame(() => {
       editor.focus({ preventScroll: true });
+      // Put the caret back where the user left it (e.g. after the `,` in
+      // `=SUM('Sheet - 2'!B2,`). Only fall back to "after the first ref" when
+      // we never saw a caret in the editor.
+      const savedOffset = lastCellCaretOffsetRef.current;
+      if (savedOffset != null) {
+        setCursorPosition(
+          editor,
+          Math.min(savedOffset, editor.textContent?.length ?? 0),
+        );
+        return;
+      }
       const managed = editor.querySelector(
         'span.fortune-formula-functionrange-cell',
       ) as HTMLElement | null;
@@ -1091,6 +1108,7 @@ const InputBox: React.FC = () => {
     context,
     refs.cellInput,
     setContext,
+    lastCellCaretOffsetRef,
   ]);
 
   // Cleanup: if input box is no longer active, remove any lingering

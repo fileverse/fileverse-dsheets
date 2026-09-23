@@ -3760,7 +3760,7 @@ function functionHTML(txt: string) {
     braces: 0,
   };
 
-  const appendStrTail = (acc: string, dquote: number) => {
+  const appendStrTail = (acc: string, dquote: number, squote: number) => {
     if (acc.length === 0) {
       return;
     }
@@ -3773,7 +3773,12 @@ function functionHTML(txt: string) {
     let trailingWS = '';
     if (dquote === 0) {
       leadingWS = acc.match(/^\s+/)?.[0] || '';
-      trailingWS = acc.match(/\s+$/)?.[0] || '';
+      // Inside an unclosed single quote (e.g. typing `='Finance ` of
+      // `'Finance - 1'!A1`) trailing spaces belong to the sheet name. Moving
+      // them outside the span shifts the caret before the space, so the next
+      // keystroke lands in the wrong spot and the name collapses to
+      // `Finance-1`.
+      trailingWS = squote > 0 ? '' : acc.match(/\s+$/)?.[0] || '';
       acc = acc.slice(leadingWS.length, acc.length - trailingWS.length);
       if (acc.length === 0) {
         // The whole tail was only whitespace (often a lone `\n` from the
@@ -3984,7 +3989,7 @@ function functionHTML(txt: string) {
     }
 
     if (i === funcstack.length - 1) {
-      appendStrTail(str, matchConfig.dquote);
+      appendStrTail(str, matchConfig.dquote, matchConfig.squote);
     }
 
     i += 1;
