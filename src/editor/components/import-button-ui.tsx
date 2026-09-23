@@ -308,7 +308,9 @@ export const CustomButton = ({
                   className="dsheet-text dsheet-text--error text-[hsla(var(--color-text-danger))] font-[`Helvetica_Neue`] text-[14px] font-normal mt-[4px] leading-[20px]"
                   data-testid="import-modal-file-size-error"
                 >
-                  Can't import this file right now. Try again later.
+                  File too large. The maximum supported file size is 4 MB.{' '}
+                  <br />
+                  Please choose a smaller file.
                 </p>
               )}
             </div>
@@ -365,7 +367,8 @@ export const CustomButton = ({
                       },
                     ].map((cat) => {
                       const isDisabled =
-                        cat.csvOnly && WORKBOOK_IMPORT_EXTENSIONS.has(extension);
+                        cat.csvOnly &&
+                        WORKBOOK_IMPORT_EXTENSIONS.has(extension);
                       return (
                         <SelectItem
                           key={cat.id}
