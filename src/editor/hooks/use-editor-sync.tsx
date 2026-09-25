@@ -10,6 +10,7 @@ import {
   unavailableDsheetContentSnapshot,
 } from '../../persistence-utils';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
+import { compactDsheetPersistence } from '../../persistence-compaction';
 import {
   createCollaborationConnectionController,
   mergePublishedContentIntoYdoc,
@@ -116,6 +117,12 @@ export const useEditorSync = (
     });
           await persistence.whenSynced;
           if (generation !== bootstrapGenerationRef.current) return;
+          // Attaching to a pre-filled doc appends a full copy to IndexedDB.
+          // Collapse the store back to one row in the background so it does
+          // not grow by one full copy per open.
+          void compactDsheetPersistence(persistence).catch((error: unknown) => {
+            console.warn('[DSheet] IndexedDB compaction failed:', error);
+          });
         } catch (error) {
           const indexedDbError =
             error instanceof Error ? error : new Error(String(error));

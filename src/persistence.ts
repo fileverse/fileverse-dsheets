@@ -1,6 +1,7 @@
 import { fromUint8Array, toUint8Array } from 'js-base64';
 import * as Y from 'yjs';
 import { clearDocument, IndexeddbPersistence } from 'y-indexeddb';
+import { compactDsheetPersistence } from './persistence-compaction';
 
 import {
   DEFAULT_DSHEET_PERSISTENCE_TIMEOUT_MS,
@@ -199,6 +200,13 @@ export const mergeDsheetContent = async (
   try {
     persistence = new IndexeddbPersistence(dsheetId, doc);
     await withDsheetPersistenceTimeout(persistence.whenSynced, timeoutMs);
+    // The provider just appended a full copy of `doc`; collapse the store to
+    // one row before closing. Best-effort: a failed compaction keeps the rows.
+    try {
+      await compactDsheetPersistence(persistence);
+    } catch (error) {
+      console.warn('[DSheet] IndexedDB compaction failed:', error);
+    }
     return snapshotDsheetDocument(dsheetId, doc);
   } catch (error) {
     return unavailableDsheetContentSnapshot(
