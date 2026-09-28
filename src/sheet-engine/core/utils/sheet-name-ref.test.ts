@@ -69,6 +69,22 @@ describe('quoteSheetNamesInFormula', () => {
     }
   });
 
+  it('prefers the exact-case sheet when names differ only by case', () => {
+    const caseSheets = ['Sheet-4', 'sheet-4'];
+    expect(quoteSheetNamesInFormula('=sheet-4!A1', caseSheets)).toBe(
+      "='sheet-4'!A1",
+    );
+    expect(quoteSheetNamesInFormula('=Sheet-4!A1', caseSheets)).toBe(
+      "='Sheet-4'!A1",
+    );
+  });
+
+  it('leaves an ambiguous case-insensitive match as typed', () => {
+    expect(
+      quoteSheetNamesInFormula('=SHEET-4!A1+1', ['Sheet-4', 'sheet-4']),
+    ).toBe('=SHEET-4!A1+1');
+  });
+
   it('does not match inside another token', () => {
     expect(quoteSheetNamesInFormula('=XSheet-4!H6', sheets)).toBe(
       '=XSheet-4!H6',
