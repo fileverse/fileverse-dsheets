@@ -50,6 +50,7 @@ import CellDatePicker from '../SheetOverlay/CellDatePicker';
 import usePrevious from '../../hooks/usePrevious';
 import { useFormulaEditorHistory } from '../../hooks/useFormulaEditorHistory';
 import { useRerenderOnFormulaCaret } from '../../hooks/useRerenderOnFormulaCaret';
+import { useLastFormulaCaretOffset } from '../../hooks/useLastFormulaCaretOffset';
 import { LucideIcon } from '../SheetOverlay/LucideIcon';
 
 import {
@@ -295,6 +296,11 @@ const FxEditor: React.FC = () => {
     }
   }, [context.luckysheetCellUpdate, refs.fxInput]);
 
+  const lastFxCaretOffsetRef = useLastFormulaCaretOffset(
+    refs.fxInput,
+    context.luckysheetCellUpdate.length > 0,
+  );
+
   useEffect(() => {
     if (!context.formulaCache.refocusFormulaEditorAfterSheetSwitch) return;
     if (context.luckysheetCellUpdate.length === 0) return;
@@ -309,6 +315,15 @@ const FxEditor: React.FC = () => {
 
     requestAnimationFrame(() => {
       editor.focus({ preventScroll: true });
+      // Restore the caret where the user left it; see InputBox for details.
+      const savedOffset = lastFxCaretOffsetRef.current;
+      if (savedOffset != null) {
+        setCursorPosition(
+          editor,
+          Math.min(savedOffset, editor.textContent?.length ?? 0),
+        );
+        return;
+      }
       const managed = editor.querySelector(
         'span.fortune-formula-functionrange-cell',
       ) as HTMLElement | null;
@@ -331,6 +346,7 @@ const FxEditor: React.FC = () => {
     context,
     refs.fxInput,
     setContext,
+    lastFxCaretOffsetRef,
   ]);
 
   const onFocus = useCallback(() => {

@@ -13,6 +13,11 @@ export {
 } from './patch';
 export type { PatchOptions, ChangedSheet } from './patch';
 export { getFreezeState, getFrozenPixelBounds, toggleFreeze } from './freeze';
+export {
+  sheetNameNeedsQuotes,
+  formatSheetNameForFormula,
+  quoteSheetNamesInFormula,
+} from './sheet-name-ref';
 export type { FreezeType } from './freeze';
 
 export function generateRandomSheetName(
