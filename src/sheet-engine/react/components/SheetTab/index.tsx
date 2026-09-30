@@ -124,15 +124,6 @@ const SheetTab: React.FC = () => {
     [refs.cellInput, setContext, settings],
   );
 
-  const [showDisclaimer, setShowDisclaimer] = useState(true);
-  const handleCloseDisclaimer = () => {
-    setShowDisclaimer(false);
-    const cornerPlus = document.getElementById('corner-plus');
-    if (cornerPlus) {
-      cornerPlus.style.display = 'block';
-    }
-  };
-
   useEffect(() => {
     const cornerPlus = document.getElementById('corner-plus');
     if (cornerPlus) {
@@ -153,54 +144,6 @@ const SheetTab: React.FC = () => {
 
   return (
     <div>
-      {showDisclaimer && (
-        <div
-          className="fortune-sheettab__info fortune-sheettab__disclaimer w-full"
-          id="denomination-warning"
-          data-testid="sheettab-info-disclaimer"
-          style={{
-            zIndex: 1003,
-            position: 'absolute',
-            display: 'none',
-            bottom: '31px',
-            backgroundColor: 'hsl(var(--color-bg-secondary))',
-            borderBottom: '1px solid hsl(var(--color-border-default))',
-            color: 'hsl(var(--color-text-secondary))',
-            fontFamily: 'Helvetica Neue',
-            fontSize: 'var(--font-size-2xsm, 12px)',
-            fontStyle: 'normal',
-            fontWeight: '400',
-          }}
-        >
-          <div
-            className={`max-w-7xl mx-auto px-4 py-1 ${
-              isMobile && 'w-full flex justify-between'
-            }`}
-          >
-            <p
-              className={`fortune-sheettab__para ${
-                isMobile ? 'text-left' : 'text-center'
-              } text-xsm`}
-              data-testid="sheettab-para-disclaimer"
-            >
-              <span className="font-medium">Disclaimer:</span> Prices are not
-              updated in real time and may differ slightly. Updates may be
-              delayed by up to 20 minutes.
-            </p>
-            {isMobile && (
-              // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
-              <p
-                className="fortune-sheettab__action fortune-sheettab__action--close-disclaimer ml-4 content-center cursor-pointer"
-                style={{ alignContent: 'center' }}
-                onClick={handleCloseDisclaimer}
-                data-testid="sheettab-action-close-disclaimer"
-              >
-                Close
-              </p>
-            )}
-          </div>
-        </div>
-      )}
       <div
         className="fortune-sheettab luckysheet-sheet-area luckysheet-noselected-text border-t color-border-default color-bg-secondary"
         onContextMenu={(e) => e.preventDefault()}
@@ -386,11 +329,9 @@ const SheetTab: React.FC = () => {
                     <Button
                       variant="ghost"
                       key={option.value}
-                      className={`fortune-sheettab__stats-option fortune-sheettab__stats-option--${
-                        option.value
-                      } w-full h-8 rounded p-2 m-1 text-left flex items-center justify-between transition mr-2 min-w-[50px] ${
-                        selectedStat === option.value && 'color-bg-secondary'
-                      }`}
+                      className={`fortune-sheettab__stats-option fortune-sheettab__stats-option--${option.value
+                        } w-full h-8 rounded p-2 m-1 text-left flex items-center justify-between transition mr-2 min-w-[50px] ${selectedStat === option.value && 'color-bg-secondary'
+                        }`}
                       data-stat-value={option.value}
                       data-testid={`sheettab-stats-option-${option.value}`}
                       onClick={() => setSelectedStat(option.value)}
