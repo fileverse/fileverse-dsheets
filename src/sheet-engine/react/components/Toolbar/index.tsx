@@ -1004,8 +1004,18 @@ const Toolbar: React.FC<{
               current = cell.ff;
             }
           }
+          const fontStyle = (font?: string) =>
+            font
+              ? { fontFamily: `"${font.replace(/["']/g, '')}", sans-serif` }
+              : undefined;
           return (
-            <Combo text={current} key={name} tooltip={tooltip} showArrow={false}>
+            <Combo
+              text={current}
+              textStyle={fontStyle(current)}
+              key={name}
+              tooltip={tooltip}
+              showArrow={false}
+            >
               {(setOpen) => (
                 <Select>
                   {fontarray.map((o: string) => (
@@ -1021,7 +1031,7 @@ const Toolbar: React.FC<{
                         setOpen(false);
                       }}
                     >
-                      {o}
+                      <span style={fontStyle(o)}>{o}</span>
                     </Option>
                   ))}
                 </Select>
