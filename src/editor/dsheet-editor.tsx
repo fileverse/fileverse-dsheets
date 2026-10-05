@@ -10,6 +10,7 @@ import {
   OnboardingHandlerType,
 } from './types';
 import SkeletonLoader from './components/skeleton-loader';
+import { debugLog, debugWarn } from './utils/debug-log';
 import { EditorProvider, useEditor } from './contexts/editor-context';
 import { EditorWorkbook } from './components/editor-workbook';
 import { ApiKeyModal } from './components/api-key-modal/api-key-modal';
@@ -361,20 +362,20 @@ const EditorContent = ({
   };
   useEffect(() => {
     if (showSkeletonOnly) {
-      console.log(
+      debugLog(
         '[DSheet:Skeleton] showing skeleton',
         dsheetId,
         skeletonStateRef.current,
       );
     } else {
-      console.log('[DSheet:Skeleton] workbook visible', dsheetId);
+      debugLog('[DSheet:Skeleton] workbook visible', dsheetId);
     }
   }, [showSkeletonOnly, skeletonReasonKey, collabState?.status, dsheetId]);
   useEffect(() => {
     if (!showSkeletonOnly) return undefined;
     const startedAt = Date.now();
     const id = window.setInterval(() => {
-      console.warn(
+      debugWarn(
         `[DSheet:Skeleton] still on skeleton after ${Math.round((Date.now() - startedAt) / 1000)}s`,
         dsheetId,
         skeletonStateRef.current,
