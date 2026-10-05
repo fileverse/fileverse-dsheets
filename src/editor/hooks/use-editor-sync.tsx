@@ -15,6 +15,39 @@ import {
   mergePublishedContentIntoYdoc,
 } from './collaboration-lifecycle';
 
+/** Max wait for y-indexeddb replay before the editor renders without it. */
+const INDEXEDDB_SYNC_TIMEOUT_MS = 15_000;
+
+/**
+ * y-indexeddb's `whenSynced` only resolves on its 'synced' event: if
+ * `indexedDB.open` rejects, it never settles and never emits 'error', which
+ * left the editor on the skeleton forever. Reject on open failure; resolve
+ * 'timeout' when replay is merely slow so the caller can keep the provider.
+ */
+const waitForIndexeddbSync = (
+  persistence: IndexeddbPersistence,
+): Promise<'synced' | 'timeout'> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => resolve('timeout'),
+      INDEXEDDB_SYNC_TIMEOUT_MS,
+    );
+    persistence.whenSynced.then(
+      () => {
+        clearTimeout(timer);
+        resolve('synced');
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+    persistence._db.catch((error: unknown) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+
 export const useEditorSync = (
   dsheetId: string,
   enableIndexeddbSync = true,
@@ -114,8 +147,15 @@ export const useEditorSync = (
             );
             onIndexedDbErrorRef.current?.(indexedDbError);
     });
-          await persistence.whenSynced;
+          const result = await waitForIndexeddbSync(persistence);
           if (generation !== bootstrapGenerationRef.current) return;
+          if (result === 'timeout') {
+            // Slow replay, not a failure: keep the provider so late replay
+            // still merges and edits still persist once the DB opens.
+            console.warn(
+              `[DSheet] IndexedDB sync exceeded ${INDEXEDDB_SYNC_TIMEOUT_MS}ms — rendering without waiting`,
+            );
+          }
         } catch (error) {
           const indexedDbError =
             error instanceof Error ? error : new Error(String(error));

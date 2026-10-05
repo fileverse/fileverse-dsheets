@@ -80,6 +80,7 @@ export interface EditorContextType {
 
   // UI states
   loading: boolean;
+  isDataLoaded: boolean;
   forceSheetRender: number;
   setForceSheetRender: React.Dispatch<React.SetStateAction<number>>;
 
@@ -612,6 +613,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
       remoteUpdateRef,
       handleChange,
       loading,
+      isDataLoaded,
       setIsDataLoaded,
       forceSheetRender,
       setForceSheetRender,
@@ -659,6 +661,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     remoteUpdateRef,
     handleChange,
     loading,
+    isDataLoaded,
     forceSheetRender,
     setForceSheetRender,
     syncStatus,
