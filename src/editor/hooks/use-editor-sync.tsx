@@ -10,43 +10,11 @@ import {
   unavailableDsheetContentSnapshot,
 } from '../../persistence-utils';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
+import { compactDsheetPersistence } from '../../persistence-compaction';
 import {
   createCollaborationConnectionController,
   mergePublishedContentIntoYdoc,
 } from './collaboration-lifecycle';
-
-/** Max wait for y-indexeddb replay before the editor renders without it. */
-const INDEXEDDB_SYNC_TIMEOUT_MS = 15_000;
-
-/**
- * y-indexeddb's `whenSynced` only resolves on its 'synced' event: if
- * `indexedDB.open` rejects, it never settles and never emits 'error', which
- * left the editor on the skeleton forever. Reject on open failure; resolve
- * 'timeout' when replay is merely slow so the caller can keep the provider.
- */
-const waitForIndexeddbSync = (
-  persistence: IndexeddbPersistence,
-): Promise<'synced' | 'timeout'> =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => resolve('timeout'),
-      INDEXEDDB_SYNC_TIMEOUT_MS,
-    );
-    persistence.whenSynced.then(
-      () => {
-        clearTimeout(timer);
-        resolve('synced');
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-    persistence._db.catch((error: unknown) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-  });
 
 export const useEditorSync = (
   dsheetId: string,
@@ -114,14 +82,14 @@ export const useEditorSync = (
 
     if (persistenceRef.current) {
       try {
-      await persistenceRef.current.destroy();
+        await persistenceRef.current.destroy();
       } catch (error) {
         const indexedDbError =
           error instanceof Error ? error : new Error(String(error));
         console.error(
           '[DSheet] IndexedDB persistence cleanup failed:',
           indexedDbError,
-    );
+        );
         onIndexedDbErrorRef.current?.(indexedDbError);
       }
       if (generation !== bootstrapGenerationRef.current) return;
@@ -129,10 +97,11 @@ export const useEditorSync = (
     }
 
     try {
-      // dDoc parity: host/published state is present in the one Y.Doc before
-      // IndexedDB replay and before SyncManager is allowed to connect.
-      mergePublishedContentIntoYdoc(ydoc, portalContent);
-
+      // Attach IndexedDB to the doc BEFORE merging the published state.
+      // y-indexeddb stores a full copy of whatever the doc holds when it
+      // attaches, so attaching to a pre-filled doc appended the whole sheet on
+      // every open. Merging afterwards stores only the parts IndexedDB did not
+      // already have. Yjs merges commute, so the resulting doc is the same.
       if (!isReadOnly && enableIndexeddbSync && dsheetId) {
         try {
           const persistence = new IndexeddbPersistence(dsheetId, ydoc);
@@ -146,16 +115,14 @@ export const useEditorSync = (
               indexedDbError,
             );
             onIndexedDbErrorRef.current?.(indexedDbError);
-    });
-          const result = await waitForIndexeddbSync(persistence);
+          });
+          await persistence.whenSynced;
           if (generation !== bootstrapGenerationRef.current) return;
-          if (result === 'timeout') {
-            // Slow replay, not a failure: keep the provider so late replay
-            // still merges and edits still persist once the DB opens.
-            console.warn(
-              `[DSheet] IndexedDB sync exceeded ${INDEXEDDB_SYNC_TIMEOUT_MS}ms — rendering without waiting`,
-            );
-          }
+          // Collapse rows that were already replayed into the doc (legacy full
+          // copies, previous sessions' edits) into one, in the background.
+          void compactDsheetPersistence(persistence).catch((error: unknown) => {
+            console.warn('[DSheet] IndexedDB compaction failed:', error);
+          });
         } catch (error) {
           const indexedDbError =
             error instanceof Error ? error : new Error(String(error));
@@ -177,6 +144,10 @@ export const useEditorSync = (
           // Match dDoc: keep the merged Y.Doc and continue without IndexedDB.
         }
       }
+
+      // dDoc parity: host/published state is present in the one Y.Doc before
+      // SyncManager is allowed to connect.
+      mergePublishedContentIntoYdoc(ydoc, portalContent);
 
       // IndexedDB may contain a legacy plain-object sheet array. Persist its
       // migration before connection so local-only diff seeding sends the same
@@ -201,10 +172,10 @@ export const useEditorSync = (
       ydocRef.current
         ? snapshotDsheetDocument(dsheetId, ydocRef.current)
         : unavailableDsheetContentSnapshot(
-            dsheetId,
-            'unavailable',
-            new Error('dSheet document is not ready'),
-          ),
+          dsheetId,
+          'unavailable',
+          new Error('dSheet document is not ready'),
+        ),
     [dsheetId],
   );
 
@@ -226,7 +197,7 @@ export const useEditorSync = (
     };
   }, [ydoc]);
 
-  // Content bootstrap effect: published state → IndexedDB replay → migration.
+  // Content bootstrap effect: IndexedDB replay → published state → migration.
   // Never replaces the Y.Doc — SyncManager, persistence, and Fortune share it.
   useEffect(() => {
     void initialiseEditorIndexedDB();
