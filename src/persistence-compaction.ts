@@ -4,57 +4,101 @@ import type { IndexeddbPersistence } from 'y-indexeddb';
 const UPDATES_STORE = 'updates';
 
 /**
- * y-indexeddb appends a FULL copy of the doc every time a provider is attached
- * to a Y.Doc that already holds content, and only trims after 500 rows. dSheet
- * attaches to pre-filled docs on every open (published content, remote merges),
- * so the store grows by one full copy per open and every load replays them all.
+ * Below this many already-replayed rows the store is left alone. A normal
+ * open leaves two (the previous compacted row plus y-indexeddb's small attach
+ * row), so rewriting the full doc then would buy nothing.
+ */
+export const DEFAULT_COMPACTION_MIN_ROWS = 3;
+
+/**
+ * y-indexeddb appends a copy of the doc every time a provider attaches, and
+ * only trims after 500 rows. Older dSheet builds attached to a doc that
+ * already held the published content, so each open stored a FULL copy and
+ * every load replayed them all.
  *
- * This collapses the store into a single row. It runs in ONE readwrite
- * transaction and merges every stored row (not just this provider's doc), so
- * rows written by another tab/provider in the meantime are never lost.
+ * During sync y-indexeddb applies every stored row to the doc and then sets
+ * `_dbref` to one past the last key. Every row below `_dbref` is therefore
+ * already in `persistence.doc`, so those rows are replaced with a single
+ * `encodeStateAsUpdate(doc)` without reading or merging them. Rows at or above
+ * `_dbref` (later edits, writes from another tab) are never touched.
  *
- * Returns the number of rows removed (0 when nothing needed compacting).
+ * Runs in ONE readwrite transaction: any failure rolls back to the original
+ * rows. Returns the number of rows replaced (0 when nothing was compacted).
  */
 export const compactDsheetPersistence = async (
   persistence: IndexeddbPersistence,
-  minRows = 2,
+  minRows = DEFAULT_COMPACTION_MIN_ROWS,
 ): Promise<number> => {
+  // `_destroyed`, `_dbref` and `_dbsize` are y-indexeddb internals (typed in
+  // its d.ts, pinned with ~ in package.json). Each is checked before use, so a
+  // rename degrades to "no compaction", never to data loss.
+  const threshold = Math.max(2, minRows);
   if (persistence._destroyed) return 0;
-  const db = await persistence._db;
-  if (!db.objectStoreNames.contains(UPDATES_STORE)) return 0;
+  await persistence.whenSynced;
+  if (persistence._destroyed) return 0;
+  const db = persistence.db;
+  if (!db || !db.objectStoreNames.contains(UPDATES_STORE)) return 0;
 
-  const removed = await new Promise<number>((resolve, reject) => {
+  return new Promise<number>((resolve, reject) => {
     const tx = db.transaction(UPDATES_STORE, 'readwrite');
     const store = tx.objectStore(UPDATES_STORE);
-    let result = 0;
-
-    const keysReq = store.getAllKeys();
-    keysReq.onsuccess = () => {
-      const keys = keysReq.result;
-      if (keys.length < minRows) return;
-      const rowsReq = store.getAll();
-      rowsReq.onsuccess = () => {
-        const rows = (rowsReq.result as unknown[]).filter(
-          (row): row is Uint8Array => row instanceof Uint8Array,
-        );
-        const merged = Y.mergeUpdates([
-          ...rows,
-          Y.encodeStateAsUpdate(persistence.doc),
-        ]);
-        const lastKey = keys[keys.length - 1];
-        // Delete the old rows first, then write the merged one. Both happen
-        // in this transaction, so a failure rolls back to the original rows.
-        store.delete(IDBKeyRange.upperBound(lastKey));
-        store.add(merged);
-        result = keys.length;
-      };
+    let replaced = 0;
+    // `tx.error` is still null when `onerror` fires, and an exception thrown
+    // in a request callback only surfaces as a generic AbortError. Keep the
+    // first real error and reject with it once the transaction has aborted.
+    let failure: unknown = null;
+    const fail = (error: unknown) => {
+      failure ??= error;
+      try {
+        tx.abort();
+      } catch {
+        // Already finished or aborting.
+      }
     };
 
-    tx.oncomplete = () => resolve(result);
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error ?? new Error('compaction aborted'));
-  });
+    // Cheap first request: by the time its callback runs, this transaction
+    // is active, so y-indexeddb's sync transaction (which sets `_dbref` after
+    // emitting 'synced') has finished. Reading `_dbref` right after
+    // `whenSynced` could see the stale initial value.
+    const totalReq = store.count();
+    totalReq.onsuccess = () => {
+      try {
+        const dbref = persistence._dbref;
+        if (typeof dbref !== 'number' || !Number.isFinite(dbref)) return;
+        if (totalReq.result < threshold) return;
+        const staleRange = IDBKeyRange.upperBound(dbref, true);
+        const staleReq = store.count(staleRange);
+        staleReq.onsuccess = () => {
+          try {
+            const stale = staleReq.result;
+            if (stale < threshold) return;
+            store.add(Y.encodeStateAsUpdate(persistence.doc));
+            store.delete(staleRange);
+            replaced = stale;
+          } catch (error) {
+            fail(error);
+          }
+        };
+      } catch (error) {
+        fail(error);
+      }
+    };
 
-  if (removed > 0) persistence._dbsize = 1;
-  return removed;
+    tx.onerror = (event) => {
+      failure ??= (event.target as IDBRequest | null)?.error ?? null;
+    };
+    tx.onabort = () => {
+      reject(failure ?? tx.error ?? new Error('compaction aborted'));
+    };
+    tx.oncomplete = () => {
+      // Adjust by the delta instead of assigning a count: edits made while
+      // this transaction ran already did `++_dbsize` for rows that land after
+      // it, and assigning would drop them. The worst case either way is a
+      // y-indexeddb trim slightly later than 500 rows.
+      if (replaced > 0 && typeof persistence._dbsize === 'number') {
+        persistence._dbsize = Math.max(1, persistence._dbsize - replaced + 1);
+      }
+      resolve(replaced);
+    };
+  });
 };

@@ -125,8 +125,8 @@ export const createCollaborationConnectionController = (args: {
 };
 
 /**
- * Merge the published artifact into the editor's one durable Y.Doc before
- * IndexedDB replay and collaboration hydration. The `self` origin prevents a
+ * Merge the published artifact into the editor's one durable Y.Doc after
+ * IndexedDB replay and before collaboration hydration. The `self` origin prevents a
  * late package listener from treating the host seed as a live user edit;
  * SyncManager's state-vector diff still sees it when the room is hydrated.
  */
