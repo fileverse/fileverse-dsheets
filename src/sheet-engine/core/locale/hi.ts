@@ -11714,6 +11714,7 @@ export default {
     cancelText: 'रद्द करें',
     chooseText: 'रंग की पुष्टि करें',
     focus: 'फोकस करें',
+    copyLink: 'शीट का लिंक कॉपी करें',
 
     tipNameRepeat: 'टैब पृष्ठ का नाम दोहराया नहीं जा सकता! कृपया संशोधित करें',
     noMoreSheet:

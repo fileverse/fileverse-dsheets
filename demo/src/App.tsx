@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { DSheetEditor, WorkbookInstance, CommentAction, remapCommentAnchors } from '../../src/index';
+import { DSheetEditor, CommentAction, remapCommentAnchors } from '../../src/index';
 import type {
+  DSheetEditorHandle,
   CollaborationProps,
   CollabState,
   CommentThread,
@@ -30,8 +31,52 @@ import {
 
 function App() {
   const isMediaMax1280px = useMediaQuery('(max-width: 1280px)');
-  const sheetEditorRef = useRef<WorkbookInstance>(null);
+  const sheetEditorRef = useRef<DSheetEditorHandle | null>(null);
   const { theme } = useTheme();
+
+  const [linkedSubSheetId] = useState(() =>
+    new URLSearchParams(window.location.search).get('subSheet'),
+  );
+  const hasNavigatedToSubSheetRef = useRef(false);
+
+  const setSheetEditorHandle = useCallback(
+    (handle: DSheetEditorHandle | null) => {
+      sheetEditorRef.current = handle;
+      if (!handle || !linkedSubSheetId || hasNavigatedToSubSheetRef.current) {
+        return;
+      }
+      hasNavigatedToSubSheetRef.current = true;
+      void handle.navigateToSheet(linkedSubSheetId).then((ok: boolean) => {
+        console.log('[demo] navigateToSheet', linkedSubSheetId, ok);
+        if (!ok) {
+          toast({
+            title: 'Linked sheet not found',
+            description: 'It may have been deleted or hidden.',
+            variant: 'warning',
+            toastType: 'mini',
+            iconType: 'icon',
+          });
+        }
+      });
+    },
+    [linkedSubSheetId],
+  );
+
+  const onCopySheetLink = useCallback(
+    async ({ sheetId, sheetName }: { sheetId: string; sheetName: string }) => {
+      const url = new URL(window.location.href);
+      url.searchParams.set('subSheet', sheetId);
+      await navigator.clipboard.writeText(url.toString()).catch(() => { });
+      console.log('[demo] copy sheet link', sheetName, url.toString());
+      toast({
+        title: `Link to "${sheetName}" copied`,
+        variant: 'success',
+        toastType: 'mini',
+        iconType: 'icon',
+      });
+    },
+    [],
+  );
 
   // --- Sheet identity ---
   const [dsheetId] = useState<string>(() => {
@@ -450,7 +495,8 @@ function App() {
                 renderNavbar={renderNavbar}
                 dsheetId={dsheetId}
                 onChange={handleSheetChange}
-                sheetEditorRef={sheetEditorRef}
+                sheetEditorRef={setSheetEditorHandle}
+                onCopySheetLink={onCopySheetLink}
                 enableIndexeddbSync={true}
                 isAuthorized={false}
                 isNewSheet={isNewSheet}
