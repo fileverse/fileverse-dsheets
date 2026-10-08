@@ -10,6 +10,7 @@ import type { SmartContractConfig } from './types/smart-contract';
 import type { ApiKeyStorage } from './utils/api-key-storage';
 import type { ThemeKey } from '@sheet-engine/core/theme';
 import type { DSheetContentSnapshot } from '../persistence';
+import type { NavigateToSheetOptions } from './utils/navigate-to-sheet';
 
 export type { ThemeKey } from '@sheet-engine/core/theme';
 
@@ -44,6 +45,11 @@ export type DSheetEditorHandle = WorkbookInstance & {
     encryptedTitle: string;
     documentTitle: string;
   }) => void;
+
+  navigateToSheet: (
+    sheetId: string,
+    opts?: NavigateToSheetOptions,
+  ) => Promise<boolean>;
 };
 
 export interface PanelConfig {
@@ -138,6 +144,7 @@ export interface DsheetProps {
   onDataBlockEvent?: (event: DataBlockEvent) => void;
   onDuneChartEmbed?: () => void;
   onSheetCountChange?: (sheetCount: number) => void;
+  onCopySheetLink?: (args: { sheetId: string; sheetName: string }) => void;
   /** Fires whenever local content-sync status changes. Host apps should gate
    * collab start/resume on 'synced' — starting before local content is fully
    * synced is what let the RTC layer bind to a stale doc in the past. */
