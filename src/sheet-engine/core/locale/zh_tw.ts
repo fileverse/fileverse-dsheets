@@ -11696,6 +11696,7 @@ export default {
     cancelText: '取消',
     chooseText: '確定顏色',
     focus: '聚焦',
+    copyLink: '複製工作表連結',
 
     tipNameRepeat: '籤頁的名稱不能重複！請重新修改',
     noMoreSheet:

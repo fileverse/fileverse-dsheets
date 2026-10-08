@@ -18,6 +18,7 @@ import React, {
 import WorkbookContext from '../../context';
 import { useAlert } from '../../hooks/useAlert';
 import SVGIcon from '../SVGIcon';
+import { canOpenSheetTabMenu } from '../ContextMenu/sheet-tab-menu-items';
 
 type Props = {
   sheet: Sheet;
@@ -222,7 +223,7 @@ const SheetItem: React.FC<Props> = ({ sheet, isDropPlaceholder }) => {
       }}
       tabIndex={0}
       onContextMenu={(e) => {
-        if (context.isFlvReadOnly) return;
+        if (!canOpenSheetTabMenu(context, context.hooks)) return;
         if (isDropPlaceholder) return;
         const rect = refs.workbookContainer.current!.getBoundingClientRect();
         const { pageX, pageY } = e;
@@ -286,7 +287,8 @@ const SheetItem: React.FC<Props> = ({ sheet, isDropPlaceholder }) => {
         data-sheet-id={sheet.id != null ? String(sheet.id) : undefined}
         data-testid={`sheettab-item-icon-menu-${sheet.id ?? 'placeholder'}`}
         onClick={(e) => {
-          if (isDropPlaceholder || context.allowEdit === false) return;
+          if (isDropPlaceholder) return;
+          if (!canOpenSheetTabMenu(context, context.hooks)) return;
           const rect = refs.workbookContainer.current!.getBoundingClientRect();
           const { pageX, pageY } = e;
           setContext((ctx) => {
