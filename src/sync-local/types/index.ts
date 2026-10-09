@@ -71,6 +71,8 @@ export interface CollabConnectionConfig {
   ownerEdSecret?: string;
   contractAddress?: string;
   ownerAddress?: string;
+  /** Host signal (opaque-link sheets): the on-chain dsheetId, sent to the server as ddocId alongside the public room id. */
+  appFileId?: string;
   roomInfo?: {
     documentTitle: string;
     portalAddress: string;
@@ -298,6 +300,7 @@ export interface IAuthArgs {
   ownerToken?: string;
   ownerAddress?: string;
   contractAddress?: string;
+  ddocId?: string;
   sessionDid?: string;
   roomInfo?: string;
   identityToken?: string;

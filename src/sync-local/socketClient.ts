@@ -35,6 +35,7 @@ interface ISocketClientConfig {
   ownerEdSecret?: string;
   contractAddress?: string;
   ownerAddress?: string;
+  appFileId?: string;
   editLock?: string;
   encryptedTitle?: string;
   identityToken?: string;
@@ -96,6 +97,7 @@ export class SocketClient {
   private ownerUcan?: ucans.Ucan;
   private collaborationUcan?: ucans.Ucan;
   private ownerAddress?: string;
+  private appFileId?: string;
   private editLock?: string;
   private encryptedTitle?: string;
   private identityToken?: string;
@@ -149,6 +151,7 @@ export class SocketClient {
 
     if (config.contractAddress) this.contractAddress = config.contractAddress;
     if (config.ownerAddress) this.ownerAddress = config.ownerAddress;
+    if (config.appFileId) this.appFileId = config.appFileId;
     if (config.editLock) this.editLock = config.editLock;
     if (config.identityToken) this.identityToken = config.identityToken;
     if (config.editUcan) this.editUcan = config.editUcan;
@@ -329,6 +332,7 @@ export class SocketClient {
       documentId: this.roomId,
       editLock: this.editLock ?? null,
       title: this.encryptedTitle ?? null,
+      ...(this.appFileId ? { ddocId: this.appFileId } : {}),
     });
   }
 
@@ -346,6 +350,7 @@ export class SocketClient {
       documentId: this.roomId,
       editLock: this.editLock ?? null,
       title: args.encryptedTitle,
+      ...(this.appFileId ? { ddocId: this.appFileId } : {}),
     });
   }
 
@@ -607,6 +612,7 @@ export class SocketClient {
     if (this.ownerKeyPair) args.ownerToken = await this.getOwnerToken();
     if (this.ownerAddress) args.ownerAddress = this.ownerAddress;
     if (this.contractAddress) args.contractAddress = this.contractAddress;
+    if (this.appFileId) args.ddocId = this.appFileId;
     if (this.identityToken) args.identityToken = this.identityToken;
 
     // Re-mint on every /auth (incl. reconnect, rekey). ok → use + cache the fresh token;

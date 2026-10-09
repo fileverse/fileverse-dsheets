@@ -123,6 +123,7 @@ interface EditorProviderProps {
   isAuthorized: boolean;
   children: React.ReactNode;
   dsheetId: string;
+  localStoreId?: string;
   username?: string;
   portalContent?: string;
   enableIndexeddbSync?: boolean;
@@ -164,6 +165,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   updateDocumentTitle,
   children,
   dsheetId,
+  localStoreId,
   username = 'Anonymous',
   portalContent = '',
   enableIndexeddbSync = true,
@@ -348,6 +350,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     collaboration,
     onCollabUpdate,
     onIndexedDbError,
+    localStoreId,
   );
 
   // Let host apps gate collab start/resume on real sync completion.

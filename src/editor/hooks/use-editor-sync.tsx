@@ -23,10 +23,13 @@ export const useEditorSync = (
   collaboration?: CollaborationProps,
   onCollabUpdate?: (fullState: string, updateChunk: string) => void,
   onIndexedDbError?: (error: Error) => void,
+  localStoreId?: string,
 ) => {
   // Match dDoc: one Y.Doc is owned by this provider for its entire lifetime.
   // A dsheetId change remounts EditorProvider at the component boundary.
   const [ydoc] = useState(() => new Y.Doc());
+  // Names the local database and labels snapshots; dsheetId stays the root key.
+  const storeId = localStoreId ?? dsheetId;
   const ydocRef = useRef<Y.Doc | null>(ydoc);
   const persistenceRef = useRef<IndexeddbPersistence | null>(null);
   const [syncStatus, setSyncStatus] = useState<
@@ -100,9 +103,9 @@ export const useEditorSync = (
       // IndexedDB replay and before SyncManager is allowed to connect.
       mergePublishedContentIntoYdoc(ydoc, portalContent);
 
-      if (!isReadOnly && enableIndexeddbSync && dsheetId) {
+      if (!isReadOnly && enableIndexeddbSync && storeId) {
         try {
-          const persistence = new IndexeddbPersistence(dsheetId, ydoc);
+          const persistence = new IndexeddbPersistence(storeId, ydoc);
           // Capture before replay so SyncManager can identify this origin.
           persistenceRef.current = persistence;
           persistence.on('error', (error: unknown) => {
@@ -154,24 +157,24 @@ export const useEditorSync = (
       // fallback, but do not connect a room from an incomplete bootstrap.
       setIsContentBootstrapReady(true);
     }
-  }, [dsheetId, enableIndexeddbSync, isReadOnly, portalContent, ydoc]);
+  }, [dsheetId, enableIndexeddbSync, isReadOnly, portalContent, storeId, ydoc]);
 
   const getContentSnapshot = useCallback(
     () =>
       ydocRef.current
-        ? snapshotDsheetDocument(dsheetId, ydocRef.current)
+        ? snapshotDsheetDocument(storeId, ydocRef.current)
         : unavailableDsheetContentSnapshot(
-            dsheetId,
+            storeId,
             'unavailable',
             new Error('dSheet document is not ready'),
           ),
-    [dsheetId],
+    [storeId],
   );
 
   const mergeContent = useCallback(
     (encodedState: string) =>
-      mergeDsheetContentIntoDocument(dsheetId, encodedState, ydocRef.current),
-    [dsheetId],
+      mergeDsheetContentIntoDocument(storeId, encodedState, ydocRef.current),
+    [storeId],
   );
 
   // Doc-lifecycle effect: this exact document is also owned by SyncManager.
