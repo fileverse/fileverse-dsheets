@@ -15,4 +15,8 @@ declare module '@fileverse-dev/dsheets-templates/template-data-list' {
   export const TEMPLATES_DATA: {
     [templateId: string]: object[];
   };
+  /** Fresh copy with new sheet ids. Absent in versions before it was added. */
+  export const getTemplateData:
+    | ((templateId: string) => object[] | undefined)
+    | undefined;
 }

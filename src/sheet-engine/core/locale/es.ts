@@ -11674,6 +11674,7 @@ export default {
     cancelText: 'Cancelar',
     chooseText: 'Confirmar color',
     focus: 'Enfocar',
+    copyLink: 'Copiar enlace a la hoja',
 
     tipNameRepeat:
       '¡El nombre de la página de la pestaña no se puede repetir! Revísalo',

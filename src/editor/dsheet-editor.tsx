@@ -75,6 +75,7 @@ const EditorContent = ({
   setInputFetchURLDataBlock,
   onDuneChartEmbed,
   onSheetCountChange,
+  onCopySheetLink,
   isNewSheet,
   customPanels,
   theme,
@@ -105,6 +106,7 @@ const EditorContent = ({
   onboardingHandler?: OnboardingHandler;
   onDuneChartEmbed?: () => void;
   onSheetCountChange?: (sheetCount: number) => void;
+  onCopySheetLink?: (args: { sheetId: string; sheetName: string }) => void;
   customPanels?: PanelConfig[];
 }) => {
   const resolvedPermissionMode = resolvePermissionChipMode({
@@ -558,6 +560,7 @@ const EditorContent = ({
             dsheetId={dsheetId}
             onDuneChartEmbed={onDuneChartEmbed}
             onSheetCountChange={onSheetCountChange}
+            onCopySheetLink={onCopySheetLink}
             sidebarActivePanel={activePanel}
             sidebarPortalRegistry={sidebarPortalRegistry}
             permissionMode={resolvedPermissionMode}
@@ -649,6 +652,7 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
       sheetEditorRef: externalSheetEditorRef,
       onDuneChartEmbed,
       onSheetCountChange,
+      onCopySheetLink,
       isAuthorized,
       getDocumentTitle,
       updateDocumentTitle,
@@ -726,6 +730,7 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
           selectedTemplate={selectedTemplate}
           onDuneChartEmbed={onDuneChartEmbed}
           onSheetCountChange={onSheetCountChange}
+          onCopySheetLink={onCopySheetLink}
           customPanels={customPanels}
           theme={theme}
         />

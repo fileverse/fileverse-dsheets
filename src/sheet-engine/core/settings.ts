@@ -147,6 +147,7 @@ export type Hooks = {
     newName: string,
   ) => boolean;
   afterUpdateSheetName?: (id: string, oldName: string, newName: string) => void;
+  onCopySheetLink?: (args: { sheetId: string; sheetName: string }) => void;
   afterImagesChange?: () => void;
   afterIframesChange?: () => void;
   afterFrozenChange?: () => void;
@@ -378,6 +379,8 @@ export const defaultSettings: Required<Settings> = {
     'clear-format',
   ], // header菜单
   sheetTabContextMenu: [
+    'copy-link',
+    '|',
     'delete',
     'copy',
     'rename',

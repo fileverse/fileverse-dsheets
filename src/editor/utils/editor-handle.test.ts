@@ -13,6 +13,7 @@ const methods = (): DSheetEditorMethods => ({
   terminateSession: vi.fn(),
   updateCollaboratorName: vi.fn(),
   updateSessionTitle: vi.fn(),
+  navigateToSheet: vi.fn(async () => true),
 });
 
 describe("DSheetEditorHandle composition", () => {

@@ -96,6 +96,7 @@ interface EditorWorkbookProps {
   dsheetId: string;
   onDuneChartEmbed?: () => void;
   onSheetCountChange?: (sheetCount: number) => void;
+  onCopySheetLink?: (args: { sheetId: string; sheetName: string }) => void;
   sidebarActivePanel?: string | null;
   sidebarPortalRegistry?: SidebarPortalRegistryHandle | null;
   sidebarPortalRenderers?: Record<string, SidebarPortalRenderer>;
@@ -125,6 +126,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
   dsheetId,
   onDuneChartEmbed,
   onSheetCountChange,
+  onCopySheetLink,
   sidebarActivePanel = null,
   sidebarPortalRegistry = null,
   sidebarPortalRenderers = {},
@@ -163,6 +165,10 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
   } = useEditor();
 
   const localUserEditRef = useRef(false);
+
+  const onCopySheetLinkRef = useRef(onCopySheetLink);
+  onCopySheetLinkRef.current = onCopySheetLink;
+  const hasCopySheetLink = !!onCopySheetLink;
 
   // Read the latest commentsConfig at call time via a ref so `getCommentCellUI`
   // keeps a STABLE identity. Otherwise a new commentsConfig object on every
@@ -518,6 +524,10 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
           onLocalCellEdit: () => {
             localUserEditRef.current = true;
           },
+          onCopySheetLink: hasCopySheetLink
+            ? (args: { sheetId: string; sheetName: string }) =>
+              onCopySheetLinkRef.current?.(args)
+            : undefined,
           afterUpdateCell: (
             row: number,
             column: number,
@@ -736,6 +746,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     onSignInToComment,
     onViewerModeChange,
     theme,
+    hasCopySheetLink,
     handleOnChangePortalUpdate,
   ]);
 
