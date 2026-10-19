@@ -126,3 +126,81 @@ export {
   isOpenShortcutsModalShortcut,
 } from '@sheet-engine/core';
 export type { PatchOptions } from '@sheet-engine/core';
+
+// Ethereum Swarm storage: serverless persistence with version history
+export {
+  createSwarmDocumentStorage,
+  canSaveToSwarm,
+  generateDocumentKey,
+  makeDocumentFeedTopic,
+} from './swarm/swarm-document-storage';
+export type {
+  SwarmDocumentStorage,
+  SwarmDocumentStorageConfig,
+  DocumentSnapshot,
+  DocumentVersion,
+} from './swarm/swarm-document-storage';
+export { SwarmTimeoutError } from './swarm/swarm-common';
+export type {
+  SwarmProgress,
+  SwarmProgressHandler,
+  SwarmRequestConfig,
+} from './swarm/swarm-common';
+export {
+  detectSwarmTransport,
+  createBeeHttpTransport,
+  createSwarmProviderTransport,
+  probeLatestFeedIndex,
+} from './swarm/swarm-transport';
+export type {
+  SwarmTransport,
+  SwarmTransportStatus,
+  SwarmProvider,
+  BeeHttpTransportConfig,
+  TransportDetectionConfig,
+} from './swarm/swarm-transport';
+export {
+  diagnoseSwarm,
+  primarySwarmCondition,
+} from './swarm/swarm-diagnostics';
+export type {
+  SwarmCondition,
+  SwarmConditionKind,
+  SwarmDiagnosticsInput,
+  SwarmRemedy,
+  SwarmRemedyKind,
+} from './swarm/swarm-diagnostics';
+export {
+  makeFeedTopic,
+  writeFeedUpdate,
+  readLatestFeedIndex,
+  readFeedUpdate,
+  feedOwnerAddress,
+} from './swarm/swarm-feeds';
+export type { SwarmFeedConfig } from './swarm/swarm-feeds';
+export {
+  listStamps,
+  getStamp,
+  stampUtilization,
+  checkStampHealth,
+  buyStamp,
+  topUpStamp,
+  diluteStamp,
+  getChainState,
+  getWalletBalance,
+  estimateBatch,
+  amountForDuration,
+  MIN_BATCH_DEPTH,
+  CHUNK_SIZE_BYTES,
+  PLUR_PER_BZZ,
+  BLOCK_TIME_SECONDS,
+} from './swarm/swarm-stamps';
+export type {
+  SwarmNodeConfig,
+  PostageStamp,
+  StampHealth,
+  StampHealthThresholds,
+  ChainState,
+  WalletBalance,
+  BatchEstimate,
+} from './swarm/swarm-stamps';
