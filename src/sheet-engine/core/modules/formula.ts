@@ -21,7 +21,7 @@ import {
 } from './cell';
 import { error, detectErrorFromValue, isNumericCellType } from './validation';
 import { locale } from '../locale';
-import { colors } from './color';
+import { getRangeColor } from './color';
 import { colLocation, mousePosition, rowLocation } from './location';
 import {
   cancelFunctionrangeSelected,
@@ -3248,7 +3248,7 @@ export function createRangeHightlight(
           formulaRanges.push({
             rangeIndex,
             ...rect,
-            backgroundColor: colors[rangeIndex],
+            backgroundColor: getRangeColor(rangeIndex),
           });
         }
       }
@@ -3793,7 +3793,7 @@ function functionHTML(txt: string) {
         rangeIndexes.length > functionHTMLIndex
           ? rangeIndexes[functionHTMLIndex]
           : functionHTMLIndex;
-      function_str += `<span class="fortune-formula-functionrange-cell" rangeindex="${rangeIndex}" dir="auto" style="color:${colors[rangeIndex]};">${acc}</span>`;
+      function_str += `<span class="fortune-formula-functionrange-cell" rangeindex="${rangeIndex}" dir="auto" style="color:${getRangeColor(rangeIndex)};">${acc}</span>`;
       functionHTMLIndex += 1;
     } else if (dquote > 0) {
       function_str += `${acc}</span>`;
@@ -5750,7 +5750,7 @@ export function rangeSetValue(
       existingRangeIndexes.length > 0
         ? Math.max(...existingRangeIndexes) + 1
         : functionHTMLIndex;
-    const function_str = `<span class="fortune-formula-functionrange-cell" rangeindex="${nextRangeIndex}" dir="auto" style="color:${colors[nextRangeIndex]};">${range}</span>`;
+    const function_str = `<span class="fortune-formula-functionrange-cell" rangeindex="${nextRangeIndex}" dir="auto" style="color:${getRangeColor(nextRangeIndex)};">${range}</span>`;
     const newEle = parseElement(function_str) as HTMLSpanElement;
     let refEle = ctx.formulaCache.rangeSetValueTo;
     if (refEle && !refEle.parentNode) {
