@@ -56,17 +56,20 @@
         slow links make this take a few minutes. Later loads are fast.
       </div>
       <div class="slow" id="boot-retrying" hidden>
-        Your Swarm node was still connecting to peers, so the app code could
-        not be fetched. Retrying — <span id="boot-attempt"></span>…
+        Part of the app code could not be fetched. Served from Swarm, the
+        node is often still connecting to peers. Retrying —
+        <span id="boot-attempt"></span>…
         <p><button type="button" id="boot-reload-now">Reload now</button></p>
       </div>
       <div class="slow failed" id="boot-failed" hidden>
         <p><strong>The app code could not be downloaded.</strong></p>
         <p>
-          A Swarm node answers requests as soon as it starts, but cannot
-          serve anything until it has connected to peers — a page opened in
-          that window fails, and browsers do not retry scripts by themselves.
-          Several automatic retries have already been attempted.
+          Served from Swarm, this usually means the node has not reached its
+          peers yet: a node answers requests as soon as it starts but can
+          serve nothing until it is connected, and browsers do not retry
+          scripts by themselves. Served from anywhere else, check that the
+          server is running. Several automatic retries have already been
+          attempted.
         </p>
         <button type="button" id="boot-reload">Reload</button>
       </div>
