@@ -55,6 +55,9 @@ type OnboardingHandler = OnboardingHandlerType;
 const EditorContent = ({
   setShowFetchURLModal,
   renderNavbar,
+  showNavbar = true,
+  showToolbar = true,
+  showFormulaBar = true,
   isReadOnly,
   permissionMode,
   onEnterEdit,
@@ -82,6 +85,9 @@ const EditorContent = ({
 }: Pick<
   DsheetProps,
   | 'renderNavbar'
+  | 'showNavbar'
+  | 'showToolbar'
+  | 'showFormulaBar'
   | 'isReadOnly'
   | 'permissionMode'
   | 'onEnterEdit'
@@ -517,7 +523,7 @@ const EditorContent = ({
         }}
       />
 
-      {renderNavbar && (
+      {renderNavbar && showNavbar && (
         <nav
           id="Navbar"
           className={cn(
@@ -534,7 +540,12 @@ const EditorContent = ({
       )}
 
       <div
-        className="dsheet-editor-main relative overflow-hidden h-[94dvh] md:!h-[calc(100vh-44px)] mt-[44px]"
+        className={cn(
+          'dsheet-editor-main relative overflow-hidden',
+          showNavbar
+            ? 'h-[94dvh] md:!h-[calc(100vh-44px)] mt-[44px]'
+            : 'h-[100dvh] md:!h-[100vh]',
+        )}
         data-testid="dsheet-editor-main"
       >
         <TransitionWrapper show={true}>
@@ -568,6 +579,8 @@ const EditorContent = ({
             onSignInToComment={onSignInToComment}
             onViewerModeChange={onViewerModeChange}
             theme={theme}
+            showToolbar={showToolbar}
+            showFormulaBar={showFormulaBar}
           />
         </TransitionWrapper>
       </div>
@@ -577,6 +590,8 @@ const EditorContent = ({
         activePanelConfig={activePanelConfig}
         onClose={closePanel}
         isReadOnly={isReadOnly}
+        showNavbar={showNavbar}
+        showToolbar={showToolbar}
       />
       {hoveredTemplate && !isMobile && (
         <TemplatePreview template={hoveredTemplate} />
@@ -633,6 +648,9 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
       onViewerModeChange,
       allowSheetDownload,
       renderNavbar,
+      showNavbar,
+      showToolbar,
+      showFormulaBar,
       enableIndexeddbSync,
       dsheetId = '',
       portalContent,
@@ -709,6 +727,9 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
         <EditorContent
           commentsConfig={commentsConfig}
           renderNavbar={renderNavbar}
+          showNavbar={showNavbar}
+          showToolbar={showToolbar}
+          showFormulaBar={showFormulaBar}
           setFetchingURLData={setFetchingURLData}
           isNewSheet={isNewSheet}
           setShowFetchURLModal={setShowFetchURLModal}

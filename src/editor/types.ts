@@ -100,6 +100,13 @@ export interface DsheetProps {
   setFetchingURLData?: (fetching: boolean) => void;
   setInputFetchURLDataBlock?: React.Dispatch<React.SetStateAction<string>>;
   renderNavbar?: (editorValues?: EditorValues) => JSX.Element;
+  /** Mount the navbar slot. `renderNavbar` still runs when hidden, so host
+   * side effects inside it keep working. Default true. */
+  showNavbar?: boolean;
+  /** Show the sheet toolbar. Default true. */
+  showToolbar?: boolean;
+  /** Show the formula bar. Default true. */
+  showFormulaBar?: boolean;
   enableIndexeddbSync?: boolean;
   dsheetId: string;
   /**

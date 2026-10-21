@@ -39,6 +39,15 @@ function App() {
   );
   const hasNavigatedToSubSheetRef = useRef(false);
 
+  const [chromeVisibility] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      showNavbar: params.get('navbar') !== 'false',
+      showToolbar: params.get('toolbar') !== 'false',
+      showFormulaBar: params.get('fxbar') !== 'false',
+    };
+  });
+
   const setSheetEditorHandle = useCallback(
     (handle: DSheetEditorHandle | null) => {
       sheetEditorRef.current = handle;
@@ -493,6 +502,7 @@ function App() {
                 isReadOnly={false}
                 theme={theme}
                 renderNavbar={renderNavbar}
+                {...chromeVisibility}
                 dsheetId={dsheetId}
                 onChange={handleSheetChange}
                 sheetEditorRef={setSheetEditorHandle}

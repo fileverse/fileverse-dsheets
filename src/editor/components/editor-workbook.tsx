@@ -105,6 +105,8 @@ interface EditorWorkbookProps {
   onSignInToComment?: () => void;
   onViewerModeChange?: (mode: 'comment' | 'view') => void;
   theme?: ThemeKey;
+  showToolbar?: boolean;
+  showFormulaBar?: boolean;
 }
 
 /**
@@ -135,6 +137,8 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
   onSignInToComment,
   onViewerModeChange,
   theme,
+  showToolbar = true,
+  showFormulaBar = true,
 }) => {
   const {
     setSelectedTemplate,
@@ -457,8 +461,8 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
         headerContextMenu={headerContextMenu}
         //@ts-ignore
         getCommentCellUI={getCommentCellUI}
-        showFormulaBar={true}
-        showToolbar={true}
+        showFormulaBar={showFormulaBar}
+        showToolbar={showToolbar}
         toolbarTrailingContent={
           permissionMode ? (
             <div
@@ -748,6 +752,8 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     theme,
     hasCopySheetLink,
     handleOnChangePortalUpdate,
+    showToolbar,
+    showFormulaBar,
   ]);
 
   return React.cloneElement(workbookElement, {
