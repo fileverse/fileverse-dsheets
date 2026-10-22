@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import * as Y from 'yjs';
+import { fromUint8Array } from 'js-base64';
 import { Workbook } from '@sheet-engine/react';
 import type {
   SidebarPortalRegistryHandle,
@@ -371,6 +373,30 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
       delete window.setForceRenderEditor;
     };
   }, [isReadOnly]);
+
+  // DEBUG (remove): logs whether each Yjs transaction advances the state
+  // vector, to check if delete-only edits leave the fingerprint unchanged.
+  useEffect(() => {
+    const ydoc = ydocRef.current;
+    if (!ydoc) return;
+    const onTx = (tr: Y.Transaction) => {
+      const svAdvanced = [...tr.afterState].some(
+        ([client, clock]) => tr.beforeState.get(client) !== clock,
+      );
+      const changedKeys = [...tr.changed.values()].flatMap((keys) =>
+        [...keys].map((k) => k ?? '(array)'),
+      );
+      console.log('[sv]', {
+        origin: tr.origin,
+        sv: fromUint8Array(Y.encodeStateVector(tr.doc)),
+        svAdvanced,
+        hasDeletes: tr.deleteSet.clients.size > 0,
+        changedKeys,
+      });
+    };
+    ydoc.on('afterTransaction', onTx);
+    return () => ydoc.off('afterTransaction', onTx);
+  }, [ydocRef]);
 
   // Initialize XLSX / ODS import functionality
   const { handleXLSXUpload, handleODSUpload } = useXLSXImport({
