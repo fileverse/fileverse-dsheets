@@ -50,6 +50,10 @@ export type Cell = {
   m?: string | number;
   mc?: { r: number; c: number; rs?: number; cs?: number };
   f?: string;
+  /** Size of the last array result, used to clear output when it shrinks. */
+  spillRange?: { rows: number; columns: number };
+  /** Origin of generated output; direct edits remove this ownership. */
+  spillParent?: { r: number; c: number };
   /** Editor-only HTML snapshot for reopening multiline formulas as typed. */
   _formulaEditHtml?: string;
   /** `dp`: fixed decimal places for display when `fa` is General (Auto); does not change `fa`/`t`. */
