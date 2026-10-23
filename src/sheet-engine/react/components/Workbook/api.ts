@@ -279,6 +279,17 @@ export function generateAPIs(
         api.applyRemoteCellValue(draftCtx, row, column, value, options),
       ),
 
+    /** Remote cell batch: one quiet update, off the local undo stack (A5). */
+    applyRemoteCells: (
+      cells: api.RemoteCellChange[],
+      options: api.CommonOptions = {},
+      onSkip?: (cell: api.RemoteCellChange, error: unknown) => void,
+    ) =>
+      setContext(
+        (draftCtx) => api.applyRemoteCells(draftCtx, cells, options, onSkip),
+        { noHistory: true },
+      ),
+
     setCellError: (
       row: number,
       column: number,

@@ -328,6 +328,29 @@ export function applyRemoteCellValue(
   }
 }
 
+export type RemoteCellChange = { r: number; c: number; v: unknown };
+
+/**
+ * Apply a remote batch of cells inside one draft (A5). The caller runs it in
+ * one setContext with noHistory, so a batch is one Immer pass and never
+ * lands on the local undo stack. A cell that fails is reported through
+ * onSkip and the rest still apply.
+ */
+export function applyRemoteCells(
+  ctx: Context,
+  cells: RemoteCellChange[],
+  options: CommonOptions = {},
+  onSkip?: (cell: RemoteCellChange, error: unknown) => void,
+) {
+  for (const cell of cells) {
+    try {
+      applyRemoteCellValue(ctx, cell.r, cell.c, cell.v, options);
+    } catch (error) {
+      onSkip?.(cell, error);
+    }
+  }
+}
+
 export function clearCell(
   ctx: Context,
   row: number,
