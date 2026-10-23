@@ -2,7 +2,7 @@
   "name": "@fileverse-dev/dsheet",
   "private": false,
   "description": "DSheet",
-  "version": "4.1.20-embed-1",
+  "version": "4.1.23",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fileverse/fileverse-dsheets.git"
