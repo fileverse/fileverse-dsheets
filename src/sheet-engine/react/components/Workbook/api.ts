@@ -279,6 +279,16 @@ export function generateAPIs(
         api.applyRemoteCellValue(draftCtx, row, column, value, options),
       ),
 
+    /** Remote formula-list change, applied in place (A4). */
+    setSheetCalcChain: (
+      calcChain: Sheet['calcChain'],
+      options: api.CommonOptions = {},
+    ) =>
+      setContext(
+        (draftCtx) => api.setSheetCalcChain(draftCtx, calcChain, options),
+        { noHistory: true },
+      ),
+
     /** Remote cell batch: one quiet update, off the local undo stack (A5). */
     applyRemoteCells: (
       cells: api.RemoteCellChange[],

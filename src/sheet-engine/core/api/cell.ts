@@ -14,6 +14,7 @@ import {
 import { Cell, CellStyle, SingleRange, Sheet } from '../types';
 import { CommonOptions, getSheet } from './common';
 import { SHEET_NOT_FOUND } from './errors';
+import { invalidateSheetsRequiredDenseCache } from './sheet-flowdata-lifecycle';
 import { shouldPersistCelldataCell } from '../utils/cell-persist-utils';
 // @ts-ignore
 import SSF from '../modules/ssf';
@@ -326,6 +327,23 @@ export function applyRemoteCellValue(
     delFunctionGroup(ctx, row, column, sheetId);
     setCellValueInternal(ctx, row, column, data, value);
   }
+}
+
+/**
+ * Replace a sheet's formula list with the collaborator's value from Yjs and
+ * reset the formula dependency indexes to a fresh mount's state (A4). This
+ * is what the grid rebuild it replaces produced, without the rebuild. The
+ * caller runs it with noHistory.
+ */
+export function setSheetCalcChain(
+  ctx: Context,
+  calcChain: Sheet['calcChain'],
+  options: CommonOptions = {},
+) {
+  const sheet = getSheet(ctx, options);
+  sheet.calcChain = calcChain ?? [];
+  ctx.formulaCache.resetDependencyIndexes();
+  invalidateSheetsRequiredDenseCache();
 }
 
 export type RemoteCellChange = { r: number; c: number; v: unknown };
