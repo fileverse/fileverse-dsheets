@@ -2,7 +2,7 @@
 
 Date: 2026-10-23
 
-Maps the issues in our two analyses ([PERFORMANCE_AUDIT.md](../PERFORMANCE_AUDIT.md), [large-sheet-main-thread-perf.md](large-sheet-main-thread-perf.md)) and the fingerprint work from this week onto the two tickets.
+Maps the issues in our two analyses ([PERFORMANCE_AUDIT.md](PERFORMANCE_AUDIT.md), [large-sheet-main-thread-perf.md](large-sheet-main-thread-perf.md)) and the fingerprint work from this week onto the two tickets.
 
 **How each issue was found** uses these labels:
 
