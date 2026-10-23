@@ -29,16 +29,27 @@ const DropDownList: React.FC = () => {
   const [position, setPosition] = useState<{ left: number; top: number }>();
   const [selected, setSelected] = useState<any[]>([]);
   const [rbgColor, setRbgColor] = useState<string[]>([]);
+  // The cell this list was opened for. Option clicks write here, not to the
+  // current selection, which can move (keyboard nav) while the list is open.
+  const anchorRef = useRef<{
+    sheetId: string;
+    row: number;
+    column: number;
+  } | null>(null);
+
+  const closeList = useCallback(() => {
+    setContext((ctx) => {
+      ctx.dataVerificationDropDownList = false;
+    });
+  }, [setContext]);
 
   const close = useCallback(() => {
     setContext((ctx) => {
+      const last =
+        ctx.luckysheet_select_save?.[ctx.luckysheet_select_save.length - 1];
       const index = getSheetIndex(ctx, ctx.currentSheetId) as number;
-      const verification = context.luckysheetfile[index].dataVerification;
-      if (
-        !verification[
-          `${ctx.luckysheet_select_save?.[0].row_focus}_${ctx.luckysheet_select_save?.[0].column_focus}`
-        ]
-      ) {
+      const verification = ctx.luckysheetfile[index]?.dataVerification;
+      if (!last || !verification?.[`${last.row_focus}_${last.column_focus}`]) {
         ctx.dataVerificationDropDownList = false;
       }
     });
@@ -48,12 +59,18 @@ const DropDownList: React.FC = () => {
 
   // 初始化
   useEffect(() => {
-    if (!context.luckysheet_select_save) return;
+    if (!context.luckysheet_select_save?.length) {
+      closeList();
+      return;
+    }
     const last =
       context.luckysheet_select_save[context.luckysheet_select_save.length - 1];
     const rowIndex = last.row_focus;
     const colIndex = last.column_focus;
-    if (rowIndex == null || colIndex == null) return;
+    if (rowIndex == null || colIndex == null) {
+      closeList();
+      return;
+    }
     let row = context.visibledatarow[rowIndex];
     let col_pre = colIndex === 0 ? 0 : context.visibledatacolumn[colIndex - 1];
     const d = getFlowdata(context);
@@ -64,21 +81,31 @@ const DropDownList: React.FC = () => {
       [col_pre, ,] = margeSet.column;
     }
     const index = getSheetIndex(context, context.currentSheetId) as number;
-    const { dataVerification } = context.luckysheetfile[index];
-    if (!dataVerification) return;
-    const item = dataVerification[`${rowIndex}_${colIndex}`];
-    if (!item) return;
+    const item =
+      context.luckysheetfile[index]?.dataVerification?.[
+        `${rowIndex}_${colIndex}`
+      ];
+    if (!item) {
+      // Selection moved to a cell without a rule: the list would be stale.
+      closeList();
+      return;
+    }
+    anchorRef.current = {
+      sheetId: context.currentSheetId,
+      row: rowIndex,
+      column: colIndex,
+    };
     const dropdownList = getDropdownList(context, item.value1);
     // 初始化多选的下拉列表
     const cellValue = getCellValue(rowIndex, colIndex, d);
 
-    if (cellValue) {
-      setSelected(cellValue.toString().split(','));
-    }
+    // Reset when re-anchoring to another cell so checks don't carry over.
+    setSelected(cellValue ? cellValue.toString().split(',') : []);
 
     const { color } = item;
     // const color = context.dataVerification!.dataRegulation!.color.split(",")
-    const colorValues = color?.split(',').map((v: any) => v.trim());
+    const colorValues: string[] =
+      color?.split(',').map((v: any) => v.trim()) ?? [];
     // Group every 3 values into RGB arrays
     const rbgColorArr = [];
     for (let i = 0; i < colorValues.length; i += 3) {
@@ -97,17 +124,19 @@ const DropDownList: React.FC = () => {
 
   // 设置下拉列表的值
   useEffect(() => {
-    if (!context.luckysheet_select_save) return;
-    const last =
-      context.luckysheet_select_save[context.luckysheet_select_save.length - 1];
-    const rowIndex = last.row_focus;
-    const colIndex = last.column_focus;
-    if (rowIndex == null || colIndex == null) return;
-    const index = getSheetIndex(context, context.currentSheetId) as number;
-    const { dataVerification } = context.luckysheetfile[index];
-    if (!dataVerification) return;
-    const item = dataVerification[`${rowIndex}_${colIndex}`];
-    if (!item) return;
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const { row: rowIndex, column: colIndex } = anchor;
+    const index = getSheetIndex(context, anchor.sheetId) as number;
+    const item =
+      context.luckysheetfile[index]?.dataVerification?.[
+        `${rowIndex}_${colIndex}`
+      ];
+    if (!item) {
+      // Rule removed (undo, collaborator) while the list was open.
+      closeList();
+      return;
+    }
     if (item.type2 !== 'true') return;
     const d = getFlowdata(context);
     if (!d) return;
@@ -138,7 +167,12 @@ const DropDownList: React.FC = () => {
             style={{ backgroundColor: `rgb(${rbgColor[i]})` || 'red' }}
             key={i}
             onClick={() => {
+              const anchor = anchorRef.current;
               setContext((ctx) => {
+                if (!anchor || anchor.sheetId !== ctx.currentSheetId) {
+                  ctx.dataVerificationDropDownList = false;
+                  return;
+                }
                 const arr = selected;
                 const index = arr.indexOf(v);
                 if (index < 0) {
@@ -147,7 +181,7 @@ const DropDownList: React.FC = () => {
                   arr.splice(index, 1);
                 }
                 setSelected(arr);
-                setDropdownValue(ctx, v, arr);
+                setDropdownValue(ctx, v, arr, anchor);
               });
             }}
             tabIndex={0}

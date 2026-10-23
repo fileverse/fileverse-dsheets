@@ -63,8 +63,9 @@ export interface CollabConnectionConfig {
   joinOnly?: boolean;
   /** Host signal (editor): produces the view-plane mirror ciphertext from the live Yjs state. The app
    *  AES-GCM-encrypts `{ file: base64(yjsUpdate), source }` under the fileKey in the publish wire
-   *  format. Absent ⇒ the mirror is not written. The package never sees the fileKey or the crypto. */
-  encryptMirror?: (yjsUpdate: Uint8Array) => Promise<string>;
+   *  format. Absent ⇒ the mirror is not written. Resolving to null ⇒ this write is skipped (e.g.
+   *  the host has no fileKey yet). The package never sees the fileKey or the crypto. */
+  encryptMirror?: (yjsUpdate: Uint8Array) => Promise<string | null>;
   /** Host signal: the fileKey's rotation epoch (the gate `currentEpoch` / fileKey version — NOT
    *  `editGrantEpoch`; default 0 for non-rotating plain-public docs). */
   fileKeyEpoch?: number;

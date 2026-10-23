@@ -116,6 +116,26 @@ export const useSyncManager = (config: SyncManagerConfig) => {
     };
   }, []);
 
+  // Tab switch / mobile backgrounding: write the pending view-plane mirror while the socket
+  // is still alive, so viewers don't miss the last edits before a close.
+  useEffect(() => {
+    if (
+      typeof document === 'undefined' ||
+      typeof document.addEventListener !== 'function'
+    ) {
+      return;
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        managerRef.current?.flushPendingMirror();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
   const connect = useCallback(
     (connectConfig: CollabConnectionConfig) => {
       manager.connect(connectConfig).catch((err) => {
