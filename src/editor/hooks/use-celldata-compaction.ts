@@ -10,6 +10,7 @@ import {
   planYdocCompaction,
 } from '../utils/compact-committed-celldata';
 import { updateYdocSheetData } from '../utils/update-ydoc';
+import { COMPACTION_ORIGIN } from '../utils/content-change';
 import { applyCellFormatRangesCommits } from '../../sheet-engine/core/utils/mirror-cell-format-ranges';
 
 /** Wait for editor + IDB sync, then a quiet window before scanning. */
@@ -53,6 +54,7 @@ async function applyCompactionChangesInChunks(
           sheetEditorRef.current?.getWorkbookSetContext?.() ?? null,
         );
       },
+      COMPACTION_ORIGIN,
     );
     if (!isLast) {
       await new Promise<void>((resolve) => {

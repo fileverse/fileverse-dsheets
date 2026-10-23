@@ -182,7 +182,8 @@ export interface SyncManagerConfig {
   ydoc: Y.Doc;
   services?: CollabServices;
   callbacks?: CollabCallbacks;
-  onLocalUpdate?: (updatedDocContent: string, updateChunk: string) => void;
+  /** Called after a remote update is applied, with that update only. */
+  onRemoteApplied?: (update: Uint8Array) => void;
   /** Origins to ignore in the ydoc update handler (e.g. IndexedDB provider) */
   ignoredOrigins?: Array<{ current: unknown }>;
 }

@@ -187,6 +187,8 @@ export const updateYdocSheetData = (
   onCellFormatRangesCommitted?: (
     commits: Array<{ sheetId: string; ranges: CellFormatRange[] }>,
   ) => void,
+  /** Transaction origin; omit for user edits. */
+  origin?: unknown,
 ) => {
   if (!ydoc || !changes.length) return;
 
@@ -589,7 +591,7 @@ export const updateYdocSheetData = (
         skipIfEqual: true,
       });
     }
-  });
+  }, origin);
 
   if (committedFormatRanges.size > 0 && onCellFormatRangesCommitted) {
     onCellFormatRangesCommitted(

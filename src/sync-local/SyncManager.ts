@@ -140,10 +140,7 @@ export class SyncManager {
   // --- Config (from constructor) ---
   private ydoc: Y.Doc;
   private callbacksRef: CollabCallbacks | undefined;
-  private onLocalUpdate?: (
-    updatedDocContent: string,
-    updateChunk: string,
-  ) => void;
+  private onRemoteApplied?: (update: Uint8Array) => void;
 
   constructor(
     config: SyncManagerConfig,
@@ -151,17 +148,17 @@ export class SyncManager {
   ) {
     this.ydoc = config.ydoc;
     this.callbacksRef = config.callbacks;
-    this.onLocalUpdate = config.onLocalUpdate;
+    this.onRemoteApplied = config.onRemoteApplied;
   }
 
   /** Called by useSyncManager on every render to keep refs fresh */
   updateRefs(
     _services: CollabServices | undefined,
     callbacks: CollabCallbacks | undefined,
-    onLocalUpdate?: (updatedDocContent: string, updateChunk: string) => void,
+    onRemoteApplied?: (update: Uint8Array) => void,
   ) {
     this.callbacksRef = callbacks;
-    this.onLocalUpdate = onLocalUpdate;
+    this.onRemoteApplied = onRemoteApplied;
   }
 
   // ─── Derived properties ───
@@ -1711,14 +1708,10 @@ export class SyncManager {
       this.scheduleGapCatchUp();
     }
     try {
-      if (this.onLocalUpdate && typeof this.onLocalUpdate === 'function') {
-        this.onLocalUpdate(
-          fromUint8Array(Y.encodeStateAsUpdate(this.ydoc)),
-          fromUint8Array(update),
-        );
-      }
+      // Delta only: encoding the whole doc here cost O(doc) per received update.
+      this.onRemoteApplied?.(update);
     } catch (err) {
-      console.error('SyncManager: onLocalUpdate callback threw', err);
+      console.error('SyncManager: onRemoteApplied callback threw', err);
     }
   }
 
@@ -1761,14 +1754,10 @@ export class SyncManager {
       return;
     }
     try {
-      if (this.onLocalUpdate && typeof this.onLocalUpdate === 'function') {
-        this.onLocalUpdate(
-          fromUint8Array(Y.encodeStateAsUpdate(this.ydoc)),
-          fromUint8Array(mergedContents),
-        );
-      }
+      // Delta only: encoding the whole doc here cost O(doc) per received update.
+      this.onRemoteApplied?.(mergedContents);
     } catch (err) {
-      console.error('SyncManager: onLocalUpdate callback threw', err);
+      console.error('SyncManager: onRemoteApplied callback threw', err);
     }
   }
 

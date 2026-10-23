@@ -8,6 +8,9 @@ import { CollaborationProps } from '../sync-local/types';
 import { CommentsConfig } from './types/comments';
 import type { SmartContractConfig } from './types/smart-contract';
 import type { ApiKeyStorage } from './utils/api-key-storage';
+import type { DSheetContentChange } from './utils/content-change';
+
+export type { DSheetContentChange } from './utils/content-change';
 import type { ThemeKey } from '@sheet-engine/core/theme';
 import type { DSheetContentSnapshot } from '../persistence';
 import type { NavigateToSheetOptions } from './utils/navigate-to-sheet';
@@ -50,6 +53,13 @@ export type DSheetEditorHandle = WorkbookInstance & {
     sheetId: string,
     opts?: NavigateToSheetOptions,
   ) => Promise<boolean>;
+  /**
+   * Content fingerprint: base64 state vector + ":" + deleted count. Changes
+   * on every change, deletes included; compare with === only. null until
+   * y-indexeddb is attached and synced; use fingerprintFromUpdate of the
+   * IndexedDB body then.
+   */
+  getContentFingerprint: () => string | null;
 };
 
 export interface PanelConfig {
@@ -114,6 +124,18 @@ export interface DsheetProps {
    * Unlike `onChange`, this does not build a plain sheet or encode the Y.Doc.
    */
   onContentUpdate?: () => void;
+  /**
+   * Cheap change signal (Stabilize A1): `hasContent`, `userEdited` and the
+   * content `fingerprint`, computed without encoding the Y.Doc. At most one
+   * call per second (trailing), flushed on pagehide, beforeunload and unmount.
+   * Read full state on demand with `editorStateRef.getContentSnapshot()`.
+   */
+  onContentChange?: (change: DSheetContentChange) => void;
+  /**
+   * @deprecated Encodes the whole Y.Doc and rebuilds a plain workbook per
+   * call. Use `onContentChange` and read full state on demand. Called at most
+   * once per second (trailing), flushed only on unload and unmount.
+   */
   onChange?: (updateData: SheetUpdateData, encodedUpdate?: string) => void;
   collaboration?: CollaborationProps;
   /** Called when local IndexedDB persistence fails. The editor and durable

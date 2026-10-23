@@ -17,7 +17,12 @@ export type {
   DSheetEditorHandle,
   DSheetPermissionMode,
 } from './editor/types';
-export type { PanelConfig, PanelId, BuiltInPanelType } from './editor/types';
+export type {
+  PanelConfig,
+  PanelId,
+  BuiltInPanelType,
+  DSheetContentChange,
+} from './editor/types';
 export type {
   CommentThread,
   CommentReply,

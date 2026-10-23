@@ -11,6 +11,12 @@ import {
 } from '../../persistence-utils';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
 import { compactDsheetPersistence } from '../../persistence-compaction';
+import { attachContentFingerprint } from '../utils/content-fingerprint';
+import {
+  attachUserEditTracker,
+  computeHasContent,
+  type DSheetContentChange,
+} from '../utils/content-change';
 import {
   createCollaborationConnectionController,
   mergePublishedContentIntoYdoc,
@@ -22,14 +28,26 @@ export const useEditorSync = (
   isReadOnly = false,
   portalContent = '',
   collaboration?: CollaborationProps,
-  onCollabUpdate?: (fullState: string, updateChunk: string) => void,
+  onRemoteApplied?: (update: Uint8Array) => void,
   onIndexedDbError?: (error: Error) => void,
 ) => {
   // Match dDoc: one Y.Doc is owned by this provider for its entire lifetime.
   // A dsheetId change remounts EditorProvider at the component boundary.
-  const [ydoc] = useState(() => new Y.Doc());
-  const ydocRef = useRef<Y.Doc | null>(ydoc);
+  // The fingerprint tracker attaches here, before IndexedDB replay, the
+  // published-state merge or SyncManager can write, so it never needs a scan.
   const persistenceRef = useRef<IndexeddbPersistence | null>(null);
+  const [{ ydoc, fingerprint, userEdits }] = useState(() => {
+    const doc = new Y.Doc();
+    return {
+      ydoc: doc,
+      fingerprint: attachContentFingerprint(doc),
+      userEdits: attachUserEditTracker(doc, () => persistenceRef.current),
+    };
+  });
+  const ydocRef = useRef<Y.Doc | null>(ydoc);
+  // True once y-indexeddb is attached and has replayed. Until then the live
+  // doc can be empty while IndexedDB holds the sheet.
+  const indexeddbSyncedRef = useRef(false);
   const [syncStatus, setSyncStatus] = useState<
     'initializing' | 'syncing' | 'synced' | 'error'
   >('initializing');
@@ -42,11 +60,11 @@ export const useEditorSync = (
   const collabServices = activeCollab?.services;
   const collabCallbacks = activeCollab?.on;
 
-  // Stable ref so SyncManager closure never captures a stale onCollabUpdate identity
-  const onCollabUpdateRef = useRef(onCollabUpdate);
+  // Stable ref so SyncManager closure never captures a stale onRemoteApplied identity
+  const onRemoteAppliedRef = useRef(onRemoteApplied);
   useEffect(() => {
-    onCollabUpdateRef.current = onCollabUpdate;
-  }, [onCollabUpdate]);
+    onRemoteAppliedRef.current = onRemoteApplied;
+  }, [onRemoteApplied]);
 
   // IndexedDB owns the bootstrap lifecycle, so changing an error callback must
   // not destroy and recreate the persistence provider.
@@ -69,14 +87,15 @@ export const useEditorSync = (
     ydoc,
     services: collabServices,
     callbacks: collabCallbacks,
-    onLocalUpdate: (fullState, chunk) => {
-      onCollabUpdateRef.current?.(fullState, chunk);
+    onRemoteApplied: (update) => {
+      onRemoteAppliedRef.current?.(update);
     },
     ignoredOrigins: [persistenceRef],
   });
 
   const initialiseEditorIndexedDB = useCallback(async () => {
     const generation = ++bootstrapGenerationRef.current;
+    indexeddbSyncedRef.current = false;
     setSyncStatus('syncing');
     setIsContentBootstrapReady(false);
 
@@ -118,6 +137,7 @@ export const useEditorSync = (
           });
           await persistence.whenSynced;
           if (generation !== bootstrapGenerationRef.current) return;
+          indexeddbSyncedRef.current = true;
           // Collapse rows that were already replayed into the doc (legacy full
           // copies, previous sessions' edits) into one, in the background.
           void compactDsheetPersistence(persistence).catch((error: unknown) => {
@@ -132,6 +152,7 @@ export const useEditorSync = (
           );
           const failedPersistence = persistenceRef.current;
           persistenceRef.current = null;
+          indexeddbSyncedRef.current = false;
           if (failedPersistence) {
             try {
               await failedPersistence.destroy();
@@ -179,6 +200,29 @@ export const useEditorSync = (
     [dsheetId],
   );
 
+  /**
+   * Live content fingerprint (A1), or null until y-indexeddb is attached to
+   * the doc and has synced. Callers fall back to fingerprintFromUpdate of the
+   * IndexedDB body while it is null.
+   */
+  const getContentFingerprint = useCallback(
+    (): string | null =>
+      ydocRef.current && persistenceRef.current && indexeddbSyncedRef.current
+        ? fingerprint.getFingerprint()
+        : null,
+    [fingerprint],
+  );
+
+  /** A1 change signal, built on demand from the live doc (no encode). */
+  const getContentChange = useCallback(
+    (): DSheetContentChange => ({
+      hasContent: computeHasContent(ydoc, dsheetId),
+      userEdited: userEdits.userEdited(),
+      fingerprint: getContentFingerprint(),
+    }),
+    [ydoc, dsheetId, userEdits, getContentFingerprint],
+  );
+
   const mergeContent = useCallback(
     (encodedState: string) =>
       mergeDsheetContentIntoDocument(dsheetId, encodedState, ydocRef.current),
@@ -191,11 +235,13 @@ export const useEditorSync = (
   useEffect(() => {
     return () => {
       if (ydocRef.current === ydoc) {
+        fingerprint.dispose();
+        userEdits.dispose();
         ydoc.destroy();
         ydocRef.current = null;
       }
     };
-  }, [ydoc]);
+  }, [ydoc, fingerprint, userEdits]);
 
   // Content bootstrap effect: IndexedDB replay → published state → migration.
   // Never replaces the Y.Doc — SyncManager, persistence, and Fortune share it.
@@ -204,6 +250,7 @@ export const useEditorSync = (
 
     return () => {
       bootstrapGenerationRef.current += 1;
+      indexeddbSyncedRef.current = false;
       if (persistenceRef.current) {
         void persistenceRef.current.destroy();
         persistenceRef.current = null;
@@ -308,6 +355,8 @@ export const useEditorSync = (
     isContentBootstrapReady,
     refreshIndexedDB: initialiseEditorIndexedDB,
     getContentSnapshot,
+    getContentFingerprint,
+    getContentChange,
     mergeContent,
     // collab
     collabState,

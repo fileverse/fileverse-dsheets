@@ -6,6 +6,7 @@ import React, {
   useEffect,
   useMemo,
   useCallback,
+  useLayoutEffect,
 } from 'react';
 import throttle from 'lodash/throttle';
 import { LiveQueryData, Sheet } from '@sheet-engine/react';
@@ -53,6 +54,10 @@ import type {
 import type { Awareness } from 'y-protocols/awareness';
 import type { DSheetContentSnapshot } from '../../persistence';
 import { attachDSheetEditorHandle } from '../utils/editor-handle';
+import {
+  createContentChangeNotifier,
+  type DSheetContentChange,
+} from '../utils/content-change';
 // Define the shape of the context
 export interface EditorContextType {
   setIsDataLoaded: React.Dispatch<React.SetStateAction<boolean>>;
@@ -132,6 +137,7 @@ interface EditorProviderProps {
   enableIndexeddbSync?: boolean;
   isReadOnly?: boolean;
   onContentUpdate?: () => void;
+  onContentChange?: (change: DSheetContentChange) => void;
   onChange?: (data: SheetUpdateData, encodedUpdate?: string) => void;
   collaboration?: CollaborationProps;
   externalEditorRef?: React.Ref<DSheetEditorHandle>;
@@ -173,6 +179,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   enableIndexeddbSync = true,
   isReadOnly = false,
   onContentUpdate,
+  onContentChange,
   onChange,
   externalEditorRef,
   legacyEditorRef,
@@ -296,15 +303,13 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     };
   }, [updateDataBlockCalcFunctionAfterRowDrag]);
 
-  // Stable pointer to the latest sheet data — populated by useEditorData below.
-  // Declared here so onCollabUpdate (which feeds into useEditorSync) can reference it
-  // without causing a TDZ issue or stale closure.
-  const currentDataForCollabRef = useRef<Sheet[]>([]);
-
-  const onCollabUpdateRef = useRef(onChange);
-  useEffect(() => {
-    onCollabUpdateRef.current = onChange;
-  }, [onChange]);
+  // SyncManager calls this after applying a remote update. The handler is
+  // assigned below, once the change notifiers exist (they need ydocRef).
+  const onRemoteAppliedRef = useRef<(update: Uint8Array) => void>(() => {});
+  const onRemoteApplied = useCallback(
+    (update: Uint8Array) => onRemoteAppliedRef.current(update),
+    [],
+  );
 
   const handleContentUpdateNotification = useMemo(
     () => throttle(() => onContentUpdate?.(), 1000),
@@ -321,19 +326,6 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     () => false,
   );
 
-  // onCollabUpdate: called by SyncManager when a remote update arrives.
-  const onCollabUpdate = useCallback(
-    (fullState: string) => {
-      if (!onCollabUpdateRef.current) return;
-      onCollabUpdateRef.current(
-        { data: currentDataForCollabRef.current },
-        fullState,
-      );
-      handleContentUpdateNotification();
-    },
-    [handleContentUpdateNotification],
-  );
-
   // Initialize YJS document, persistence, and optional Socket.IO collab transport
   const {
     ydocRef,
@@ -342,6 +334,8 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     isContentBootstrapReady,
     refreshIndexedDB,
     getContentSnapshot,
+    getContentFingerprint,
+    getContentChange,
     mergeContent,
     collabState,
     isCollabReady,
@@ -356,7 +350,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     isReadOnly,
     portalContent,
     collaboration,
-    onCollabUpdate,
+    onRemoteApplied,
     onIndexedDbError,
   );
 
@@ -398,6 +392,8 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   updateCollaboratorNameRef.current = updateCollaboratorName;
   const updateSessionTitleRef = useRef(updateSessionTitle);
   updateSessionTitleRef.current = updateSessionTitle;
+  const getContentFingerprintRef = useRef(getContentFingerprint);
+  getContentFingerprintRef.current = getContentFingerprint;
 
   const setSheetEditorRef = useCallback<React.RefCallback<WorkbookInstance>>(
     (workbook) => {
@@ -417,6 +413,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
               activateSheetForLink,
               opts,
             ),
+          getContentFingerprint: () => getContentFingerprintRef.current(),
         },
         [externalEditorRef, legacyEditorRef],
       );
@@ -430,42 +427,68 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
 
   const handleOnChange = useMemo(
     () =>
-      throttle(() => {
-        if (!onChange || !ydocRef.current) return;
+      throttle(
+        () => {
+          if (!onChange || !ydocRef.current) return;
 
-        const encodedUpdate = fromUint8Array(
-          Y.encodeStateAsUpdate(ydocRef.current),
-        );
-        // Local cell edits update Yjs celldata but do not refresh currentDataRef.
-        // Build the legacy plain snapshot from Yjs only for hosts that still
-        // request onChange.
-        let plain = currentDataRef.current;
-        try {
-          const sheetArray = ydocRef.current.getArray(dsheetId);
-          plain = ySheetArrayToPlain(sheetArray as Y.Array<Y.Map<any>>);
-          currentDataRef.current = plain;
-        } catch {
-          // Fall back to ref if Yjs → plain conversion fails.
-        }
-        onChange({ data: plain }, encodedUpdate);
-      }, 1000),
+          const encodedUpdate = fromUint8Array(
+            Y.encodeStateAsUpdate(ydocRef.current),
+          );
+          // Local cell edits update Yjs celldata but do not refresh currentDataRef.
+          // Build the legacy plain snapshot from Yjs only for hosts that still
+          // request onChange.
+          let plain = currentDataRef.current;
+          try {
+            const sheetArray = ydocRef.current.getArray(dsheetId);
+            plain = ySheetArrayToPlain(sheetArray as Y.Array<Y.Map<any>>);
+            currentDataRef.current = plain;
+          } catch {
+            // Fall back to ref if Yjs → plain conversion fails.
+          }
+          onChange({ data: plain }, encodedUpdate);
+        },
+        // Trailing only: the whole-doc encode runs at most once per second,
+        // never per edit. flush() runs only on unload and unmount.
+        1000,
+        { leading: false, trailing: true },
+      ),
     [onChange, dsheetId],
+  );
+
+  // A1: cheap change signal, built from the live doc when it fires.
+  const onContentChangeRef = useRef(onContentChange);
+  onContentChangeRef.current = onContentChange;
+  const contentChangeNotifier = useMemo(
+    () =>
+      createContentChangeNotifier(
+        getContentChange,
+        () => onContentChangeRef.current,
+      ),
+    [getContentChange],
   );
 
   useEffect(
     () => () => {
       handleContentUpdateNotification.cancel();
       handleOnChange.cancel();
+      contentChangeNotifier.cancel();
     },
-    [handleOnChange, handleContentUpdateNotification],
+    [handleOnChange, handleContentUpdateNotification, contentChangeNotifier],
   );
 
+  // Local writes and remote applies share these throttles.
   const flushPortalUpdate = useCallback(() => {
     handleOnChange();
-    handleOnChange.flush();
     handleContentUpdateNotification();
+    contentChangeNotifier.notify();
+  }, [handleOnChange, handleContentUpdateNotification, contentChangeNotifier]);
+  onRemoteAppliedRef.current = flushPortalUpdate;
+
+  const flushPendingChanges = useCallback(() => {
+    handleOnChange.flush();
     handleContentUpdateNotification.flush();
-  }, [handleOnChange, handleContentUpdateNotification]);
+    contentChangeNotifier.flush();
+  }, [handleOnChange, handleContentUpdateNotification, contentChangeNotifier]);
 
   const handleOnChangePortalUpdate = useCallback(() => {
     if (portalUpdateScheduledRef.current) return;
@@ -477,16 +500,20 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   }, [flushPortalUpdate]);
 
   useEffect(() => {
-    if (!onChange) return;
-
-    const handleBeforeUnload = () => {
-      flushPortalUpdate();
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('beforeunload', flushPendingChanges);
+    window.addEventListener('pagehide', flushPendingChanges);
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('beforeunload', flushPendingChanges);
+      window.removeEventListener('pagehide', flushPendingChanges);
     };
-  }, [onChange, flushPortalUpdate]);
+  }, [flushPendingChanges]);
+
+  // Unmount sends what is pending. A layout-effect cleanup runs before
+  // useEditorSync's passive cleanup destroys the doc. Read through a ref so a
+  // host passing an inline onChange does not flush on every render.
+  const flushPendingChangesRef = useRef(flushPendingChanges);
+  flushPendingChangesRef.current = flushPendingChanges;
+  useLayoutEffect(() => () => flushPendingChangesRef.current(), []);
 
   // Initialize sheet data
   const {
@@ -533,9 +560,6 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     remoteUpdateRef,
     collabSyncing: isCollabSyncing,
   });
-
-  // Keep the stable collab ref in sync with the live currentDataRef
-  currentDataForCollabRef.current = currentDataRef.current;
 
   rehydrateAfterCollabSyncRef.current = rehydrateWorkbookFromYdoc;
 
