@@ -11701,6 +11701,7 @@ export default {
     cancelText: 'Cancel',
     chooseText: 'Confirm color',
     focus: 'Focus',
+    copyLink: 'Copy link to sheet',
 
     tipNameRepeat: 'The name of the tab page cannot be repeated! Please revise',
     noMoreSheet:

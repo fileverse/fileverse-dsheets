@@ -15,6 +15,11 @@ import { ChangeColor } from '../ChangeColor';
 import Divider from './Divider';
 import './index.css';
 import Menu from './Menu';
+import {
+  COPY_SHEET_LINK_ITEM,
+  getVisibleSheetTabMenuItems,
+  isSheetTabReadOnly,
+} from './sheet-tab-menu-items';
 
 const SheetTabContextMenu: React.FC = () => {
   const { context, setContext, settings } = useContext(WorkbookContext);
@@ -98,7 +103,18 @@ const SheetTabContextMenu: React.FC = () => {
     });
   }, [context.allowEdit, setContext, sheet?.id]);
 
-  if (!sheet || x == null || y == null) return null;
+  const onCopySheetLink = context.hooks.onCopySheetLink;
+  const visibleItems = getVisibleSheetTabMenuItems(
+    settings.sheetTabContextMenu ?? [],
+    {
+      readOnly: isSheetTabReadOnly(context),
+      hasCopyLink: typeof onCopySheetLink === 'function',
+    },
+  );
+
+  if (!sheet || x == null || y == null || visibleItems.length === 0) {
+    return null;
+  }
 
   return (
     <div
@@ -107,7 +123,25 @@ const SheetTabContextMenu: React.FC = () => {
       style={{ left: position.x, top: position.y, overflow: 'visible' }}
       ref={containerRef}
     >
-      {settings.sheetTabContextMenu?.map((name, i) => {
+      {visibleItems.map((name, i) => {
+        if (name === COPY_SHEET_LINK_ITEM) {
+          return (
+            <Menu
+              key={name}
+              onClick={() => {
+                if (sheet.id) {
+                  onCopySheetLink?.({
+                    sheetId: sheet.id,
+                    sheetName: sheet.name,
+                  });
+                }
+                close();
+              }}
+            >
+              {sheetconfig.copyLink}
+            </Menu>
+          );
+        }
         if (name === 'delete') {
           return (
             <Menu

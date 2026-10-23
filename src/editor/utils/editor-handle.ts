@@ -8,6 +8,7 @@ export type DSheetEditorMethods = Pick<
   | "terminateSession"
   | "updateCollaboratorName"
   | "updateSessionTitle"
+  | "navigateToSheet"
 >;
 
 const assignRef = <T>(ref: Ref<T> | undefined, value: T | null): void => {
