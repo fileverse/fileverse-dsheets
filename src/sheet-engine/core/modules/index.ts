@@ -359,6 +359,8 @@ export {
   confirmMessage,
   cellFocus,
   validateCellData,
+  splitDropdownOptions,
+  getDropdownOptions,
 } from './dataVerification';
 
 // ConditionFormat
