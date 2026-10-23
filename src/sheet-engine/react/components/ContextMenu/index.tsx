@@ -18,6 +18,8 @@ import {
   api,
   isAllowEdit,
   jfrefreshgrid,
+  deleteCellsShift,
+  insertCellsShift,
   newComment,
   getFreezeState,
   toggleFreeze,
@@ -68,48 +70,9 @@ const ContextMenu: React.FC = () => {
     (direction: 'left' | 'up') => {
       const selection = context.luckysheet_select_save?.[0];
       if (!selection) return;
-      const [rowStart, rowEnd] = selection.row;
-      const [colStart, colEnd] = selection.column;
-      const rowCount = rowEnd - rowStart + 1;
-      const colCount = colEnd - colStart + 1;
-
       setContext((draftCtx) => {
-        const sheetIndex = getSheetIndex(draftCtx, draftCtx.currentSheetId);
-        if (_.isNil(sheetIndex)) {
-          draftCtx.contextMenu = {};
-          return;
-        }
-        const sheet = draftCtx.luckysheetfile[sheetIndex];
-        const data = sheet?.data;
-        if (!data?.length || !data[0]?.length) {
-          draftCtx.contextMenu = {};
-          return;
-        }
-        const totalRows = sheet.row ?? data.length;
-        const totalCols = sheet.column ?? data[0].length;
-
-        if (direction === 'left') {
-          for (let r = rowStart; r <= rowEnd; r += 1) {
-            const row = data[r];
-            if (!row) continue;
-            row.splice(colStart, colCount);
-            while (row.length < totalCols) {
-              row.push(null);
-            }
-          }
-        } else {
-          for (let c = colStart; c <= colEnd; c += 1) {
-            for (let r = rowStart; r <= totalRows - rowCount - 1; r += 1) {
-              data[r][c] = data[r + rowCount]?.[c] ?? null;
-            }
-            for (let r = totalRows - rowCount; r < totalRows; r += 1) {
-              data[r][c] = null;
-            }
-          }
-        }
-
+        deleteCellsShift(draftCtx, direction, selection);
         draftCtx.contextMenu = {};
-        jfrefreshgrid(draftCtx, null, undefined);
       });
     },
     [context.luckysheet_select_save, setContext],
@@ -119,46 +82,9 @@ const ContextMenu: React.FC = () => {
     (direction: 'right' | 'down') => {
       const selection = context.luckysheet_select_save?.[0];
       if (!selection) return;
-      const [rowStart, rowEnd] = selection.row;
-      const [colStart, colEnd] = selection.column;
-      const rowCount = rowEnd - rowStart + 1;
-      const colCount = colEnd - colStart + 1;
-
       setContext((draftCtx) => {
-        const sheetIndex = getSheetIndex(draftCtx, draftCtx.currentSheetId);
-        if (_.isNil(sheetIndex)) {
-          draftCtx.contextMenu = {};
-          return;
-        }
-        const sheet = draftCtx.luckysheetfile[sheetIndex];
-        const data = sheet?.data;
-        if (!data?.length || !data[0]?.length) {
-          draftCtx.contextMenu = {};
-          return;
-        }
-        const totalRows = sheet.row ?? data.length;
-        const totalCols = sheet.column ?? data[0].length;
-
-        if (direction === 'right') {
-          for (let r = rowStart; r <= rowEnd; r += 1) {
-            const row = data[r];
-            if (!row) continue;
-            row.splice(colStart, 0, ...new Array(colCount).fill(null));
-            row.length = totalCols;
-          }
-        } else {
-          for (let c = colStart; c <= colEnd; c += 1) {
-            for (let r = totalRows - 1; r >= rowStart + rowCount; r -= 1) {
-              data[r][c] = data[r - rowCount]?.[c] ?? null;
-            }
-            for (let r = rowStart; r < rowStart + rowCount; r += 1) {
-              data[r][c] = null;
-            }
-          }
-        }
-
+        insertCellsShift(draftCtx, direction, selection);
         draftCtx.contextMenu = {};
-        jfrefreshgrid(draftCtx, null, undefined);
       });
     },
     [context.luckysheet_select_save, setContext],

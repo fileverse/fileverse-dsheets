@@ -91,6 +91,8 @@ interface AfterUpdateCellParams {
   collabIsOwner?: boolean;
   remoteUpdateRef?: React.MutableRefObject<boolean>;
   localUserEditRef?: React.MutableRefObject<boolean>;
+  /** Sheet that held the cell at commit time; falls back to the current sheet. */
+  sheetId?: string;
 }
 
 /** True when data-block formulas (API / smart contract) should run for this edit. */
@@ -514,16 +516,15 @@ const handlePromiseValue = async (
 export const afterUpdateCell = async (
   params: AfterUpdateCellParams,
 ): Promise<void> => {
-  const runDataBlocks = shouldExecuteDataBlocks(params);
-
-  // During RTC remote apply (e.g. owner XLSX import), skip local data-block work.
-  // Owner local edits and joiner local formula entry clear the lock via onLocalCellEdit.
-  if (!runDataBlocks) {
-    return;
-  }
-
-  const currentSheetId = params.sheetEditorRef.current?.getWorkbookContext()
-    ?.currentSheetId as string;
+  // Persist first, on the sheet that held the cell at commit time. The write
+  // is idempotent (skipIfEqual), so it is harmless after updateCell's own
+  // commit-time write, and it keeps paths that only reach Yjs through this
+  // hook (api.setCellValue with callAfterUpdate) working. It must not sit
+  // behind the data-block gate below: that gate dropped typed commits (B2).
+  const currentSheetId =
+    params.sheetId ??
+    (params.sheetEditorRef.current?.getWorkbookContext()
+      ?.currentSheetId as string);
   updateYdocSheetData(
     // @ts-ignore
     params.ydocRef.current,
@@ -545,6 +546,12 @@ export const afterUpdateCell = async (
     // @ts-ignore
     params.handleContentPortal,
   );
+
+  // During RTC remote apply (e.g. owner XLSX import), skip local data-block work.
+  // Owner local edits and joiner local formula entry clear the lock via onLocalCellEdit.
+  if (!shouldExecuteDataBlocks(params)) {
+    return;
+  }
 
   const { newValue, sheetEditorRef } = params;
   // Early return for empty values

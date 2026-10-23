@@ -563,9 +563,11 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
             column: number,
             _oldValue: Cell,
             newValue: Cell,
+            sheetId?: string,
           ): void => {
             const refObj = { current: sheetEditorRef.current };
             afterUpdateCell({
+              sheetId,
               handleContentPortal: handleOnChangePortalUpdate,
               dsheetId,
               ydocRef,

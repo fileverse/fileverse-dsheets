@@ -378,6 +378,7 @@ export { MAX_ZOOM_RATIO, MIN_ZOOM_RATIO } from './zoom';
 
 // refresh
 export { jfrefreshgrid } from './refresh';
+export { deleteCellsShift, insertCellsShift } from './cell-shift';
 
 // iframe
 export {

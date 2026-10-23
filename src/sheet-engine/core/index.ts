@@ -368,6 +368,9 @@ export {
   hideCRCount,
   // cell (internal)
   getdatabyselection,
+  // cell shift (internal)
+  deleteCellsShift,
+  insertCellsShift,
 } from './modules';
 export type { FilterDate, FilterValue, FilterColor } from './modules';
 

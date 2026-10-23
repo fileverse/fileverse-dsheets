@@ -1824,7 +1824,6 @@ export function pasteHandlerOfCopyPaste(
             }
           }
 
-          let afterHookCalled = false;
           if (!_.isNil(value) && !_.isNil(value.f)) {
             let adjustedFormula = value.f;
             let isError = false;
@@ -1906,7 +1905,6 @@ export function pasteHandlerOfCopyPaste(
                   m:
                     funcV[1] instanceof Promise ? '[object Promise]' : funcV[1],
                 });
-                afterHookCalled = true;
               }
             }
 
@@ -1950,17 +1948,16 @@ export function pasteHandlerOfCopyPaste(
               };
             }
           }
-          // If afterUpdateCell ran for this cell, it is expected to handle Yjs sync.
-          if (!(ctx?.hooks?.afterUpdateCell && afterHookCalled)) {
-            pushPasteCelldataChange(
-              changes,
-              ctx,
-              h,
-              c,
-              d[h][c],
-              hadPersistedBefore,
-            );
-          }
+          // Always in this paste's own batch write: afterUpdateCell skips its
+          // write when data-block work is gated off (B2).
+          pushPasteCelldataChange(
+            changes,
+            ctx,
+            h,
+            c,
+            d[h][c],
+            hadPersistedBefore,
+          );
         }
         d[h] = x;
       }
@@ -2184,6 +2181,17 @@ export function handleFormulaStringPaste(ctx: Context, formulaStr: string) {
   d[r][c]!.m = isDataBlockRespose ? 'Loading...' : val.toString();
   d[r][c]!.v = val;
   d[r][c]!.f = formulaStr;
+  // Persist the pasted formula; afterUpdateCell below only runs for data-block
+  // results, so ordinary formulas never reached Yjs (B6).
+  ctx.hooks.updateCellYdoc?.([
+    {
+      sheetId: ctx.currentSheetId,
+      path: ['celldata'],
+      key: `${r}_${c}`,
+      value: { r, c, v: d[r][c] },
+      type: 'update',
+    },
+  ]);
   const cellTemp = { m: '', v: '', f: '' };
 
   cellTemp.m = isDataBlockRespose ? 'Loading...' : val.toString();
