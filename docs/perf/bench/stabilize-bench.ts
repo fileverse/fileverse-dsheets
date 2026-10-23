@@ -477,6 +477,85 @@ const freshCopyOf = (doc: Y.Doc) => {
   }
 }
 
+// S7: a remote batch of 50 cells on a 4000x25 sheet (A5).
+// - plain snapshot patch (patchPlainCelldata) on 100k celldata entries
+// - engine apply: today one produceWithPatches per cell (setContextWithProduce
+//   without noHistory); A5 one produce for the batch (applyRemoteCells).
+{
+  const { patchPlainCelldata } = await import(
+    '../../../src/editor/utils/patch-plain-celldata'
+  );
+  const rand = mulberry32(11);
+  const base = Array.from({ length: 4000 * 25 }, (_, i) =>
+    makeCell(Math.floor(i / 25), i % 25, rand),
+  );
+  const patches = Array.from({ length: 50 }, (_, k) => ({
+    key: `${(k * 79) % 4000}_${k % 25}`,
+    action: (k % 10 === 0 ? 'delete' : 'update') as 'delete' | 'update',
+    v: { v: `remote ${k}`, m: `remote ${k}` },
+  }));
+  let copy: any[] = [];
+  // Patching mutates, so time each run on a fresh copy.
+  const timed: number[] = [];
+  for (let i = 0; i < 15; i += 1) {
+    copy = base.slice();
+    const t0 = performance.now();
+    patchPlainCelldata(copy, patches);
+    timed.push(performance.now() - t0);
+  }
+  timed.sort((a, b) => a - b);
+  log('S7 patchPlainCelldata, 50 cells into 100k (fresh copy each run)', {
+    median: +timed[7].toFixed(3),
+    p95: +timed[14].toFixed(3),
+    runs: 15,
+  });
+
+  const { enablePatches, produce, produceWithPatches } = await import('immer');
+  enablePatches();
+  const { defaultContext } = await import('../../../src/sheet-engine/core/context');
+  const { loadLocale } = await import('../../../src/sheet-engine/core/locale');
+  const cellApi = await import('../../../src/sheet-engine/core/api/cell');
+  await loadLocale('en');
+  const makeEngineCtx = () => {
+    const ctx: any = defaultContext({
+      globalCache: { undoList: [], redoList: [] },
+      cellInput: { current: null },
+      fxInput: { current: null },
+      canvas: { current: null },
+      cellArea: { current: null },
+      workbookContainer: { current: null },
+    } as any);
+    const data = Array.from({ length: 4000 }, (_, r) =>
+      Array.from({ length: 25 }, (__, c) => base[r * 25 + c].v),
+    );
+    ctx.luckysheetfile = [
+      { id: 's0', name: 'Sheet1', order: 0, status: 1, data, config: {}, calcChain: [] },
+    ];
+    ctx.currentSheetId = 's0';
+    return ctx;
+  };
+  const cells = patches.map(({ key, action, v }) => {
+    const [r, c] = key.split('_').map(Number);
+    return { r, c, v: action === 'delete' ? null : v };
+  });
+  let engineCtx = makeEngineCtx();
+  log('S7 engine apply, 50 cells: one produceWithPatches per cell', measure(() => {
+    for (const { r, c, v } of cells) {
+      [engineCtx] = produceWithPatches(engineCtx, (d: any) =>
+        cellApi.applyRemoteCellValue(d, r, c, v, { id: 's0' }),
+      ) as any;
+    }
+  }, 10));
+  if ('applyRemoteCells' in cellApi) {
+    engineCtx = makeEngineCtx();
+    log('S7 engine apply, 50 cells: one produce (applyRemoteCells)', measure(() => {
+      engineCtx = produce(engineCtx, (d: any) =>
+        (cellApi as any).applyRemoteCells(d, cells, { id: 's0' }),
+      );
+    }, 10));
+  }
+}
+
 // S6: how many whole-doc encodes the legacy onChange throttle runs for 4
 // edits 50 ms apart, then 10 edits 50 ms apart. Replays editor-context's
 // throttle setup with lodash: base = call + flush() per write (removed by A1);
