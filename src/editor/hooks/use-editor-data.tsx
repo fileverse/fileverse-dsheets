@@ -17,8 +17,10 @@ import {
 } from '../utils/comment-anchors-ydoc';
 import {
   beginRemoteApply,
+  cancelStructuralRemount,
   endRemoteApplyAfterPaint,
   runUnderRemoteApply,
+  scheduleStructuralRemount as scheduleGuardedStructuralRemount,
 } from '../utils/remote-apply-guard';
 import { shouldRenderBootstrappedWorkbook } from './collaboration-lifecycle';
 
@@ -64,6 +66,11 @@ export const useEditorData = (
   const debounceTimerRef = useRef<number | null>(null);
   /** While true, skip surgical applies — workbook is stale vs incoming Yjs sheet ids. */
   const structuralRemountPendingRef = useRef<boolean>(false);
+  const structuralRemountRefs = useRef({
+    ...remoteApplyGuardRefs,
+    pendingRef: structuralRemountPendingRef,
+    timerRef: debounceTimerRef,
+  }).current;
 
   useEffect(() => {
     dataInitialized.current = false;
@@ -734,13 +741,8 @@ export const useEditorData = (
         (id) => id && !workbookSheetIds.has(id),
       );
 
-      const scheduleStructuralRemount = () => {
-        structuralRemountPendingRef.current = true;
-        beginRemoteApply(remoteApplyGuardRefs);
-        if (debounceTimerRef.current !== null) {
-          window.clearTimeout(debounceTimerRef.current);
-        }
-        debounceTimerRef.current = window.setTimeout(() => {
+      const scheduleStructuralRemount = () =>
+        scheduleGuardedStructuralRemount(structuralRemountRefs, () => {
           const isEditingCell =
             (sheetEditorRef.current?.getWorkbookContext?.()
               ?.luckysheetCellUpdate?.length ?? 0) > 0;
@@ -762,11 +764,7 @@ export const useEditorData = (
           if (!isEditingCell && setForceSheetRender) {
             setForceSheetRender((prev) => prev + 1);
           }
-          structuralRemountPendingRef.current = false;
-          debounceTimerRef.current = null;
-          endRemoteApplyAfterPaint(remoteApplyGuardRefs);
-        }, 50);
-      };
+        });
 
       const needsStructuralRemount =
         hasStructural ||
@@ -1169,9 +1167,7 @@ export const useEditorData = (
 
     return () => {
       sheetArray.unobserveDeep(observerCallback);
-      if (debounceTimerRef.current !== null) {
-        window.clearTimeout(debounceTimerRef.current);
-      }
+      cancelStructuralRemount(structuralRemountRefs);
     };
   }, [
     ydocRef,
