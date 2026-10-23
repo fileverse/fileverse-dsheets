@@ -6,6 +6,10 @@ import { loadLocale } from '../locale';
 import { clearMeasureTextCache, getMeasureText } from './text';
 import { getComputeMap } from './ConditionFormat';
 import { delFunctionGroup } from './formula';
+import {
+  getBorderInfoComputeRange,
+  getBorderInfoComputeRangeCached,
+} from './border';
 
 const makeCtx = (rows = 20, cols = 8) => {
   const ctx: any = defaultContext({
@@ -169,5 +173,73 @@ describe('C3 delFunctionGroup copies only when needed', () => {
     expect(ctx.luckysheetfile[0].dynamicArray).toEqual([
       { r: 4, c: 4, f: '=A1', data: [[1]] },
     ]);
+  });
+});
+
+describe('C6 border compute cache', () => {
+  const withBorders = () => {
+    const ctx = makeCtx(30, 10);
+    const types = [
+      'border-all',
+      'border-left',
+      'border-right',
+      'border-top',
+      'border-bottom',
+      'border-outside',
+      'border-inside',
+    ];
+    ctx.config.borderInfo = types.map((borderType, i) => ({
+      rangeType: 'range',
+      borderType,
+      color: '#000',
+      style: '1',
+      range: [{ row: [i * 3, i * 3 + 4], column: [i % 5, (i % 5) + 3] }],
+    }));
+    ctx.config.merge = {
+      '2_1': { r: 2, c: 1, rs: 3, cs: 2 },
+      '10_4': { r: 10, c: 4, rs: 2, cs: 3 },
+    };
+    ctx.luckysheetfile[0].data[2][1] = { mc: { r: 2, c: 1, rs: 3, cs: 2 } };
+    ctx.luckysheetfile[0].data[10][4] = { mc: { r: 10, c: 4, rs: 2, cs: 3 } };
+    return ctx;
+  };
+
+  it('equals the uncached compute and hits on a repeat', () => {
+    const ctx = withBorders();
+    const cached = getBorderInfoComputeRangeCached(ctx, 0, 29, 0, 9);
+    expect(cached).toEqual(getBorderInfoComputeRange(ctx, 0, 29, 0, 9));
+    expect(getBorderInfoComputeRangeCached(ctx, 0, 29, 0, 9)).toBe(cached);
+  });
+
+  it('misses when a keyed input changes', () => {
+    const ctx = withBorders();
+    const first = getBorderInfoComputeRangeCached(ctx, 0, 29, 0, 9);
+    for (const change of [
+      (c: any) => (c.config.borderInfo = [...c.config.borderInfo]),
+      (c: any) => (c.config.merge = { ...c.config.merge }),
+      (c: any) => (c.config.rowhidden = { 3: 0 }),
+      (c: any) => (c.config.colhidden = { 2: 0 }),
+    ]) {
+      change(ctx);
+      const next = getBorderInfoComputeRangeCached(ctx, 0, 29, 0, 9);
+      expect(next).not.toBe(first);
+      expect(next).toEqual(getBorderInfoComputeRange(ctx, 0, 29, 0, 9));
+    }
+    expect(getBorderInfoComputeRangeCached(ctx, 0, 14, 0, 9)).not.toBe(
+      getBorderInfoComputeRangeCached(ctx, 0, 29, 0, 9),
+    );
+  });
+
+  it('keeps all four frozen-pane windows', () => {
+    const ctx = withBorders();
+    const panes: Array<[number, number, number, number]> = [
+      [0, 3, 0, 2],
+      [0, 3, 3, 9],
+      [4, 29, 0, 2],
+      [4, 29, 3, 9],
+    ];
+    const first = panes.map((p) => getBorderInfoComputeRangeCached(ctx, ...p));
+    const second = panes.map((p) => getBorderInfoComputeRangeCached(ctx, ...p));
+    second.forEach((result, i) => expect(result).toBe(first[i]));
   });
 });

@@ -11,7 +11,7 @@ import {
 import { getColumnWidth } from './api';
 import { isInlineStringCell } from './modules/inline-string';
 import { getSheetIndex, indexToColumnChar } from './utils';
-import { getBorderInfoComputeRange } from './modules/border';
+import { getBorderInfoComputeRangeCached } from './modules/border';
 import { checkCF, getComputeMap, validateCellData } from './modules';
 import { cellFadeAnimator } from './animate';
 import { isNumericCellType } from './modules/validation';
@@ -1314,7 +1314,7 @@ export class Canvas {
         canvas.restore();
       };
 
-      const borderInfoCompute = getBorderInfoComputeRange(
+      const borderInfoCompute = getBorderInfoComputeRangeCached(
         this.sheetCtx,
         rowStart,
         rowEnd,
