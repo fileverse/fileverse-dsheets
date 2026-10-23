@@ -378,6 +378,13 @@ export function setCellValue(
   // let cell = $.extend(true, {}, d[r][c]);
   // const oldValue = _.cloneDeep(d[r][c]);
   let cell = d[r][c];
+  if (cell) {
+    if (_.isPlainObject(v) && v.spillParent) {
+      cell.spillParent = v.spillParent;
+    } else {
+      delete cell.spillParent;
+    }
+  }
   const hadDisplayValueBeforeEdit =
     !!cell &&
     !(
