@@ -26,11 +26,11 @@ export const conditionFormatYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'luckysheet_conditionformat_save',
   });
   if (!syncContext) return;
 
-  const newData =
-    sheetEditorRef.current?.getSheet()?.luckysheet_conditionformat_save || [];
+  const newData = syncContext.newValue || [];
   const oldData = syncContext.oldSheet.luckysheet_conditionformat_save || [];
 
   //@ts-ignore

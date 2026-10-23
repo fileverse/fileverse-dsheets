@@ -87,10 +87,11 @@ export const configYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'config',
   });
   if (!syncContext) return;
 
-  const newConfig = sheetEditorRef.current?.getSheet()?.config || {};
+  const newConfig = syncContext.newValue || {};
   const oldConfig = syncContext.oldSheet.config || {};
 
   const changes = buildConfigSubKeyChanges({

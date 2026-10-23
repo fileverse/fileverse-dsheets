@@ -28,10 +28,11 @@ export const calcChainYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'calcChain',
   });
   if (!syncContext) return;
 
-  const newData = sheetEditorRef.current?.getSheet()?.calcChain || [];
+  const newData = syncContext.newValue || [];
   const oldData = syncContext.oldSheet.calcChain || [];
   // @ts-ignore
   const calcChainDiff = diffObjectArrays(oldData, newData, getCalcChainKey);

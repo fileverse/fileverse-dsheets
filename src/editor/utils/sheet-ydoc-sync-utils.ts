@@ -3,44 +3,69 @@ import * as Y from 'yjs';
 import { diffObjectMap } from './diff-sheet';
 import {
   SheetChangePath,
+  readYdocSheetField,
   updateYdocSheetData,
-  ySheetArrayToPlain,
 } from './update-ydoc';
+
+export { readYdocSheetField } from './update-ydoc';
+
+/** Sheet fields the per-feature Yjs hooks sync. */
+export const SYNCED_SHEET_FIELDS = [
+  'calcChain',
+  'config',
+  'dataVerification',
+  'luckysheet_conditionformat_save',
+  'hyperlink',
+  'filter',
+  'filter_select',
+  'liveQueryList',
+  'dataBlockCalcFunction',
+] as const;
 
 type SyncContext = {
   currentSheetId: string;
+  /** Only `field` is populated: the value stored in Yjs. */
   oldSheet: Record<string, any>;
+  /** The engine's current value of `field` for the active sheet. */
+  newValue: any;
   ydoc: Y.Doc;
 };
 
 /**
- * Build a stable sync context from current editor sheet and Yjs snapshot.
- * This keeps all field-level sync handlers aligned on the same baseline.
+ * Old (Yjs) and new (engine) value of one field of the active sheet (A3).
+ * Reads only that field: no whole-workbook conversion, and no getSheet(),
+ * which rebuilds celldata from the dense grid.
  */
 export const getSheetYdocSyncContext = ({
   sheetEditorRef,
   ydocRef,
   dsheetId,
+  field,
 }: {
   sheetEditorRef: React.RefObject<WorkbookInstance | null>;
   ydocRef: React.RefObject<Y.Doc | null>;
   dsheetId: string;
+  field: string;
 }): SyncContext | null => {
   if (!sheetEditorRef.current || !ydocRef.current) return null;
 
-  const currentSheetId = sheetEditorRef.current.getWorkbookContext()
-    ?.currentSheetId as string;
-  const oldSheets = ydocRef.current.getArray(dsheetId) as Y.Array<Y.Map<any>>;
-  const plainOldSheets = ySheetArrayToPlain(oldSheets);
-  const oldSheet =
-    (plainOldSheets.find((sheet) => sheet.id === currentSheetId) as Record<
-      string,
-      any
-    >) || {};
+  const workbook = sheetEditorRef.current.getWorkbookContext();
+  const currentSheetId = workbook?.currentSheetId as string;
+  const engineSheet = workbook?.luckysheetfile?.find(
+    (sheet) => sheet.id === currentSheetId,
+  ) as Record<string, any> | undefined;
 
   return {
     currentSheetId,
-    oldSheet,
+    oldSheet: {
+      [field]: readYdocSheetField(
+        ydocRef.current,
+        dsheetId,
+        currentSheetId,
+        field,
+      ),
+    },
+    newValue: engineSheet?.[field],
     ydoc: ydocRef.current,
   };
 };
