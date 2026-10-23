@@ -191,6 +191,19 @@ export function getFontSet(
   return defaultFont(defaultFontSize);
 }
 
+/**
+ * One key for reads and writes (C1). Before, reads used `${value}_${font}`
+ * and writes `${value}_${zoom}_${font}`, so the cache never hit. The cached
+ * width scales with zoom and the ascent/descent depend on the baseline, so
+ * both are part of the key.
+ */
+const measureTextCacheKey = (
+  value: unknown,
+  font: string,
+  zoomRatio: number,
+  textBaseline: string,
+) => `${value}_${zoomRatio}_${textBaseline}_${font}`;
+
 // 获取有值单元格文本大小
 // let measureTextCache = {}, measureTextCacheTimeOut = null;
 export function getMeasureText(
@@ -199,10 +212,13 @@ export function getMeasureText(
   sheetCtx: Context,
   fontset?: string,
 ) {
-  let mtc = measureTextCache[`${value}_${renderCtx.font}`];
-  if (fontset) {
-    mtc = measureTextCache[`${value}_${fontset}`];
-  }
+  const cacheKey = measureTextCacheKey(
+    value,
+    fontset || renderCtx.font,
+    sheetCtx.zoomRatio,
+    renderCtx.textBaseline,
+  );
+  const mtc = measureTextCache[cacheKey];
 
   if (mtc != null) {
     return mtc;
@@ -295,7 +311,7 @@ export function getMeasureText(
     measureTextCache = {};
     measureTextCacheSize = 0;
   }
-  measureTextCache[`${value}_${sheetCtx.zoomRatio}_${renderCtx.font}`] = cache;
+  measureTextCache[cacheKey] = cache;
   measureTextCacheSize += 1;
   return cache;
 }
