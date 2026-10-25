@@ -417,13 +417,14 @@ export function spillSortResult(
   const formulaString = formulaResult?.f;
   const formulaValue = formulaResult?.v;
 
-  // make sure it is a SORT formula result
+  // make sure it is a formula result from a function that spills an array
   if (
     typeof formulaString !== 'string' ||
     !(
       /= *SORT\s*\(/i.test(formulaString) ||
       /= *XLOOKUP\s*\(/i.test(formulaString) ||
-      /= *SEQUENCE\s*\(/i.test(formulaString)
+      /= *SEQUENCE\s*\(/i.test(formulaString) ||
+      /= *FILTER\s*\(/i.test(formulaString)
     )
   )
     return false;

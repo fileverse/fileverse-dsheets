@@ -2,6 +2,7 @@ import * as formulajs from "@fileverse-dev/formulajs";
 import SUPPORTED_FORMULAS from "./../../supported-formulas";
 import { ERROR_NAME } from "./../../error";
 import en from "./../../../core/locale/en";
+import CUSTOM_FORMULAS from "./../custom-formulas";
 
 export const SYMBOL = SUPPORTED_FORMULAS;
 
@@ -21,7 +22,10 @@ export default function func(symbol) {
     let result;
 
     if (symbolParts.length === 1) {
-      if (formulajs[symbolParts[0]]) {
+      if (CUSTOM_FORMULAS[symbolParts[0]]) {
+        foundFormula = true;
+        result = CUSTOM_FORMULAS[symbolParts[0]](...params);
+      } else if (formulajs[symbolParts[0]]) {
         foundFormula = true;
         const functionDetails = FUNCTIONLIST_MAP_EN[symbolParts[0]] || null;
         result = formulajs[symbolParts[0]](...params);
