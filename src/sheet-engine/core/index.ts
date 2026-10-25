@@ -312,6 +312,7 @@ export {
   jfrefreshgrid,
   // iframe
   sanitizeDuneUrl,
+  sanitizeSheetIframes,
   insertDuneChart,
   onIframeMoveStart,
   onIframeResizeStart,
