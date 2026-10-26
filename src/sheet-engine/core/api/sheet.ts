@@ -209,6 +209,8 @@ export function copySheet(ctx: Context, sheetId: string) {
   const order = ctx.luckysheetfile[index].order! + 1;
   const sheetName = generateCopySheetName(ctx, sheetId);
   const sheetData = _.cloneDeep(ctx.luckysheetfile[index]);
+  // The copy's formulas enter the chain without being evaluated (C8).
+  ctx.formulaCache.markDepGraphIncomplete();
   delete sheetData.id;
   delete sheetData.status;
   sheetData.celldata = dataToCelldata(sheetData.data);

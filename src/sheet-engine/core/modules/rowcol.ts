@@ -273,6 +273,8 @@ export function insertRowCol(
   changeSelection: boolean = true,
 ) {
   let { count, id } = op;
+  // Formulas shift and are rewritten without being evaluated (C8).
+  ctx.formulaCache.markDepGraphIncomplete();
   const { type, index, direction, templateSourceRows, templateSourceColumns } =
     op;
   id = id || ctx.currentSheetId;
@@ -1698,6 +1700,8 @@ export function deleteRowCol(
   const { type } = op;
   let { start, end, id } = op;
   id = id || ctx.currentSheetId;
+  // Formulas shift and are rewritten without being evaluated (C8).
+  ctx.formulaCache.markDepGraphIncomplete();
 
   // if (
   //   type == "row" &&

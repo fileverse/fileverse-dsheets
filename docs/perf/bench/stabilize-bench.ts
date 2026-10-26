@@ -14,6 +14,11 @@
  *   S3 Yjs side of one per-feature hook firing (ySheetArrayToPlain)
  *   S4 small 100-row sheet with 100 sessions of history
  *   S5 change-detection signal: state vector, Y.snapshot, A1 fingerprint
+ *   S9 commit to a cell no formula refers to (C8)
+ *
+ * Run only some scenarios (default: all):
+ *   npx vite-node docs/perf/bench/stabilize-bench.ts -- <label> --only=S9
+ * S1 also runs S2/S3 and S4 also runs S5; they share setup.
  */
 import fs from 'fs';
 import path from 'path';
@@ -30,7 +35,11 @@ import { dataVerificationYdocUpdate } from '../../../src/editor/utils/data-verif
 import { configYdocUpdate } from '../../../src/editor/utils/config-ydoc-update';
 import { getSheetWithLatestCelldata } from '../../../src/sheet-engine/core/api/common';
 
-const label = process.argv.slice(2).filter((a) => a !== '--')[0] ?? 'run';
+const cliArgs = process.argv.slice(2).filter((a) => a !== '--');
+const label = cliArgs.find((a) => !a.startsWith('--')) ?? 'run';
+const onlyArg = cliArgs.find((a) => a.startsWith('--only='));
+const only = onlyArg ? onlyArg.slice('--only='.length).split(',') : null;
+const want = (...ids: string[]) => !only || ids.some((id) => only.includes(id));
 const DSHEET_ID = 'bench-dsheet';
 const noop = () => {};
 
@@ -174,7 +183,7 @@ const cc = await import('../../../src/editor/utils/content-change').catch(
 );
 
 // S1: package work per local edit
-for (const tabs of [1, 3]) {
+for (const tabs of want('S1', 'S2', 'S3') ? [1, 3] : []) {
   const doc = buildDoc(tabs, 4000, 25);
   const rand = mulberry32(99);
   let i = 0;
@@ -404,7 +413,7 @@ const freshCopyOf = (doc: Y.Doc) => {
   return fresh;
 };
 
-{
+if (want('S4', 'S5')) {
   // Each session is its own client, as each reopen is in the app.
   const rand = mulberry32(7);
   let doc = buildDoc(1, ROWS, COLS, 3);
@@ -481,7 +490,7 @@ const freshCopyOf = (doc: Y.Doc) => {
 // - plain snapshot patch (patchPlainCelldata) on 100k celldata entries
 // - engine apply: today one produceWithPatches per cell (setContextWithProduce
 //   without noHistory); A5 one produce for the batch (applyRemoteCells).
-{
+if (want('S7')) {
   const { patchPlainCelldata } = await import(
     '../../../src/editor/utils/patch-plain-celldata'
   );
@@ -557,7 +566,7 @@ const freshCopyOf = (doc: Y.Doc) => {
 }
 
 // S8: engine hot spots per draw / per commit (C1, C2, C3, C6, C7).
-{
+if (want('S8')) {
   const { defaultContext } = await import('../../../src/sheet-engine/core/context');
   const { loadLocale } = await import('../../../src/sheet-engine/core/locale');
   await loadLocale('en');
@@ -695,11 +704,103 @@ const freshCopyOf = (doc: Y.Doc) => {
   }
 }
 
+// S9: one typed commit to a cell no formula refers to (C8). 4000x25 values,
+// 500 =SUM(A{r}:T{r}) formulas in column Y; the dependency graph is warm after
+// one forced full pass. The commit goes through updateCell, the engine's real
+// commit path. "read" counts formulas whose text the pass loaded (each one is
+// then tokenized and its ranges walked); "evaluated" counts parser runs.
+if (want('S9')) {
+  const { defaultContext } = await import('../../../src/sheet-engine/core/context');
+  const { loadLocale } = await import('../../../src/sheet-engine/core/locale');
+  await loadLocale('en');
+  const formulaMod = await import('../../../src/sheet-engine/core/modules/formula');
+  const { updateCell } = await import('../../../src/sheet-engine/core/modules/cell');
+  const rand = mulberry32(31);
+  const ROWS9 = 4000;
+  const COLS9 = 25;
+  const FORMULAS = 500;
+  const FCOL = 24;
+  const ctx: any = defaultContext({
+    globalCache: { undoList: [], redoList: [] },
+    cellInput: { current: null },
+    fxInput: { current: null },
+    canvas: { current: null },
+    cellArea: { current: null },
+    workbookContainer: { current: null },
+  } as any);
+  const data: any[][] = Array.from({ length: ROWS9 }, (_, r) =>
+    Array.from({ length: COLS9 }, (__, c) =>
+      c < 20 ? { v: r + c, m: String(r + c), ct: { fa: 'General', t: 'n' } } : makeCell(r, c, rand).v,
+    ),
+  );
+  const read = new Set<string>();
+  for (let r = 0; r < FORMULAS; r += 1) {
+    const f = `=SUM(A${r + 1}:T${r + 1})`;
+    const cell: any = { v: 0, m: '0' };
+    // Count every formula whose text a pass loads (getcellFormula reads `.f`).
+    Object.defineProperty(cell, 'f', {
+      enumerable: true,
+      configurable: true,
+      get: () => {
+        read.add(`${r}`);
+        return f;
+      },
+    });
+    data[r][FCOL] = cell;
+  }
+  ctx.luckysheetfile = [
+    {
+      id: 's0',
+      name: 'Sheet1',
+      order: 0,
+      status: 1,
+      data,
+      config: {},
+      calcChain: Array.from({ length: FORMULAS }, (_, r) => ({ r, c: FCOL, id: 's0' })),
+    },
+  ];
+  ctx.currentSheetId = 's0';
+  ctx.config = ctx.luckysheetfile[0].config;
+  ctx.hooks = {};
+  let evaluated = 0;
+  const parser = ctx.formulaCache.parser;
+  const parse = parser.parse.bind(parser);
+  parser.parse = (...a: any[]) => {
+    evaluated += 1;
+    return parse(...a);
+  };
+  // Warm the graph: one forced full pass, drained the way the Workbook does.
+  formulaMod.execFunctionGroup(ctx, null as any, null as any, null, undefined, undefined, true);
+  while (ctx.formulaAsyncEval) {
+    if (formulaMod.runFormulaEvalChunk(ctx, ctx.formulaAsyncEval, 50)) {
+      ctx.formulaAsyncEval = null;
+      ctx.isFormulaCalculating = false;
+    }
+  }
+  log('S9 warm-up full pass', {
+    formulasEvaluated: evaluated,
+    depGraphComplete: ctx.formulaCache.depGraphComplete ?? 'n/a',
+  });
+  let k = 0;
+  const commit = () => {
+    k += 1;
+    updateCell(ctx, 1000 + (k % 2000), 21, null, `typed ${k}`);
+  };
+  read.clear();
+  evaluated = 0;
+  commit();
+  log('S9 commit to unreferenced cell: formulas processed', {
+    formulasRead: read.size,
+    formulasEvaluated: evaluated,
+  });
+  log('S9 commit to unreferenced cell (updateCell)', measure(commit, 50, 3));
+}
+
 // S6: how many whole-doc encodes the legacy onChange throttle runs for 4
 // edits 50 ms apart, then 10 edits 50 ms apart. Replays editor-context's
 // throttle setup with lodash: base = call + flush() per write (removed by A1);
 // Stabilize = trailing-only, no per-write flush.
-{
+if (want('S6')) {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const run = async (edits: number, perWrite: (t: any) => void, opts?: object) => {
     let encodes = 0;

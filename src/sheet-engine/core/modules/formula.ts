@@ -375,6 +375,27 @@ export class FormulaCache {
   formulasWithWideRangeDeps: Set<string>;
 
   /**
+   * True once a full pass has evaluated every formula in the chain since the
+   * indexes were last reset, so `revDepsByCell` lists every dependent of every
+   * cell (C8). While true, a commit to a cell with no dependents runs no
+   * formula pass. Cleared by `markDepGraphIncomplete`.
+   */
+  depGraphComplete: boolean;
+
+  /**
+   * Bumped each time the flag is cleared. A deferred full pass records it at
+   * start and sets the flag only if nothing cleared it while it ran.
+   */
+  depGraphEpoch: number;
+
+  /**
+   * Grid size (`rows x cols`) of each dense tab when the graph was completed.
+   * Whole-row and whole-column references were recorded at that size, so a
+   * commit to a tab that has grown since takes the full pass again.
+   */
+  depGraphSheetSizes: Map<string, string>;
+
+  /**
    * Dependency collection state for the currently-parsed formula, set by `execfunction`.
    * When null, dependency recording is disabled.
    */
@@ -398,6 +419,17 @@ export class FormulaCache {
     this.depsByCell = new Map();
     this.revDepsByCell = new Map();
     this.formulasWithWideRangeDeps = new Set();
+    this.markDepGraphIncomplete();
+  }
+
+  /**
+   * The graph may miss edges: formulas moved, were rewritten or entered the
+   * chain without being evaluated. Commits take the full pass again until the
+   * next full pass completes.
+   */
+  markDepGraphIncomplete() {
+    this.depGraphComplete = false;
+    this.depGraphEpoch += 1;
   }
 
   constructor() {
@@ -407,6 +439,14 @@ export class FormulaCache {
     const recordDep = (key: string) => {
       if (!that.activeDepCollection) return;
       that.activeDepCollection.deps.add(key);
+    };
+    // A reference to a sheet that doesn't exist (yet) records no edge, but a
+    // later add or rename can make it resolve. Run the formula on every
+    // commit, like a wide range (C8).
+    const markUnresolvedSheetRef = () => {
+      if (that.activeDepCollection) {
+        that.activeDepCollection.hasWideRangeDep = true;
+      }
     };
 
     this.data_parm_index = 0;
@@ -419,6 +459,9 @@ export class FormulaCache {
     this.depsByCell = new Map();
     this.revDepsByCell = new Map();
     this.formulasWithWideRangeDeps = new Set();
+    this.depGraphComplete = false;
+    this.depGraphEpoch = 0;
+    this.depGraphSheetSizes = new Map();
     this.activeDepCollection = null;
     this.parser = new Parser();
     this.parser.on(
@@ -429,7 +472,10 @@ export class FormulaCache {
           cellCoord.sheetName == null
             ? options.sheetId
             : getSheetIdByName(context, cellCoord.sheetName);
-        if (id == null) throw Error(ERROR_REF);
+        if (id == null) {
+          markUnresolvedSheetRef();
+          throw Error(ERROR_REF);
+        }
         recordDep(toCellKey(id, cellCoord.row.index, cellCoord.column.index));
         // Inactive tabs may be demoted to sparse celldata; hydrate on demand.
         // Cheap no-op when already dense (`sheet.data?.length`).
@@ -451,7 +497,10 @@ export class FormulaCache {
           startCellCoord.sheetName == null
             ? options.sheetId
             : getSheetIdByName(context, startCellCoord.sheetName);
-        if (id == null) throw Error(ERROR_REF);
+        if (id == null) {
+          markUnresolvedSheetRef();
+          throw Error(ERROR_REF);
+        }
         // Same as callCellValue: demoted cross-sheet targets must rehydrate.
         const flowdata = ensureSheetFlowdata(context, { id });
         let startRow = startCellCoord.row.index;
@@ -1643,6 +1692,53 @@ function replaceDotsInFunctionName(str: string) {
   return `=${fixedFnName}${str.substring(openParenIndex)}`;
 }
 
+/**
+ * Drop every recorded formula dependency, back to a fresh mount's state, and
+ * mark the graph incomplete (A4, C8).
+ */
+export function resetFormulaDependencyIndexes(ctx: Context) {
+  ctx.formulaCache.resetDependencyIndexes();
+  invalidateSheetsRequiredDenseCache();
+}
+
+const sheetGridSize = (data: CellMatrix | null | undefined) =>
+  data ? `${data.length}x${data[0]?.length ?? 0}` : null;
+
+/**
+ * End of a full pass that started at `epoch` (C8): every formula in the chain
+ * has recorded its dependencies, unless the graph was invalidated meanwhile.
+ */
+export function finishFullFormulaPass(
+  ctx: Context,
+  epoch: number | null | undefined,
+) {
+  const { formulaCache } = ctx;
+  if (epoch == null || epoch !== formulaCache.depGraphEpoch) return;
+  formulaCache.depGraphSheetSizes = new Map();
+  ctx.luckysheetfile.forEach((file) => {
+    const size = sheetGridSize(file.data);
+    if (file.id && size) formulaCache.depGraphSheetSizes.set(file.id, size);
+  });
+  formulaCache.depGraphComplete = true;
+}
+
+/** False once the edited tab's grid has grown or shrunk since the graph was completed. */
+function depGraphCoversSheetSize(
+  ctx: Context,
+  sheetId: string,
+  data: CellMatrix | null | undefined,
+) {
+  const size = sheetGridSize(data);
+  return size != null && ctx.formulaCache.depGraphSheetSizes.get(sheetId) === size;
+}
+
+/**
+ * INDIRECT and OFFSET would resolve references at run time, which the graph
+ * cannot see. Today both evaluate to an error (formulajs implements neither),
+ * but formulas using them are kept on every commit's run list regardless.
+ */
+const RUNTIME_REFERENCE_RE = /\b(INDIRECT|OFFSET)\s*\(/i;
+
 export function execfunction(
   ctx: Context,
   txt: string,
@@ -1819,7 +1915,7 @@ export function execfunction(
       ctx.formulaCache.activeDepCollection?.hasWideRangeDep ?? false;
     ctx.formulaCache.activeDepCollection = null;
   }
-  if (hasWideRangeDep) {
+  if (hasWideRangeDep || RUNTIME_REFERENCE_RE.test(txt)) {
     ctx.formulaCache.formulasWithWideRangeDeps.add(originKey);
   }
 
@@ -2299,6 +2395,9 @@ export function applyWorkerFormulaChunkResults(
     }
 
     mergeFormulaDeps(ctx, formulaCellKey, result.deps);
+    if (result.unresolvedSheetRef) {
+      ctx.formulaCache.formulasWithWideRangeDeps.add(formulaCellKey);
+    }
 
     if (result.isError) {
       setCellError(ctx, result.r, result.c, {
@@ -2355,6 +2454,7 @@ export function runFormulaEvalChunk(
     ctx.formulaCache.execFunctionExist = undefined;
     clearRangeValuePassCache(ctx.formulaCache);
     ctx.formulaCache.execFunctionGlobalData = null;
+    finishFullFormulaPass(ctx, job.fullPassEpoch);
   }
   return complete;
 }
@@ -2456,12 +2556,21 @@ export function execFunctionGroup(
   // { "r": r, "c": c, "id": id, "func": func}
   const calcChains = getAllFunctionGroup(ctx);
   let calcChainsToProcess = calcChains;
+  // A forced pass evaluates every formula in the chain, so it completes the
+  // dependency graph (C8). Formulas on sparse (demoted) tabs are skipped by
+  // the pass, so it only counts when every tab holding formulas is dense.
+  const fullPassEpoch =
+    isForce &&
+    ctx.luckysheetfile.every((file) => !file.calcChain?.length || file.data)
+      ? ctx.formulaCache.depGraphEpoch
+      : null;
+  const { depGraphComplete } = ctx.formulaCache;
   if (
     !isForce &&
     !_.isNil(origin_r) &&
     !_.isNil(origin_c) &&
     !_.isNil(id) &&
-    ctx.formulaCache.revDepsByCell.size > 0
+    (ctx.formulaCache.revDepsByCell.size > 0 || depGraphComplete)
   ) {
     const dependents = collectTransitiveFormulaDependents(
       originKey,
@@ -2507,6 +2616,14 @@ export function execFunctionGroup(
       calcChainsToProcess = calcChains.filter((cell) =>
         dependents.has(`${cell.id}:${cell.r}:${cell.c}`),
       );
+    } else if (depGraphComplete) {
+      if (depGraphCoversSheetSize(ctx, id, getFlowdata(ctx, id))) {
+        // C8: the graph is complete and nothing depends on the edited cell.
+        ctx.formulaCache.execFunctionExist = undefined;
+        clearRangeValuePassCache(ctx.formulaCache);
+        return;
+      }
+      ctx.formulaCache.markDepGraphIncomplete();
     }
   }
   const formulaObjects: any = {};
@@ -2910,6 +3027,7 @@ export function execFunctionGroup(
       impactedByCircular: Array.from(impactedByCircular),
       cycleNodes: Array.from(cycleNodes),
       workerSnapshotKey: `formula-job-${(formulaAsyncEvalJobId += 1)}`,
+      fullPassEpoch,
       nextIndex: 0,
       total: formulaRunList.length,
       debug: {
@@ -2946,6 +3064,7 @@ export function execFunctionGroup(
 
   ctx.formulaCache.execFunctionExist = undefined;
   clearRangeValuePassCache(ctx.formulaCache);
+  finishFullFormulaPass(ctx, fullPassEpoch);
 }
 
 function findrangeindex(ctx: Context, v: string, vp: string) {

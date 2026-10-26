@@ -58,6 +58,8 @@ export function generateAPIs(
     applyOp: (ops: Op[]) => {
       setContext(
         (ctx_) => {
+          // A remote op can move or rewrite formulas without evaluating them (C8).
+          ctx_.formulaCache.markDepGraphIncomplete();
           const [patches, specialOps] = opToPatch(ctx_, ops);
           if (specialOps.length > 0) {
             const [specialOp] = specialOps;

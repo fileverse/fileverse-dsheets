@@ -266,6 +266,8 @@ export function deleteSheet(ctx: Context, id: string) {
 }
 
 export function updateSheet(ctx: Context, newData: Sheet[]) {
+  // Replaced sheets bring formulas that were not evaluated here (C8).
+  ctx.formulaCache.markDepGraphIncomplete();
   newData.forEach((newDatum) => {
     const { data, row, column } = newDatum;
     const index = getSheetIndex(ctx, newDatum.id!) as number;

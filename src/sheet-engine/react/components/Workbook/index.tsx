@@ -24,6 +24,7 @@ import {
   groupValuesRefresh,
   runFormulaEvalChunk,
   applyWorkerFormulaChunkResults,
+  finishFullFormulaPass,
   insertDuneChart,
   getFlowdata,
   api,
@@ -702,6 +703,8 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           ctx_ = produce(ctx_, (draft: Context) => {
             ensureFlowdataForDataPatches(draft, history.inversePatches);
           });
+          // Patches restore formulas without evaluating them (C8).
+          ctx_.formulaCache.markDepGraphIncomplete();
           let newContext = applyPatches(ctx_, history.inversePatches);
           globalCache.current.redoList.push(history);
           const inversedOptions = inverseRowColOptions(history.options);
@@ -773,6 +776,8 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           ctx_ = produce(ctx_, (draft: Context) => {
             ensureFlowdataForDataPatches(draft, history.patches);
           });
+          // Patches restore formulas without evaluating them (C8).
+          ctx_.formulaCache.markDepGraphIncomplete();
           let newContext = applyPatches(ctx_, history.patches);
           const isBorderUndo = history.patches.some(
             (onePatch) =>
@@ -1784,6 +1789,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       const finishJobIfComplete = (draft: Context) => {
         const job = draft.formulaAsyncEval;
         if (!job || job.nextIndex < job.total) return;
+        finishFullFormulaPass(draft, job.fullPassEpoch);
         draft.formulaCache.execFunctionExist = undefined;
         clearRangeValuePassCache(draft.formulaCache);
         draft.formulaCache.execFunctionGlobalData = null;

@@ -43,6 +43,8 @@ const shiftCells = (
     rect.c2,
   );
   mutate(data, totalRows, totalCols);
+  // Formula cells may have moved without being evaluated (C8).
+  ctx.formulaCache.markDepGraphIncomplete();
   emitCelldataRangeDiffToYdoc(
     ctx,
     ctx.currentSheetId,

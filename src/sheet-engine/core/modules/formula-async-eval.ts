@@ -53,6 +53,11 @@ export type FormulaAsyncEvalJob = {
   impactedByCircular: string[];
   cycleNodes: string[];
   workerSnapshotKey: string;
+  /**
+   * Set on a forced full pass: the dependency-graph epoch it started at. The
+   * last chunk marks the graph complete if the epoch is unchanged (C8).
+   */
+  fullPassEpoch?: number | null;
   nextIndex: number;
   total: number;
   debug?: FormulaEvalDebug;

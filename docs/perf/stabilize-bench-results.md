@@ -333,3 +333,57 @@ Not covered:
 - An `occurrenceDate` (today/yesterday) rule keeps its result across midnight until something on the sheet changes.
 
 Browser: the demo grid loads and scrolls with no type errors. Conditional formats, borders and dropdowns were not checked visually.
+
+## C8: no formula pass for a cell nothing depends on
+
+Same Node harness (`before-c8.json` → `after-c8.json`, scenario S9, run alone with `--only=S9`). 4000×25 values, 500 `=SUM(A{r}:T{r})` formulas in column Y, graph warm after one forced full pass (drained in 50-formula chunks, as the Workbook does). One typed commit to V1001…V3000 through `updateCell`.
+
+| Commit to an unreferenced cell | Before | After |
+|---|---|---|
+| Formulas whose text the pass read (each is tokenized and its ranges walked) | 500 | 0 |
+| Formulas evaluated | 0 | 0 |
+| `updateCell` time, median (p95), 50 runs | 3.93 ms (4.90 ms) | 0.108 ms (0.60 ms) |
+
+"Read" is counted with a getter on each formula cell's `f`; "evaluated" by wrapping the parser's `parse`.
+
+What changed:
+
+- `FormulaCache.depGraphComplete` (default `false`) and `depGraphEpoch`. `markDepGraphIncomplete()` sets the flag false and bumps the epoch. `resetDependencyIndexes()` calls it.
+- New `resetFormulaDependencyIndexes(ctx)`: clears `depsByCell`, `revDepsByCell` and `formulasWithWideRangeDeps`, calls `invalidateSheetsRequiredDenseCache()`, sets the flag false. `setSheetCalcChain` (A4) and the row and column drag helpers now use it (the drag helpers cleared two of the three indexes by hand).
+- **Set:** at the end of a forced pass (`execFunctionGroup(..., isForce = true)`), but only when every tab holding formulas is dense: the pass skips formulas on sparse tabs. A pass of 15 or more formulas is deferred. It records the epoch on the job, and the last chunk sets the flag only if the epoch is unchanged: `runFormulaEvalChunk` on the main thread, `finishJobIfComplete` in the Workbook for worker chunks.
+- **Skip:** in the narrowing block of `execFunctionGroup`. When the flag is true and the dependents set is empty, the pass returns before reading any formula. Wide-range formulas and formulas naming a defined name that covers the cell are added to that set first. The block now also runs when the flag is true and `revDepsByCell` is empty.
+- **Grid-size guard:** whole-row and whole-column reads are recorded at the grid size of the pass. Completing the graph stores each dense tab's `rows x cols`. A commit to a tab whose size has changed since (for example a paste that grew the grid) clears the flag and takes the full pass. Today's full pass does not see grown rows through `X:X` either (`getcellrange` uses the configured size), so this only keeps C8 from being worse than today.
+- **Cleared:**
+  - index resets: mount, A4 and the drag helpers;
+  - a remote formula registered without evaluation: `applyRemoteCellValue`, so A5's `applyRemoteCells` too;
+  - remote ops (`applyOp`);
+  - undo and redo (patches restore formulas without evaluating them);
+  - `insertRowCol` and `deleteRowCol`;
+  - insert or delete cells with shift;
+  - cell move (`onCellsMoveEnd`);
+  - `sortDataRange`;
+  - `copySheet`;
+  - `updateSheet`.
+- **INDIRECT, OFFSET, INDEX (precondition):** formulajs implements neither INDIRECT nor OFFSET, so both evaluate to `#ERROR` whatever their arguments. Their target references never reach `depsByCell`; `=INDIRECT("A2")+B1` records nothing, because the parse stops at INDIRECT. `execfunction` now adds any formula using them to `formulasWithWideRangeDeps`, so it runs on every commit. INDEX reads its range through `callRangeValue`, so its cells are recorded; no special handling is needed.
+- **Formulas naming a missing sheet:** a reference like `=Foo!A1` to a sheet that doesn't exist throws `#REF` before any edge is recorded. A later add or rename of "Foo" would then leave it stale while the flag is true. Both evaluators now flag such a formula (`callCellValue` and `callRangeValue` in `FormulaCache`; `unresolvedSheetRef` in the worker's `evalFormulasInSnapshot`, applied in `applyWorkerFormulaChunkResults`). Such formulas go into `formulasWithWideRangeDeps` and run on every commit. This covers every way a sheet can appear or be renamed: `addSheet`, `editSheetName`, `api.setSheetName`, remote ops and copies. No per-site clear is needed.
+- **Paste:** no clear. Every paste path that keeps a formula evaluates it through `execfunction`, which records its dependencies. When adjusting the formula fails, the paste writes an error and does not add the cell to the chain.
+
+Tests (`core/modules/formula.dep-graph.test.ts`, 15 tests). Fixture: 20 rows of A–T values; 500 row `SUM`s; one each of INDIRECT, OFFSET, INDEX, a named range and a whole-column `SUM`.
+
+- The flag is false on mount and true after one forced full pass.
+- INDEX, named-range and whole-column reads are in the graph; INDIRECT and OFFSET are in the wide set.
+- An unreferenced commit reads and evaluates 0 formulas. With INDIRECT and OFFSET present it runs exactly those two.
+- A commit to a referenced cell gives the same grid as a forced full pass afterwards.
+- Cells read through INDEX, a named range or a whole column update their formula. Cells read through INDIRECT or OFFSET re-run theirs.
+- A remote formula (`applyRemoteCells`) clears the flag, and a later commit to its input updates it (42, not the stale 0).
+- If the graph is cleared while a deferred full pass runs, the flag stays false. A sparse tab holding formulas keeps the flag false.
+- After the grid grows, the next commit clears the flag and reads all 503 formulas.
+- A formula naming a missing sheet (`=Foo!A1*2`) gives 100 after a sheet is renamed to Foo and Foo!A1 is set to 50. The worker path marks the same formula always-run.
+- `resetFormulaDependencyIndexes` and `setSheetCalcChain` clear the flag; the next commit reads all 503 formulas.
+
+Not covered:
+
+- [Inference] In the app the flag is rarely true. The only forced full passes are `recalculateAllFormulas` (after an XLSX import) and the row or column drag helpers. Opening a sheet evaluates nothing, so until one of those runs, every commit still takes today's path. Making C8 count after open needs a full pass after mount, or graph completeness tracked per formula; that is a design decision this item does not make.
+- Checked only by reading the code, not by tests: find and replace and autofill call `execfunction`; Ctrl+Enter fill goes through `updateCell`. Data-block results go through `api.setCellValue` with `f` and `v`, which removes the cell from the chain.
+- Sheet rename and delete do not clear the flag. Dependencies are keyed by sheet id, so a rename does not change resolved edges; formulas whose sheet name didn't resolve always run (above).
+- Not checked in the browser.

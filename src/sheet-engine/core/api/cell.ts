@@ -6,6 +6,7 @@ import {
   functionHTMLGenerate,
   getTypeItemHide,
   insertUpdateFunctionGroup,
+  resetFormulaDependencyIndexes,
   setCellValue as setCellValueInternal,
   updateCell,
   updateDropCell,
@@ -14,7 +15,6 @@ import {
 import { Cell, CellStyle, SingleRange, Sheet } from '../types';
 import { CommonOptions, getSheet } from './common';
 import { SHEET_NOT_FOUND } from './errors';
-import { invalidateSheetsRequiredDenseCache } from './sheet-flowdata-lifecycle';
 import { shouldPersistCelldataCell } from '../utils/cell-persist-utils';
 // @ts-ignore
 import SSF from '../modules/ssf';
@@ -246,6 +246,21 @@ function patchSparseCelldata(
   }
 }
 
+/**
+ * Keep a remote formula in the calc chain without running it. Its recorded
+ * dependencies (if any) may be for another formula, so the graph is no longer
+ * complete (C8).
+ */
+function registerUnevaluatedFormula(
+  ctx: Context,
+  row: number,
+  column: number,
+  sheetId: string,
+) {
+  insertUpdateFunctionGroup(ctx, row, column, sheetId);
+  ctx.formulaCache.markDepGraphIncomplete();
+}
+
 export function applyRemoteCellValue(
   ctx: Context,
   row: number,
@@ -267,14 +282,14 @@ export function applyRemoteCellValue(
       delFunctionGroup(ctx, row, column, sheetId);
     } else if (value instanceof Object) {
       if ((value as Cell).f != null) {
-        insertUpdateFunctionGroup(ctx, row, column, sheetId);
+        registerUnevaluatedFormula(ctx, row, column, sheetId);
       } else {
         delFunctionGroup(ctx, row, column, sheetId);
       }
     } else {
       const str = value.toString();
       if (str.substr(0, 1) === '=' || str.substr(0, 5) === '<span') {
-        insertUpdateFunctionGroup(ctx, row, column, sheetId);
+        registerUnevaluatedFormula(ctx, row, column, sheetId);
       } else {
         delFunctionGroup(ctx, row, column, sheetId);
       }
@@ -307,7 +322,7 @@ export function applyRemoteCellValue(
       // Keep the formula registered so it stays reactive to future local edits.
       // We intentionally do NOT execute it here — the peer's computed v/m is
       // applied as-is.
-      insertUpdateFunctionGroup(ctx, row, column, sheetId);
+      registerUnevaluatedFormula(ctx, row, column, sheetId);
     } else {
       // No formula (value cleared or replaced) — drop any stale calc-chain /
       // dependency registration for this cell.
@@ -322,7 +337,7 @@ export function applyRemoteCellValue(
     // Bare formula string with no precomputed value (rare for remote celldata,
     // which normally sync as objects). Register it without executing.
     setCellValueInternal(ctx, row, column, data, { f: str } as Cell);
-    insertUpdateFunctionGroup(ctx, row, column, sheetId);
+    registerUnevaluatedFormula(ctx, row, column, sheetId);
   } else {
     delFunctionGroup(ctx, row, column, sheetId);
     setCellValueInternal(ctx, row, column, data, value);
@@ -342,8 +357,7 @@ export function setSheetCalcChain(
 ) {
   const sheet = getSheet(ctx, options);
   sheet.calcChain = calcChain ?? [];
-  ctx.formulaCache.resetDependencyIndexes();
-  invalidateSheetsRequiredDenseCache();
+  resetFormulaDependencyIndexes(ctx);
 }
 
 export type RemoteCellChange = { r: number; c: number; v: unknown };

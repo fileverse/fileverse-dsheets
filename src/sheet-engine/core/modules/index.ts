@@ -424,6 +424,8 @@ export {
   refreshFormulasUsingDefinedNames,
   runFormulaEvalChunk,
   applyWorkerFormulaChunkResults,
+  finishFullFormulaPass,
+  resetFormulaDependencyIndexes,
   insertUpdateFunctionGroup,
   functionCopy,
 } from './formula';

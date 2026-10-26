@@ -108,6 +108,8 @@ export {
   execFunctionGroup,
   runFormulaEvalChunk,
   applyWorkerFormulaChunkResults,
+  finishFullFormulaPass,
+  resetFormulaDependencyIndexes,
   isFormulaEvalPending,
   FORMULA_ASYNC_CHUNK_SIZE,
   FORMULA_ASYNC_EVAL_THRESHOLD,
