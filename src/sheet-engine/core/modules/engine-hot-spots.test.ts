@@ -10,6 +10,11 @@ import {
   getBorderInfoComputeRange,
   getBorderInfoComputeRangeCached,
 } from './border';
+import {
+  getDropdownList,
+  getDropdownOptions,
+  validateCellData,
+} from './dataVerification';
 
 const makeCtx = (rows = 20, cols = 8) => {
   const ctx: any = defaultContext({
@@ -241,5 +246,66 @@ describe('C6 border compute cache', () => {
     const first = panes.map((p) => getBorderInfoComputeRangeCached(ctx, ...p));
     const second = panes.map((p) => getBorderInfoComputeRangeCached(ctx, ...p));
     second.forEach((result, i) => expect(result).toBe(first[i]));
+  });
+});
+
+describe('C7 dropdown options cache', () => {
+  /** Pre-C7 validateCellData dropdown branch. */
+  const reference = (ctx: any, item: any, cellValue: any) => {
+    const list = getDropdownList(ctx, item.value1);
+    if (item.type2 && cellValue) {
+      return cellValue
+        .toString()
+        .split(',')
+        .every((i: any) => list.indexOf(i) !== -1);
+    }
+    return list.some((v) => v === cellValue);
+  };
+
+  it('matches the previous validation on a table of inputs', () => {
+    const ctx = makeCtx();
+    ctx.luckysheetfile[0].data[0][0] = { v: 'Red', m: 'Red' };
+    ctx.luckysheetfile[0].data[1][0] = { v: 'Blue', m: 'Blue' };
+    ctx.luckysheetfile[0].data[2][0] = { v: 'Red', m: 'Red' };
+    const items = [
+      { type: 'dropdown', value1: 'Open,Done,,Blocked,Done' },
+      { type: 'dropdown', value1: 'Open,Done,Blocked', type2: 'true' },
+      { type: 'dropdown', value1: 'A1:A3' },
+      { type: 'dropdown', value1: 'A1:A3', type2: 'true' },
+    ];
+    const values = [
+      'Open',
+      'Done',
+      'Blocked',
+      'open',
+      '',
+      'Open,Done',
+      'Open,Nope',
+      'Red',
+      'Blue',
+      'Red,Blue',
+      1,
+      null,
+      undefined,
+    ];
+    for (const item of items) {
+      for (const value of values) {
+        expect(
+          validateCellData(ctx, item, value),
+          `${item.value1} / ${value}`,
+        ).toBe(reference(ctx, item, value));
+      }
+    }
+  });
+
+  it('re-reads range options after the source sheet changes', () => {
+    const ctx = makeCtx();
+    ctx.luckysheetfile[0].data[0][0] = { v: 'Red', m: 'Red' };
+    const before = getDropdownOptions(ctx, 'A1:A1');
+    expect(getDropdownOptions(ctx, 'A1:A1')).toBe(before);
+    const next = produce<any>(ctx, (d: any) => {
+      d.luckysheetfile[0].data[0][0] = { v: 'Green', m: 'Green' };
+    });
+    expect(getDropdownOptions(next, 'A1:A1').list).toEqual(['Green']);
   });
 });
