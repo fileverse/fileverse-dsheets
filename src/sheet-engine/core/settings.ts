@@ -36,6 +36,8 @@ export type Hooks = {
     column: number,
     oldValue: any,
     newValue: any,
+    /** Sheet that held the cell when it was committed (updateCell only). */
+    sheetId?: string,
   ) => void;
   afterSelectionChange?: (sheetId: string, selection: Selection) => void;
   beforeRenderRowHeaderCell?: (
