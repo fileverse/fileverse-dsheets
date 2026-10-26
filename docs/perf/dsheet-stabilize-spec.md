@@ -2,6 +2,29 @@
 
 Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A1 fingerprint rules, A4 undo, B5 case rule, B6 text-paste, C1/C2/C7 cache keys, C8 index rebuilt from formula text, D5/D6 fingerprint sources and upgrade rule, E3 active-sheet keeper, E2 SVGDefines). Part 1 of 2; ships first. Part 2 is YSheetStore.
 
+## Implementation status (updated 2026-10-26, branch `maitra/stabilize-package`)
+
+| Item | State | Commit | Notes |
+|---|---|---|---|
+| A1, A2 | done | 490c082 | |
+| A3 | done | 28db6fd | |
+| A4, A5 | done | b056601, ab23c16 | |
+| B1 | done | cf58246 | |
+| B2, B4, B6 | done | b3e38a9 | |
+| **B3** | done | 1587101 | Deviation from the Fix text below: the guard is not held while the remount is deferred; it begins once right before the remount (see B3). Browser-checked. |
+| **B5** | done, **one rule wrong** | 8b18a94 | Shipped case-insensitive; the spec says case-sensitive. Fix is plan Task 17. |
+| C1, C3 | done | 7a1a19e | |
+| C2, C6, C7 | done | 03fc133, 4ef4fd4, 9290e13 | |
+| **C8** | done | fb80dfc, a324b38 | Plus a warm-up pass after open so the flag turns true; shadow indexes merged at completion. |
+| **C4, C5** | done | 29843e6 | C5 browser timing: 10k single-line cells 1,827 ms to 49 ms median. |
+| July narrowing bug (commit 1611aee, not a spec item) | open, plan Task 16 | | Commit-path narrowing must wait for a complete graph. |
+| D3, D5 (package side) | not started | | Plan Tasks 6, 7. |
+| F | not started | | Plan Task 8. |
+| E1–E6 | not started | | Plan Tasks 9–14. |
+| D0–D2, D4, D6 (app side, dsheets.new) | not in this repo | | See NEXT.md. |
+
+Open finding, not yet an item: formula text rewritten by a row insert is not carried to a second client in the same room (observed in the demo with two tabs; not checked on `main`). It bears on B5 and on part 2's removal of the rewrite. Details in `docs/perf/NEXT.md`.
+
 Line numbers refer to fileverse-dsheet origin/main 9411d95 (package 4.1.21), dsheets.new origin/staging db44e94 and ddocs.new origin/staging 62723dca, except where a line is marked `origin/main` for ddocs.new.
 
 ## 1. Goal
@@ -179,7 +202,11 @@ Data-block gating (`shouldExecuteDataBlocks`, `localUserEditRef`) is unchanged a
 
 Today, when the remount timer fires while the local user is editing a cell, the remount is skipped and the pending flag cleared (`use-editor-data.tsx:744-766`); the engine keeps stale data until some later remount.
 
-**Fix:** while editing, re-arm the timer (250 ms) and keep the pending flag and guard depth; remount once the edit ends.
+**Fix:** while editing, re-arm the timer (250 ms) and keep the pending flag; remount once the edit ends. Do **not** hold the remote-apply guard while the remount is deferred. The guard makes `handleChange`, `guardRemoteEcho` and `afterUpdateCell` return early, so holding it across the edit drops the commit's `onChange` and the remount then rebuilds from Yjs without the user's edit. B1's single begin is kept: the guard begins once right before the remount runs and ends after paint.
+
+Consequences, accepted: while the remount is deferred, every remote surgical event on that tab is folded into the pending remount (the editing tab shows no remote change until the edit ends), and a local commit made in that window is written at the coordinates the tab had before the structural change.
+
+**Implemented in 1587101.** Browser check: the editor kept the typed text while a row was inserted from another tab; after Enter the row arrived and the edit was saved on both tabs.
 
 #### B4. Comment markers never write into Yjs objects
 
@@ -198,6 +225,8 @@ Today, when the remount timer fires while the local user is editing a cell, the 
 - Callers pass the edited tab's name and the formula's own tab name (`rowcol.ts:244, 493, 518, 533, 558, 1925, 1947, 1963, 1985`).
 - A reference shifts only when it points at the edited tab: its prefix names that tab, or it has no prefix and the formula is on that tab.
 - Prefixes are compared unquoted (`'My Sheet'!A1` names My Sheet) and exactly, as the engine resolves tab names: case-sensitive (`getSheetIdByName`, `core/utils/index.ts:131-138`).
+
+**Implemented (8b18a94), with one divergence:** `functionStrChange` takes `tabs: { editedTab, formulaTab }` as its last argument and the tokenizer keeps a quoted tab name in one token. The shipped comparison is case-insensitive; this section says exact and case-sensitive. Plan Task 17 brings the code back to this text.
 
 Part 2 removes this rewrite altogether (formulas store row IDs).
 
@@ -249,6 +278,8 @@ Note: today's code measures with the wrong font (`ff` index used as a family nam
 - `validateCellData` checks membership with the Set. The canvas keeps its own `split(',')` for pill colours, because colours are picked by position, and memoizes it per option text.
 
 **C8. No formula pass for a cell nothing depends on.**
+
+**Implemented (fb80dfc, a324b38).** The skip runs only when `depGraphComplete` is true. Because only forced passes complete the graph, a dependency-only warm-up (`formula-warmup.ts`) runs in idle slices after open and publishes its edges into shadow indexes that are merged only when the whole warm-up finishes, so a partial graph never narrows a commit. Open: the pre-existing narrowing at commit 1611aee (July) still narrows on `revDepsByCell.size > 0` while the flag is false, which can leave a never-evaluated formula stale; plan Task 16 changes it to narrow only when the graph is complete.
 
 Today the commit-time pass (`core/modules/formula.ts:2466-2518`) narrows the formula list to the edited cell's dependents only when the graph has entries and the dependents set is not empty. Otherwise it processes every formula: a commit to a cell no formula refers to re-tokenizes every formula and walks every referenced range. The teammate audit measured 11 ms against 2 ms at 500 `SUM(A:T)` formulas; it grows with formulas times range size.
 

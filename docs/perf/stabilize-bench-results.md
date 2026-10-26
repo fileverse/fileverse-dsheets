@@ -2,6 +2,10 @@
 
 Every change gets numbers measured the same way before and after.
 
+**Status index (2026-10-26).** Sections below, in file order: baseline; A1, A2; B4, B2, B6; A3; A5; A4; C1, C2, C3, C6, C7; C8 and the C8 warm-up; C4; C5 (and C5 browser timing); B3 (and B3 browser check); B5 (and B5 browser check). Still to add: Task 17 (B5 case rule), Task 16 (July narrowing bug, scenario S15), D3, D5 (S12), F (S13), E1–E6. Scenarios used so far: S1–S11 and S14; next free are S12, S13 (reserved by the plan for D5 and F) and S15.
+
+Known corrections pending: the B5 section and its browser table describe `='a'!B5` shifting; that follows the shipped case-insensitive rule, which Task 17 reverses to match the spec.
+
 **Method.** `npx vite-node docs/perf/bench/stabilize-bench.ts -- <label>`. It writes `docs/perf/bench/results/<label>.json`.
 
 - Node v20.19.0, yjs 13.6.30, macOS (Darwin 23.6.0), same machine for every run.
