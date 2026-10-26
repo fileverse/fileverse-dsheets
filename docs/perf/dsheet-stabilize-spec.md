@@ -1,8 +1,8 @@
 # dSheet Stabilize
 
-Status: accepted by the team, 2026-10-23. Part 1 of 2; ships first. Part 2 is YSheetStore.
+Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A1 fingerprint rules, A4 undo, B5 case rule, B6 text-paste, C1/C2/C7 cache keys, C8 index rebuilt from formula text, D5/D6 fingerprint sources and upgrade rule, E3 active-sheet keeper, E2 SVGDefines). Part 1 of 2; ships first. Part 2 is YSheetStore.
 
-Line numbers refer to fileverse-dsheet origin/main 9411d95 (package 4.1.21), dsheets.new origin/staging db44e94 and ddocs.new origin/staging 62723dca.
+Line numbers refer to fileverse-dsheet origin/main 9411d95 (package 4.1.21), dsheets.new origin/staging db44e94 and ddocs.new origin/staging 62723dca, except where a line is marked `origin/main` for ddocs.new.
 
 ## 1. Goal
 
@@ -26,9 +26,9 @@ Measured in Node with the package's own yjs 13.6.30, immer 9.0.21 and lodash, on
 | One per-feature Yjs hook firing (whole-workbook conversion + grid scan) | about 50 ms, about 8 at once on mount and tab switch | proportional to the one field it syncs |
 | Peer commits a formula | full grid rebuild on every other peer | no rebuild |
 | Commit to paint, 198k cells (browser) | 819 ms | measured again in the browser after A1-A5 and C8, reported |
-| Commit to a cell no formula refers to | every formula re-tokenized and its ranges walked (11 ms vs 2 ms at 500 SUM(A:T) formulas, teammate audit) | no formula pass (C8) |
+| Commit to a cell no formula refers to | every formula re-tokenized and its ranges walked (11 ms vs 2 ms at 500 `SUM(A:T)` formulas, teammate audit) | no formula pass (C8) |
 | Session that only clears cells or removes a dropdown, conditional format or filter | never published | published (D6) |
-| Ctrl+Enter fill; insert or delete cells with shift | never saved, never sent to collaborators | saved and sent (B6) |
+| Ctrl+Enter fill; insert or delete cells with shift; a formula pasted as text into one cell | never saved, never sent to collaborators | saved and sent (B6) |
 | Scroll p95 with one conditional-format rule (browser) | 65 ms (30 ms without the rule) | within 1 ms of the no-rule number |
 | Owner typed edits after two structural remote changes within 50 ms | never saved for the rest of the session | always saved |
 
@@ -74,9 +74,9 @@ New editor prop:
 
 ```ts
 type DSheetContentChange = {
-  hasContent: boolean;   // same meaning as dsheets.new isEmptySheet(...) === false
-  userEdited: boolean;   // a local user edit has happened since this editor mounted
-  fingerprint: string;   // base64 state vector + ":" + deleted count; changes on every change, deletes included
+  hasContent: boolean;          // same meaning as dsheets.new isEmptySheet(...) === false
+  userEdited: boolean;          // a local user edit has happened since this editor mounted
+  fingerprint: string | null;   // base64 state vector + ":" + deleted count; changes on every change, deletes included; null until y-indexeddb is attached and synced
 };
 onContentChange?: (change: DSheetContentChange) => void;
 ```
@@ -85,13 +85,23 @@ Computed from the live Y.Doc without encoding the document:
 
 - **hasContent:** false when the sheet array is empty; true when it has more than one sheet; otherwise true when sheet 0's config Y.Map has any key or its celldata Y.Map size is above 0. This mirrors `isEmptySheet` in dsheets.new `components/dsheet-editor/editor-utils.ts:30-62`. Cost is O(1) per sheet.
 - **userEdited:** set by the first Yjs transaction whose origin is not `'self'`, `'remote'`, the IndexedDB provider, or the new `'init'` origin. The default-workbook seed in `editor/dsheet-editor.tsx:449` is tagged `'init'`.
-- **fingerprint:** `base64(Y.encodeStateVector(doc)) + ":" + deletedCount`, where `deletedCount` is the total length of all deleted ranges in the document. A tracker attached when the Y.Doc is created (`use-editor-sync.tsx:30`, before IndexedDB, the published-state merge and SyncManager can write to it) adds up `tr.deleteSet` in `afterTransaction`, with no origin filtering. The string is built on demand, O(number of clients); tracking costs about 0.0002 ms per transaction at any history size. Compare with `===` only. Design: Maitra's spec in this ticket's comments.
+- **fingerprint:** `base64(Y.encodeStateVector(doc)) + ":" + deletedCount`, where `deletedCount` is the total length of all deleted ranges in the document.
+  - A tracker attached when the Y.Doc is created (`use-editor-sync.tsx:30`, before IndexedDB, the published-state merge and SyncManager can write to it) adds, in `afterTransaction` and with no origin filtering, the lengths in `tr.deleteSet` plus the lengths of GC structs the transaction newly integrated (store structs between `tr.beforeState` and `tr.afterState`, per client).
+  - The string is built on demand, O(number of clients). Tracking costs about 0.0002 ms per ordinary edit at any history size, the walk over the structs it added included. On open the walk covers the whole body once: about 1 to 2 ms at 100k cells and about 1.2 ms on the 145,005-entry 100-row sheet (Node).
+  - Compare with `===` only.
+  - This started from Maitra's spec in this ticket's comments; where the two differ (GC structs, `fingerprintFromUpdate`, the `null` value, the upgrade rule in D6), this section is the one to build.
 
-**Why not the state vector alone:** in Yjs a delete adds no new item, so `Y.encodeStateVector` does not change when a cell is cleared; a filter, dropdown, conditional format, named range or sub-sheet is removed; a config key is deleted; or a typed value is undone. Today's sheets write all of those as deletes (`editor/utils/update-ydoc.ts:308, 357, 371, 396-466, 481, 507, 526`). The publish check in dsheets.new (`utils/dsheet-body.ts:117`) compares vectors, so such a session is never published (D6). `Y.snapshot` would be correct, but it walks every entry ever written: 3.1 ms at 142k entries, 15.7 ms at 706k, growing with every edit.
+**Why not the state vector alone:** in Yjs a delete adds no new item, so `Y.encodeStateVector` does not change when a cell is cleared; a filter, dropdown, conditional format, named range or sub-sheet is removed; a config key is deleted; or a typed value is undone. Today's sheets write all of those as deletes (`editor/utils/update-ydoc.ts:308, 357, 371, 396-466, 481, 507, 526`). The publish check in dsheets.new (`utils/dsheet-body.ts:117`) compares vectors, so such a session is never published (D6). An encoded `Y.snapshot` would be correct, but it walks every entry ever written: 3.1 ms at 142k entries and 15.7 ms at 706k in Maitra's measurement, growing with every edit.
 
-**Verified in Node:** the running count equals a full scan of the delete set with garbage collection on and off, after a reload, on merged and duplicate stored rows, and with updates applied out of order. Two documents with the same content have the same fingerprint.
+**Why the GC structs:** when a type with content is deleted (a sub-sheet, or a celldata map replaced whole), its children are stored as GC structs once compacted. A document loaded from such a body (IndexedDB compaction on open, a published body, a merged collab update) receives those children already deleted, so they never pass through `tr.deleteSet`. Counting `tr.deleteSet` alone then disagrees with `fingerprintFromUpdate` of the same content: 2 against 22 after deleting a 20-cell map.
 
-`fingerprintFromUpdate(update)` gives the same value for a stored body without building a document (`Y.encodeStateVectorFromUpdate` plus the delete ranges of `Y.decodeUpdate`). `DSheetEditorHandle.getContentFingerprint()` returns the live value.
+**Verified in Node:** the count equals a full scan of the delete set (`Y.createDeleteSetFromStructStore`) in 400 randomized checks: two editors creating, replacing and deleting nested maps; garbage collection on and off; the live documents, a reopen from one compacted body, row replay in order and reversed, and merged rows. Counting `tr.deleteSet` alone was wrong in 171 of them. Two documents with the same content have the same fingerprint.
+
+**`fingerprintFromUpdate(update)`** gives the same value for a stored body. It builds a temporary document, as today's `getDsheetStateVector` does (package `persistence.ts:23-38`), and adds one scan of its delete set (`Y.createDeleteSetFromStructStore`, under 1 ms at 100k cells). It therefore costs what that call costs today: about 235 ms at 100k cells and 90 ms on the 145,005-entry sheet (Node).
+
+- **Not used:** reading it from the update without a document (`Y.encodeStateVectorFromUpdate` plus the delete ranges of `Y.decodeUpdate`). It is wrong for a merge of raw IndexedDB rows: a row written when the document received a compacted body carries that body's GC structs with no delete range, so the merge counts 1 deleted entry against 22 (Node test). At 100k cells it is also slower (380 ms).
+- **Body reads:** they already build a document from every IndexedDB row (`readDsheetContent`, package `persistence.ts:104-120`; `mergeDsheetContent`, `:184-213`). Their snapshot (`snapshotDsheetDocument`, `persistence-utils.ts:92-103`) gets a `fingerprint` field computed from that document, one delete-set scan of under 1.5 ms. Checking a stored body then costs what today's vector check costs.
+- **`DSheetEditorHandle.getContentFingerprint()`** returns the live value, or `null` until y-indexeddb is attached to the document and has synced. Before that the live document can be empty while IndexedDB holds the sheet: dsheets.new opens an existing sheet with IndexedDB sync off until its content arrives (`components/dsheet-editor/dsheet-editor.tsx:449-459`), and some of those states are READY. Callers then use the body read's fingerprint.
 
 **Coalescing:** at most one call per 1,000 ms per editor (throttle with `leading: false, trailing: true`), flushed on `pagehide`, `beforeunload` and unmount. Local and remote changes share one throttle.
 
@@ -101,7 +111,7 @@ Full state stays available on demand through the existing `editorStateRef.getCon
 
 **Legacy `onChange(data, encodedUpdate)`** keeps working for hosts that pass it, with its throttle fixed:
 
-- `flushPortalUpdate` (`editor-context.tsx:443-448`) stops calling `.flush()`. The throttle becomes trailing-only at 1,000 ms; `flush()` runs only on `beforeunload`/`pagehide`/unmount.
+- `flushPortalUpdate` (`editor-context.tsx:443-448`) stops calling `handleOnChange.flush()`. That throttle becomes trailing-only at 1,000 ms; its `flush()` runs only on `beforeunload`/`pagehide`/unmount. The other throttle it flushes, `onContentUpdate` (`:446-447`), keeps its per-edit flush: it encodes nothing, and ddocs.new saves its draft row from it (`components/dsheet/dsheet-page-content.tsx:1121-1125`).
 - `onChange` is marked deprecated in the types. Both apps stop using it (dsheets.new in D0; ddocs.new already uses `onContentUpdate`).
 
 #### A2. No whole-document encode per received update
@@ -129,6 +139,12 @@ New batch type for that path. It is applied through a new `WorkbookInstance.setS
 
 The result matches what the rebuild produced, without the rebuild.
 
+**Undo history.** The rebuild also cleared the local undo stack (`globalCache`, `Workbook/index.tsx:219`); the in-place replace keeps it. Undo applies Immer patches (`:705`, `:776`) that address `calcChain` by index, so after a replace, undoing a local formula commit can truncate the new array (`calcChain.length = 2`) and drop a collaborator's formula. The calcChain hook then deletes that entry from Yjs for everyone (`editor/utils/calc-chain-ydoc-update.ts:56-66`). So:
+
+- undo and redo never restore `calcChain` from patches: they re-register the restored cells from their `f`;
+- the hook never deletes a chain key whose cell still holds a formula;
+- test: commit a formula, receive a collaborator's formula, undo; the engine and the Yjs chain both keep the collaborator's entry.
+
 **Follow-up, if measurements call for it:** with about 10 editors committing formulas, resets come close to continuously, and after each one the next local commit takes the full formula pass (C8 needs a complete graph). Then update only the graph edges of the chain entries that changed, since the change is already diffed to detect it, and reset only when that diff can't be computed.
 
 #### A5. Remote cell batches apply in one quiet update
@@ -149,13 +165,13 @@ Today each remote cell is its own Immer produce and lands on the local user's un
 
 #### B2. Typed commits are written at commit time
 
-`updateCell` (`core/modules/cell.ts:1901-1910`, `:2012-2022`) currently has no Yjs write of its own; it schedules `afterUpdateCell` with `setTimeout`, and `afterUpdateCell` returns before writing whenever `shouldExecuteDataBlocks` is false (`editor/utils/after-update-cell.tsx:517-523`).
+`updateCell` (`core/modules/cell.ts:1901-1910`, `:2014-2023`) currently has no Yjs write of its own; it schedules `afterUpdateCell` with `setTimeout`, and `afterUpdateCell` returns before writing whenever `shouldExecuteDataBlocks` is false (`editor/utils/after-update-cell.tsx:517-523`).
 
 **Fix, engine side:** `updateCell` emits the committed cell through `ctx.hooks.updateCellYdoc` inside the commit, for the sheet that holds the edited cell at commit time. This is the same hook every other engine write path uses. The value is converted from the Immer draft with `current()` before handing it over.
 
 **Fix, editor side:** `afterUpdateCell` moves its `updateYdocSheetData` call ahead of the data-block gate. It uses a `sheetId` passed by the engine as a new fifth hook argument instead of reading `currentSheetId` when the timer fires. The write is idempotent (`skipIfEqual`), so the double path is harmless, and paths that only reach Yjs through `afterUpdateCell` (`api.setCellValue` with `callAfterUpdate`) keep working.
 
-Paste and autofill stop delegating formula cells to `afterUpdateCell` for persistence. They include them in their own batch write (`core/paste/paste-internals.ts:1901-1910, 1953`; `core/modules/dropCell.ts:2380-2388`).
+Paste and autofill stop delegating formula cells to `afterUpdateCell` for persistence. They include them in their own batch write (`core/paste/paste-internals.ts:1901-1910, 1953`; `core/modules/dropCell.ts:2380-2388, 2508-2516, 2632-2640, 2746-2754`, one per fill direction).
 
 Data-block gating (`shouldExecuteDataBlocks`, `localUserEditRef`) is unchanged and now gates only data-block work.
 
@@ -181,7 +197,7 @@ Today, when the remount timer fires while the local user is editing a cell, the 
 
 - Callers pass the edited tab's name and the formula's own tab name (`rowcol.ts:244, 493, 518, 533, 558, 1925, 1947, 1963, 1985`).
 - A reference shifts only when it points at the edited tab: its prefix names that tab, or it has no prefix and the formula is on that tab.
-- Prefixes are compared unquoted (`'My Sheet'!A1` names My Sheet) and case-insensitively, as tab names in formulas are.
+- Prefixes are compared unquoted (`'My Sheet'!A1` names My Sheet) and exactly, as the engine resolves tab names: case-sensitive (`getSheetIdByName`, `core/utils/index.ts:131-138`).
 
 Part 2 removes this rewrite altogether (formulas store row IDs).
 
@@ -189,18 +205,22 @@ Part 2 removes this rewrite altogether (formulas store row IDs).
 
 - **Ctrl+Enter fill:** `fillSelectionWithActiveValue` (`core/modules/selection.ts:3715`, called from `core/events/shortcuts-v2.ts:263`) writes the engine grid only.
 - **Insert cells and shift right or down, delete cells and shift left or up:** `applyInsertCellsShift` and `applyDeleteCellsShift` (`react/components/ContextMenu/index.tsx:67-165`) move cells in the engine grid and call `jfrefreshgrid`, which writes nothing to Yjs.
+- **A formula pasted as text into one cell:** clipboard text that starts with `=` goes to `handleFormulaStringPaste` (`core/paste/paste-internals.ts:2169-2197`, from `clipboard-entry.ts:162`, `:265`). It writes the engine grid and calls `afterUpdateCell` only for a data-block result, so an ordinary formula is never written to Yjs.
 
 **Effect:** collaborators never see these changes, and a reload or the next grid rebuild from Yjs drops them.
 
-**Fix:** after changing the grid, each writes the changed range through the range-diff writer that row insert already uses (`emitCellRangeToYdoc`, `rowcol.ts:169`), in the same update. Formula references to the shifted cells are not rewritten, as today.
+**Fix:** after changing the grid, each writes the changed range through the range-diff writer that row insert already uses (`emitCellRangeToYdoc`, `rowcol.ts:169`), in the same update. Formula references to the shifted cells are not rewritten, as today. The single-cell formula paste writes its cell through `ctx.hooks.updateCellYdoc`.
 
 ### C. Engine hot spots
 
-**C1. Text-measure cache.** `getMeasureText` reads `${value}_${font}` (`core/modules/text.ts:202`) but writes `${value}_${zoomRatio}_${font}` (`:298`), so it never hits. Use one key builder for both, including zoom.
+**C1. Text-measure cache.** `getMeasureText` reads `${value}_${font}` (`core/modules/text.ts:202`) but writes `${value}_${zoomRatio}_${font}` (`:298`), so it never hits. Use one key builder for both, including zoom and `renderCtx.textBaseline`: the cached ascent and descent depend on the baseline (`text.ts:245-259`), and the canvas measures under top, middle, bottom and alphabetic.
 
 **C2. Conditional-format result cache.** `getComputeMap` (`core/modules/ConditionFormat.ts:1926-1964`) recomputes every rule over its full range on every draw (`core/canvas.ts:801`), four times per repaint with frozen panes.
 
 - Cache the result per sheet, keyed by the identities of `data`, `luckysheet_conditionformat_save` and `conditionRules`, plus `conditionFormatDraftActive` and the draft selection when a live preview is active.
+- Two kinds of rule read more than that:
+  - A formula rule runs `execfunction` per cell (`ConditionFormat.ts:1816-1841`) and can reference other tabs, so when a sheet has one, the key also includes the identity of `luckysheetfile`, which changes whenever any tab's data does.
+  - A date rule compares with today (`getLocalTodaySerial`, `:292-294`), so when a sheet has one, the key also includes today's date.
 - Immer gives new identities on any change, so the cache is exact. Scrolling no longer recomputes.
 
 **C3. Formula-list copy only when needed.** `delFunctionGroup` (`core/modules/formula.ts:1494`, `:1516`) deep-clones `calcChain` and `dynamicArray` on every call, including every plain-value commit and every remote cell. Find the index first; splice the draft only when found.
@@ -214,7 +234,7 @@ Part 2 removes this rewrite altogether (formulas store row IDs).
 
 Note: today's code measures with the wrong font (`ff` index used as a family name, `fs` points used as pixels, `:36-37`), so some auto-fit widths change slightly. They now match what the grid draws.
 
-**C6. Borders per draw.** `getBorderInfoComputeRange` (`core/modules/border.ts:7-1210`) re-expands every `borderInfo` entry on every draw. Inside the per-row loops it runs `Object.keys(cfg.merge).forEach` (`:124-135, :177-188, :227-238, :281-292`), so the cost is entries x rows x merges per frame. `borderInfo` only grows (`toolbar.ts:1902-1910`), so this cost grows with every border click.
+**C6. Borders per draw.** `getBorderInfoComputeRange` (`core/modules/border.ts:7-1519`) re-expands every `borderInfo` entry on every draw. Inside the per-row loops it runs `Object.keys(cfg.merge).forEach` (`:124-135, :177-188, :227-238, :281-292`), so the cost is entries x rows x merges per frame. `borderInfo` only grows (`toolbar.ts:1902-1910`), so this cost grows with every border click.
 
 - Build a merge lookup (cell key to merge rectangle) once per `config.merge` identity; the per-row check becomes a map lookup.
 - Cache the computed border map per sheet, keyed by the identities of `borderInfo`, `merge`, `rowhidden` and `colhidden` plus the drawn row and column bounds.
@@ -226,7 +246,7 @@ Note: today's code measures with the wrong font (`ff` index used as a family nam
 **C7. Dropdown cells per draw.** For every visible cell with validation, the canvas calls `validateCellData` (`core/canvas.ts:2088-2091`), which calls `getDropdownList` (`core/modules/dataVerification.ts:70-114`). That re-splits the option text and de-duplicates with `list.includes`, O(L²) per cell per frame; dropdown cells also `split(',')` again at `canvas.ts:2004`.
 
 - Cache the parsed list and a Set of its values per option text. When the options come from a cell range, the cache key also includes the identity of the source sheet's data.
-- `validateCellData` checks membership with the Set; the canvas reuses the cached list.
+- `validateCellData` checks membership with the Set. The canvas keeps its own `split(',')` for pill colours, because colours are picked by position, and memoizes it per option text.
 
 **C8. No formula pass for a cell nothing depends on.**
 
@@ -234,12 +254,33 @@ Today the commit-time pass (`core/modules/formula.ts:2466-2518`) narrows the for
 
 The graph is filled only as formulas are evaluated, so right after open it is empty and every commit takes the full pass.
 
-**Change:** a `depGraphComplete` flag in `formulaCache`. It turns true at the end of a full pass, which has evaluated every formula in the chain. It turns false whenever the indexes are reset (mount, A4, structural changes) and whenever a formula enters the chain without being evaluated (a paste or a remote cell batch). While it is true and the edited cell has no dependents, the pass is skipped.
+Only a forced pass (`isForce`) evaluates every formula: `recalculateAllFormulas` after an import, and the row and column drag rebuild. A normal pass evaluates only the formulas whose references hit the changed cells, plus their dependents (`:2810-2818`). Nothing runs a forced pass on open, so a flag that waits for one would stay false for the whole session.
 
-- A formula committed locally records its own dependencies when it is evaluated (`execfunction`, `formula.ts:1805-1850`), so local formula edits keep the graph complete.
-- Formulas over very large ranges (over 10,000 cells, `MAX_RANGE_DEPS`, `:478`, `:628`) are already added to every commit's dependents (`:2478-2480`), so they still run. Named ranges covering the edited cell add their formulas the same way (`:2482-2512`). Neither needs a separate check.
+**Change:** a `depGraphComplete` flag in `formulaCache`, set once the reverse index covers every formula in the chain. After open, in idle time, the index is built from the formula text, without evaluating anything. Ranges up to 10,000 cells add edges and wider ones go to `formulasWithWideRangeDeps`, as `execfunction` records them. Until it finishes, commits take today's path.
 
-**Precondition, to confirm before building:** references resolved while a formula runs (INDIRECT, OFFSET, INDEX, handled apart at `:1046-1048` and `:2604-2607`) must be recorded in the graph, or such formulas must be treated like the very-large-range ones.
+**The index needs its own reference tokenizer.** The parse the normal pass runs for every formula (`:2591-2819`) is not the one `execfunction` records from (`recordDep`, `:395-399`, called from `callCellValue`, `callRangeValue` and `callVariable`, `:414-640`), and it misses references:
+
+- every reference in a formula containing `INDEX(`, `INDIRECT(` or `OFFSET(`. Those go to `isFunctionRange` (`:2604-2623`), which reports only quoted references, so `=INDEX(A1:A100,5)` gives no edges;
+- a reference next to a space. Tokens are split on operators and checked untrimmed (`:2710-2740`), so `=SUM(A1, B1)` loses B1 and `=A1 + B1` loses both;
+- a reference whose unquoted tab name contains a split character, such as `Q1-2026!A1`.
+
+The same misses are an existing bug. Right after open, while the graph is empty, the normal pass evaluates only the formulas whose parsed references hit the changed cell (`:2796-2849`), so editing B1 leaves `=SUM(A1, B1)` stale (read from the code). The new index fixes it.
+
+- The builder must not load other tabs' data: `getcellrange` hydrates every demoted tab a formula references (`:925-927`).
+- Checked against what `execfunction` records: same-tab cells and ranges, quoted tab names and named ranges give the same edges. Tab names match exactly, case-sensitive.
+- **Rejected:** a forced pass on open. It would re-run network and time-dependent formulas (data blocks, prices, `NOW`) on every open and write their results.
+
+**When the flag turns false.** Whenever the indexes are reset (mount, A4, structural changes) and whenever a formula enters the chain without going through `execfunction`:
+
+- a remote cell batch (`api/cell.ts:248-329` only registers it);
+- an HTML-table paste (formula cells are written raw and never added to the chain, `paste-internals.ts:519`);
+- a cut-paste, which moves formula cells without updating the chain or evaluating them (an existing bug).
+
+Copy-paste and the text pastes evaluate their formulas (`execfunction` at `:1859`, `handleFormulaOnPaste`, `handleFormulaStringPaste`) and leave the flag as it is. While it is true and the edited cell has no dependents, the pass is skipped.
+
+- A formula committed locally records its own dependencies when it is evaluated (`execfunction`, `formula.ts:1805-1852`), so local formula edits keep the graph complete.
+- **Very large ranges and named ranges.** Formulas over very large ranges (over 10,000 cells, `MAX_RANGE_DEPS`, `:478`, `:628`) record no edges on the main thread and are added to every commit's dependents (`:2478-2480`); so are formulas using a named range that covers the edited cell (`:2481-2513`). Both are added after the transitive walk (`collectTransitiveFormulaDependents`, `:2474`), so once the graph has entries their own dependents are never reached. With `B1 = SUM(A1:Z1000)` and `C1 = B1*2`, editing A5 recalculates B1 and leaves C1 stale (read from the code; an existing bug). C8 fixes it: one walk, seeded with the edited cell and those formulas. Formulas evaluated in the formula worker record an edge per cell instead, with no cap (`formula-snapshot-eval.ts:172-181`); the index follows the main-thread rule.
+- **References resolved while a formula runs.** INDIRECT and OFFSET aren't in the engine's function library (`@fileverse-dev/formulajs` 4.4.55), so they give `#NAME?` and record nothing. INDEX's range argument is recorded whole. So the graph misses nothing today; the C8 tests pin it, and adding INDIRECT or OFFSET later means recording what they resolve to.
 
 ### D. App save and publish (dsheets.new)
 
@@ -257,11 +298,11 @@ The graph is filled only as formulas are evaluated, so right after open it is em
 
 `handleChanges` (`:1115-1145`) and the temp-baseline refs that exist only for the base64-length heuristics are removed.
 
-`rtc-provider.tsx:683-747`: the "already enabled for this room key" early return moves ahead of the `isSheetBodyEmpty` read (`:715`), so a `lastUpdated` bump no longer triggers a full body read.
+`rtc-provider.tsx:683-747`: the "already enabled for this room key" early return moves ahead of the `isSheetBodyEmpty` read (`:715`), so a `lastUpdated` bump no longer triggers a full body read. That return then also skips the branch that turns collab off when there is no local body (`:718-729`), which is harmless: while collab is on for that room key, a local body exists.
 
 #### D1. Publish waits when the remote merge fails
 
-`fetchAndMergeRemoteSheetContent` (`utils/sheet-pre-publish-merge.ts:62-124`) returns `null` both when there is no remote body and when fetching or merging threw; the caller (`components/providers/onchain-sync-provider.tsx:255-258`) ignores it and publishes the local body.
+`fetchAndMergeRemoteSheetContent` (`utils/sheet-pre-publish-merge.ts:63-121`) returns `null` both when there is no remote body and when fetching or merging threw; the caller (`components/providers/onchain-sync-provider.tsx:255-258`) ignores it and publishes the local body.
 
 **Fix:** return `{ status: 'none' | 'merged' | 'failed' }`. On `'failed'` the cycle skips the publish through the existing `skipGatedPublish` and backoff path.
 
@@ -294,7 +335,7 @@ When an earlier transaction confirms late, `submitOnChainTransaction` returns `a
 Today, each 20-second cycle (`components/providers/onchain-sync-provider.tsx:242-336`) does about 10 to 12 whole-document passes:
 
 - a dirty-check read (`hasUnpublishedSheetChanges`, `utils/dsheet-body.ts:99-118`);
-- in `fetchAndMergeRemoteSheetContent` (`utils/sheet-pre-publish-merge.ts:62-124`):
+- in `fetchAndMergeRemoteSheetContent` (`utils/sheet-pre-publish-merge.ts:63-121`):
   - the full IPFS download;
   - a local read and an empty check;
   - a merge in two temporary documents (`:17-39`);
@@ -308,13 +349,13 @@ On an old 100-row sheet that is about 1.7 to 2 s of main-thread work every 20 s 
 Changes, keeping the cycle's steps, order and gates:
 
 1. **Dirty check from fingerprints (D6).**
-   - The sheet open in the editor: its live fingerprint against `lastPublishedFingerprint`. No body read.
-   - Sheets not open in an editor (background sync): `fingerprintFromUpdate(body)` against `lastPublishedFingerprint`. This decodes the whole body, which is heavier than today's vector read; measure it on the 142k-entry reference sheet before it runs every cycle.
+   - The sheet open in the editor: its live fingerprint against `lastPublishedFingerprint`. No body read. While `getContentFingerprint()` is `null` (y-indexeddb not attached and synced yet), the open sheet is checked like a background sheet.
+   - Sheets not open in an editor (background sync): the body read's fingerprint (A1) against `lastPublishedFingerprint`. Today's check already rebuilds the document from IndexedDB to get its vector: about 340 ms at 100k cells and 100 ms on the 145,005-entry sheet (Node). The fingerprint adds under 1.5 ms to that read. Computed from the encoded body instead, it would add about 380 ms at 100k cells.
    - A title change still counts as dirty, and a sheet never published is still dirty.
    - The state vector alone stays only where it is right: the remote merge in steps 2 and 3.
 2. **No download when the on-chain body is unchanged.**
    - The on-chain read returns `contractFileData.metadataIPFSHash` before any IPFS download (`utils/decryption-utils/decrypted-dsheet-content.ts:165-205`).
-   - The Dexie row records that hash after each successful merge, including the merge when the sheet opens (`loadOnChainContent`, `use-dsheet-editor.tsx:466-648`). It also records the hash a publish uploaded, once that publish is confirmed.
+   - The Dexie row records that hash after each successful merge, including the merge when the sheet opens (`loadOnChainContent`, `components/dsheet-editor/hooks/use-dsheet-editor.tsx:466-648`). It also records the hash a publish uploaded, once that publish is confirmed.
    - When the current on-chain hash equals the recorded one, the cycle skips the download and the merge. `fetchAndMergeRemoteSheetContent` returns a new status, `'unchanged'` (added to D1's statuses).
    - A different or missing hash takes today's path.
 3. **When the remote did change, merge only what is missing.**
@@ -322,8 +363,8 @@ Changes, keeping the cycle's steps, order and gates:
    - The result is stored as one IndexedDB row by a new package helper, `appendDsheetUpdate(dsheetId, update)`. This replaces `mergeYjsSheetContent`'s two temporary documents and `mergeDsheetContent`'s full-copy row.
    - The upload body becomes `Y.mergeUpdates([localBody, delta])`, so no second read is needed.
 4. **One body read per cycle.**
-   - A single `readSheetBody` supplies the body, its state vector (`snap.stateVector`, already returned) and its emptiness (`snap.status`).
-   - `stateVectorOf(body)` is dropped. `preparePublishFileCallData` gets a flag saying the body was already checked as non-empty, and skips its own decode.
+   - A single `readSheetBody` supplies the body, its state vector (`snap.stateVector`, already returned), its fingerprint (`snap.fingerprint`, new in A1) and its emptiness (`snap.status`).
+   - `stateVectorOf(body)` is dropped. What a publish stores follows D6, which builds a document only in cycles where the remote changed. `preparePublishFileCallData` gets a flag saying the body was already checked as non-empty, and skips its own decode.
 
 **Result:** when the sheet has changes and the on-chain body is unchanged, a publish costs one IndexedDB read, gzip and encryption. When the remote changed, it adds the download and one diff.
 
@@ -336,11 +377,19 @@ Today `hasUnpublishedSheetChanges` (`utils/dsheet-body.ts:117`) calls a sheet di
 **Fix:** `lastPublishedSnapshot` stores the A1 fingerprint instead of the state vector (`lastPublishedFingerprint`).
 
 - Dirty = never published, or the title changed, or the current fingerprint differs from `lastPublishedFingerprint`. D5 step 1 says where the current one comes from.
-- A publish takes the fingerprint (`getContentFingerprint()`) before its body read, and stores that value when the publish confirms, never a later one. Edits made after it keep the sheet dirty.
-- The body read must be an IndexedDB read opened after the fingerprint was taken. y-indexeddb starts each update's write as soon as the update happens (`y-indexeddb.js:107-110`), and IndexedDB runs overlapping transactions in order, so the body then holds everything the fingerprint covers.
+- **What a publish stores.**
+  - A publish of the sheet open in the editor takes the fingerprint (`getContentFingerprint()`) before its body read, and stores that value when the publish confirms, never a later one. Edits made after it keep the sheet dirty.
+  - A publish of a sheet not open in an editor, or open while `getContentFingerprint()` is still `null`, stores the fingerprint of the body it uploaded: the body read's own, or, when D5 step 3 merged a remote delta into the upload, `fingerprintFromUpdate` of the merged body. Today every publish builds a document for that vector (`onchain-sync-provider.tsx:292-294`); after this, only cycles where the remote changed do.
+- **Fresh read.** The body read must be an IndexedDB read opened after the fingerprint was taken, so it can't reuse a read already in flight. `readDsheetContent` hands back a pending read for the same sheet (package `persistence.ts:166-181`), and the edit-time persist, RTC resume and Ctrl+S read the body too; the publish uses a fresh read. y-indexeddb starts each update's write as soon as the update happens (`y-indexeddb.js:107-110`), and IndexedDB runs overlapping transactions in order, so the body then holds everything the fingerprint covers.
 - Collaborators' changes count, deletes included, as today's vector check does for their additions. A reload needs no extra state: the fingerprint is rebuilt from the document as it loads.
-- **Upgrade:** values stored by older versions are bare state vectors. When one equals the body's state vector, it is replaced by the body's fingerprint without publishing; otherwise the sheet is dirty, as today. Without this, every sheet would publish once more after the upgrade, one transaction each.
+- **Every writer stores fingerprints.** Besides the publish paths, the open-time load stores the on-chain body's state vector on every open (`components/dsheet-editor/hooks/use-dsheet-editor.tsx:576-583, :616-622`); it stores `fingerprintFromUpdate` of that body instead, at the cost of today's `stateVectorOf`. It also stores the local title as the published title, which marks an unpublished rename as published on open; it stores the on-chain title instead.
+- The other places that write or derive a published vector follow the same rules:
+  - `publishSheet` (`utils/dsheet-utils.ts:100-270`, body read at `:125`) and the folder publish (`components/folders/folder-publish-queue.ts:262-350`) follow the publish rules above;
+  - the legacy backfill (`utils/dsheet-snapshot-backfill.ts:68-81`) and the dirty check's legacy fallback (`utils/dsheet-body.ts:106-110`) use `fingerprintFromUpdate(lastPublishedContent.content)`.
+- **Upgrade.** Values stored by older versions are bare state vectors. A bare vector is compared with the body's vector, as today, until the open-time load replaces it with the on-chain body's fingerprint. No sheet publishes again only because of the upgrade. Until a sheet is opened once, a clear-only change made before the upgrade stays unpublished, as it would today.
+  - **Rejected:** replacing a matching bare vector with the local body's fingerprint, which marks such a clear as published.
 - D4's `already_confirmed` case stores nothing.
+- **Not covered:** ddocs.new has its own vector-only checks (`components/dsheet/dsheet-page-content.tsx:832-836`, `utils/workspace-file-publish-adapter.ts:628-633`) and edits some sheets with no y-indexeddb at all (viewer-edit invitees), where only the live fingerprint works. A separate item.
 
 **Rejected:** a change counter kept in Dexie. It isn't derived from the document, needs a list of origins to ignore, and loses a change whose counter write doesn't land before the page closes.
 
@@ -365,13 +414,14 @@ Changes:
 **E2. Heavy chrome subscribes to the fields it uses.**
 
 - A new `useWorkbookSelector(selector, isEqual)` hook reads from a small store that Workbook updates after each context change (`useSyncExternalStore`).
-- Converted and wrapped in `React.memo`: Toolbar, SheetTab (and its items), ContextMenu, FilterMenu, SheetTabContextMenu, FunctionList. SVGDefines gets `React.memo` only; it is expected to read no context, to be confirmed during implementation.
+- Converted and wrapped in `React.memo`: Toolbar, SheetTab (and its items), ContextMenu, FilterMenu, SheetTabContextMenu, FunctionList. SVGDefines gets `React.memo` only; it reads no context, only a `currency` prop (`SVGDefines.tsx:19`).
 - The other consumers stay on `useContext` for now.
 
 **E3. A stable editor handle.**
 
 - `useImperativeHandle` (`Workbook/index.tsx:1997-2020`) depends on `context`, so the whole instance (`generateAPIs`, about 100 functions) is rebuilt on every change, and the host's ref callback (`editor/contexts/editor-context.tsx:393-409`) re-runs each time.
 - `generateAPIs` (`Workbook/api.ts`) reads the context through a ref instead, so the handle is built once and doesn't need `context` in its dependencies.
+- **One caller relies on the ref callback re-running.** Since the baseline, the package calls `activeSheetKeeper.onAttach` from it on every attach (package fileverse/ddocs.new#452; `editor-context.tsx:423` at origin/main, `editor/utils/active-sheet-keeper.ts`) to remember the active tab and restore it after a remount. With a stable handle it would run once per mount, often before the sheets load, and stop working. E3 calls it instead when the active sheet changes and once a new mount has sheets.
 
 **E4. Listeners and memos that rebuild on every change.**
 
@@ -413,10 +463,11 @@ ddocs.new gets it with the package version bump.
 | `WorkbookInstance.applyRemoteCells`, `setSheetCalcChain` | new | additive |
 | `DSheetEditorHandle.rebuildLocalStore` | new | additive |
 | `appendDsheetUpdate(dsheetId, update)` (persistence entry) | new | additive |
-| `WorkbookInstance` identity | built once per mount instead of on every change (E3) | hosts that relied on getting a new handle per change stop getting one; both apps to be checked during implementation |
+| `WorkbookInstance` identity | built once per mount instead of on every change (E3) | hosts that relied on getting a new handle per change stop getting one; the package's own active-sheet keeper is one (E3); both apps to be checked during implementation |
 | SyncManager constructor option `onLocalUpdate(fullState, chunk)` | replaced by `onRemoteApplied(update)` | internal to the package |
-| `lastPublishedSnapshot` in the Dexie sheet row (dsheets.new) | stores the fingerprint instead of the state vector (D6) | older values converted in place when they match the body |
-| `DSheetEditorHandle.getContentFingerprint()`, `fingerprintFromUpdate(update)` | new | additive |
+| `lastPublishedSnapshot` in the Dexie sheet row (dsheets.new) | stores the fingerprint instead of the state vector (D6) | older bare vectors are compared as today until the open-time load replaces them |
+| `DSheetEditorHandle.getContentFingerprint()`, `fingerprintFromUpdate(update)` | new; the live value is `null` until y-indexeddb is attached and synced | additive |
+| `DSheetContentSnapshot.fingerprint` (from `readDsheetContent` and `mergeDsheetContent`) | new (A1) | additive |
 | Format gate on `meta.format` | new (F) | no effect on today's sheets |
 
 **Release:** package minor version. Then dsheets.new adopts it with D0-D6. ddocs.new bumps the version with no code change (A2-A5, B, C and F apply automatically). No Yjs data change, so mixed-version sessions work; clients still on the old version keep the data-loss bugs that B1 and B2 fix until they update.
@@ -438,7 +489,7 @@ ddocs.new gets it with the package version bump.
 - **B1:** begin/end stay balanced for 1, 2 and 5 structural events inside one debounce window; depth returns to 0.
 - **A1:** `hasContent` matches the app's `isEmptySheet` on fixtures (empty, one cell, config only, two sheets); `userEdited` ignores `'self'`, `'remote'`, provider and `'init'` origins.
 - **B4:** after `applyCommentMarkers` on the output of `ySheetArrayToPlain`, the Y.Doc's encoded state is byte-identical to before.
-- **C1:** the second measure of the same text and font is a cache hit. **C2:** a cache hit when identities are unchanged, a miss when any keyed identity changes.
+- **C1:** the second measure of the same text and font is a cache hit; a different zoom or baseline is a miss. **C2:** a cache hit when identities are unchanged, a miss when any keyed identity changes; with a formula rule, a change on another tab misses; with a date rule, a new day misses.
 - **D1/D2/D4:** result mapping (`'failed'` and `'unknown'` skip the publish; `already_confirmed` writes no snapshot).
 - **D5:**
   - an unchanged on-chain hash skips the download; a different or missing hash downloads;
@@ -446,16 +497,21 @@ ddocs.new gets it with the package version bump.
   - `mergeUpdates([localBody, delta])` decodes to the same content as today's re-read body.
 - **C6/C7:** cache hit when the keyed identities and window are unchanged, miss when any changes; with frozen panes, all four panes hit on a repeat draw; dropdown validation gives the same result as today on a table of inputs, including multi-select and range-based options.
 - **E1/E5:** no context update for a mouse move within the same cell with no drag in progress; no `showComments` update when the shown set is unchanged.
-- **A1/D6:** the fingerprint changes on a delete-only transaction and on a remote one, and not on an empty transaction or a delete of a missing key; after a reload it equals `fingerprintFromUpdate` of the stored body. A clear-only session is dirty; an edit during a publish keeps the sheet dirty after it confirms; a collaborator's clear makes the owner's sheet dirty; an upgraded sheet whose stored vector matches its body is not republished.
-- **C8:** once the graph is complete, a commit to an unreferenced cell processes no formula, and the grid equals a forced full pass, on fixtures with INDIRECT, OFFSET, INDEX, named ranges and very large ranges.
-- **B5:** inserting a row on tab A shifts references to A on every tab, and leaves references to B's own cells and to a third tab alone, including quoted and differently-cased tab names.
+- **A1/D6:**
+  - the fingerprint changes on a delete-only transaction and on a remote one, and not on an empty transaction or a delete of a missing key;
+  - after a reload, including a reopen from a compacted body after a sub-sheet delete, it equals `fingerprintFromUpdate` of the stored body, the body read's fingerprint, and `fingerprintFromUpdate` of a merge of raw IndexedDB rows, one of which received such a body;
+  - with y-indexeddb not attached, `getContentFingerprint()` is `null` and the check uses the body;
+  - a clear-only session is dirty; an edit during a publish keeps the sheet dirty after it confirms, even when another body read was in flight; a collaborator's clear makes the owner's sheet dirty; a background publish after a remote merge leaves the sheet clean;
+  - a sheet with a bare stored vector is not republished by the upgrade, and the open-time load replaces the vector with the on-chain fingerprint and title.
+- **C8:** after open the index is built without evaluating any formula and the flag turns on; then a commit to an unreferenced cell processes no formula, and the grid equals a forced full pass, on fixtures with INDEX, references next to spaces, unquoted tab names with `-`, named ranges, very large ranges and a formula that depends on a very-large-range formula. On the same fixtures the index holds every edge `execfunction` records. A remote batch and an HTML-table paste turn the flag off; a copy-paste doesn't.
+- **B5:** inserting a row on tab A shifts references to A on every tab, and leaves references to B's own cells and to a third tab alone, including quoted tab names; a reference whose tab name differs only in case is left alone, as the engine doesn't resolve it to that tab.
 - **F:** a client with the sheet open stops writing and shows the prompt when `meta.format` becomes 2.
 
 **Repro tests that fail before and pass after:**
 
 - **B1:** two structural remote transactions 10 ms apart, then an owner commit; the cell is in Yjs.
 - **B2:** two joiner commits in one tick both reach Yjs; a tab switch between commit and timer writes to the original sheet.
-- **B6:** Ctrl+Enter fill, insert cells with shift, delete cells with shift; after a reload and on a second client, the cells match.
+- **B6:** Ctrl+Enter fill, insert cells with shift, delete cells with shift, and `=1+1` pasted as text into one cell; after a reload and on a second client, the cells match.
 
 **Manual QA plan** (for non-developers, written with the implementation plan): owner and collaborator in two browsers; typing during a peer's paste and insert; formula entry by both; reload and compare; publish with the network cut mid-merge; on a 100-row sheet with dropdowns, borders and fills, scrolling, hovering, typing and choosing dropdown values, then publishing and reopening on another device.
 
@@ -466,9 +522,9 @@ Integration glue (prop wiring, hook plumbing) gets no new unit tests of its own.
 - **B2** changes when the first Yjs write happens for a typed cell, from a later timer to inside the commit. The write runs inside the engine's state updater, as every other engine write path already does. Covered by the B2 repro tests and the manual plan.
 - **A1/D0** replaces the app's emptiness heuristics. These guard against persisting or publishing an empty body over real content. The fixture tests pin the new signal to the old `isEmptySheet` meaning; the base64-length bands go away because `userEdited` answers the question they approximated.
 - **A4** resets the formula dependency indexes on each remote formula-list change. That matches the state after the rebuild it replaces. It costs one full formula pass on the next local edit, as after any mount today. With many editors committing formulas this happens often; the follow-up in A4 removes it.
-- **C8** skips work on a precondition. If a reference resolved at run time (INDIRECT, OFFSET, INDEX) is missing from the graph, a formula that depends on the edited cell keeps a stale value until the next full pass. Mitigation: confirm the precondition first, and test against a forced full pass.
+- **C8** skips work on a precondition. The index built from formula text must hold the edges `execfunction` would record; a missing edge leaves a dependent formula stale until the next full pass. The normal pass's parse is known to miss references (C8), so the index has its own tokenizer. Mitigation: test its edges against `execfunction`'s and the grid against a forced full pass.
 - **D6** counts collaborators' changes, so an owner's device publishes after receiving them, as today's vector check already does. Content another device already published can be published once more; that costs a transaction, not data.
-- **The fingerprint tracker** must be attached when the Y.Doc is created. Attached later, it needs one full scan of the delete set to start (about 3 ms at 142k entries).
+- **The fingerprint tracker** must be attached when the Y.Doc is created. Attached later, it needs one full scan of the delete set to start (under 1 ms at 145,005 entries and 2 to 4 ms at 706,605, in Node).
 - **E** can leave part of the UI stale. A memoised component whose selector misses a field it reads stops updating, for example a toolbar button that no longer reflects the selection. Mitigation: each converted component's selector lists every context field the component reads today, checked by grep during review. The manual QA plan exercises toolbar state, the tab bar and menus.
 - **D5** skips the download on a hash match. This is safe only if the local body already contains everything behind that hash: the hash is recorded only after a merge completed or a publish was confirmed. Any doubt (missing or different hash) takes today's full path.
 - **C6** caches by identity. Immer gives `borderInfo`, `merge` and the hidden maps a new identity on every change, so a stale hit needs an in-place mutation outside Immer. The unit tests pin that each keyed change misses.

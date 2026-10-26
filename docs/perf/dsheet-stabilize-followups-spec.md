@@ -134,7 +134,7 @@ Remove the remaining per-edit, per-frame and per-paste work that scales with she
   - formulas that reference a defined name covering any part of the rectangle (same rule as `:2482-2512`);
   - the pasted formula cells themselves.
 - Then runs the existing ordering and evaluation on that set.
-- Requires P1 C8's `depGraphComplete`. When the flag is false, fall back to today's full pass. After the full pass the flag is true, so later pastes take the narrow path.
+- Requires P1 C8's `depGraphComplete`. When the flag is false, fall back to today's full pass. After the flag turns true (P1 C8 now builds the index from formula text in idle time after open, instead of waiting for a full pass), later pastes take the narrow path.
 - Pasted formulas enter the chain evaluated, so they keep the graph complete. That changes P1 C8's rule "a paste turns the flag false" to "a paste turns it false only when it takes the fallback".
 
 Reads the graph, doesn't change how it is built (section 3).
@@ -238,7 +238,7 @@ No Yjs data change. Mixed-version sessions behave as today.
 - **P1:** a paste that relied on the whole-sheet pass to re-evaluate formulas outside the pasted range stops doing that. [Inference] Nothing should rely on it: those cells were not pasted, and their formulas already have values. The P1 test pins the new scope.
 - **G1:** something that relied on the offsets being rebuilt after any edit would stop updating. Mitigation: the dependency list covers every input `calcRowColSize` and `normalizeSelection` read, and the G1 test pins each one.
 - **G4:** the status-bar stats lag the selection by one idle callback. That's the intended trade.
-- **P2:** a missing dependency leaves a stale formula value until the next full pass. Same precondition as P1 C8 (INDIRECT, OFFSET, INDEX); the forced-full-pass equality test covers it.
+- **P2:** a missing dependency leaves a stale formula value until the next full pass. Same risk as P1 C8: the index must hold every edge `execfunction` records. P1 C8 has its own tokenizer for INDEX/INDIRECT/OFFSET, references next to spaces and tab names containing `-`; the forced-full-pass equality test covers it.
 - **G2:** the cache is keyed by row identity. A write that mutates a row array outside Immer would serve a stale overflow map. Mitigation: all engine writes go through Immer drafts; the test pins edit → miss.
 - **F1:** deferring recalculation inside `setCellValuesByRange` changes when intermediate values exist. Only the final grid is observable; the F1 test pins it.
 - **G3:** a font change not seen by the three triggers would keep stale widths until the cap evicts them. Mitigation: route every font-affecting change (theme, webfont, zoom, pixel ratio) through one invalidation function.

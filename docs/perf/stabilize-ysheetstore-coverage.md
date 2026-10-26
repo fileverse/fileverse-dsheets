@@ -74,12 +74,12 @@ Line numbers come from our docs (`main` @ `aa87284`) unless the ticket gives its
   - Node: the running deleted count passed T1–T10: deletes, no-ops, remote updates, duplicate and out-of-order updates, concurrent deletes, undo, reload, merged IndexedDB rows, and real y-indexeddb replay including its trim.
 - **Proposed fix (A1, D0, D5, D6):**
   - Fingerprint = `base64(stateVector) + ":" + deletedCount`. A tracker attached at `Y.Doc` creation adds up `tr.deleteSet`; about 0.0002 ms per transaction at any history size.
-  - `fingerprintFromUpdate(body)` for stored bodies.
+  - `fingerprintFromUpdate(body)` for stored bodies (revised 2026-10-26: builds a temporary document plus one delete-set scan, about 235 ms at 100k cells; the tracker also counts GC structs; `null` until y-indexeddb has synced).
   - `lastPublishedSnapshot` stores the fingerprint; the publish takes it before its body read.
 - **Not covered:**
-  - **D6 upgrade:** an old stored vector that matches the body is converted to a fingerprint without publishing. A delete-only change that was already pending before the upgrade gets marked clean.
+  - **D6 upgrade (revised 2026-10-26):** a bare stored vector is compared with the body's vector, as today, until the open-time load replaces it with the on-chain fingerprint. A delete-only change made before the upgrade stays unpublished until the sheet is opened once; the first-draft rule that marked it clean was rejected.
   - **D6 write ordering** assumes IndexedDB is on. With `enableIndexeddbSync` false, or after an IndexedDB init failure, the body read may not hold what the fingerprint covers.
-  - **Background-sheet `fingerprintFromUpdate`** decodes the whole body every cycle. The ticket itself says to measure it; not measured yet.
+  - **Background-sheet fingerprint (revised 2026-10-26):** the dirty check uses the body read's fingerprint (under 1.5 ms on top of a read that already builds a document), not `fingerprintFromUpdate`. The 35 ms measured in `stabilize-bench-results.md` was for the `Y.decodeUpdate` version the ticket no longer uses.
   - **[Inference] Diverged replicas:** two copies could have the same vector and count with different deletes. It's not a content hash; D5's hash check stays.
 
 ### 1.6 Conditional formatting recomputed over its full range on every draw
@@ -109,14 +109,14 @@ Line numbers come from our docs (`main` @ `aa87284`) unless the ticket gives its
 
 - **Root cause:** `execFunctionGroup` narrows to dependents only when the graph has entries and the dependents set is non-empty (`formula.ts:2466-2518`). Otherwise it re-tokenizes every formula, and `arrayMatch` walks every cell of every referenced range.
 - **How we found it:** Code; Browser: 11 ms vs 2 ms with 500 `SUM(A:T)` formulas.
-- **Proposed fix (C8):** a `depGraphComplete` flag; skip the pass when the graph is complete and the cell has no dependents.
+- **Proposed fix (C8):** a `depGraphComplete` flag; skip the pass when the graph is complete and the cell has no dependents. Revised 2026-10-26: the index is built after open from the formula text with its own tokenizer (the normal pass's parse misses INDEX/INDIRECT/OFFSET references, references next to spaces and tab names containing `-`), and the flag also turns false on a remote batch, an HTML-table paste and a cut-paste.
 - **Not covered:**
   - Paste still rebuilds the full graph (`jfrefreshgrid` → `runExecFunction` with null origins).
   - `arrayMatch` still builds a key string per range cell for edits to referenced cells.
   - A `RegExp` built per formula per defined name (`formula.ts:2493-2512`).
   - `stack.concat` per visited node in topological sort (`:2893`).
   - `setCellValuesByRange` runs a full `updateCell` per formula: 2.2 → 3.9 ms per formula (Browser).
-  - The INDIRECT/OFFSET/INDEX precondition is still to be confirmed (the ticket says so).
+  - The INDIRECT/OFFSET/INDEX precondition is settled in the ticket (2026-10-26): INDIRECT and OFFSET give `#NAME?` and record nothing, INDEX records its range whole; the C8 tests pin it.
 
 ### 1.10 Whole React tree re-renders on every context change
 

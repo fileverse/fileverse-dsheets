@@ -3,6 +3,8 @@
 Status: draft for review. Amends Stabilize A1, D0 and D5.
 Date: 2026-10-22
 
+**Superseded in part, 2026-10-26.** The Stabilize spec (`dsheet-stabilize-spec.md`, A1 and D6) now wins where the two differ. Changes since this draft: the tracker also counts GC structs (section 4.1); `fingerprintFromUpdate` builds a temporary document instead of using `Y.decodeUpdate` (4.1); `fingerprint` is `string | null` (4.3); the upgrade rule is different (4.3 Migration). Sections marked below are kept for history.
+
 ## 1. Problem
 
 Stabilize uses `Y.encodeStateVector(ydoc)` as the "did the document change" signal
@@ -86,21 +88,35 @@ export function fingerprintFromUpdate(update: Uint8Array): string;
   otherwise one full scan of `createDeleteSetFromStructStore(doc.store)`. The scan is
   a fallback only; the normal path attaches before any content is loaded (4.2).
 - Registers `doc.on('afterTransaction', tr => …)` that adds the sum of
-  `tr.deleteSet` range lengths to `deletedCount`. No origin filtering.
+  `tr.deleteSet` range lengths to `deletedCount`, plus the lengths of GC structs the
+  transaction newly integrated (store structs between `tr.beforeState` and
+  `tr.afterState`, per client). No origin filtering. **Updated 2026-10-26:** counting
+  `tr.deleteSet` alone is wrong for a body loaded already compacted: its deleted
+  children arrive as GC structs and never pass through `tr.deleteSet` (2 against 22
+  after deleting a 20-cell map; wrong in 171 of 400 randomized checks).
 - `getFingerprint()` builds the string on demand (state vector encode + base64).
   Do not compute it inside the listener.
 - `dispose()` removes the listener. Called from the same cleanup that destroys the doc.
 
-`fingerprintFromUpdate(update)` gives the same value for an encoded full-state
-update without building a document, for bodies read from IndexedDB:
+`fingerprintFromUpdate(update)` gives the same value for a stored body. **Updated
+2026-10-26:** it builds a temporary document, as today's `getDsheetStateVector` does,
+and adds one scan of its delete set (`Y.createDeleteSetFromStructStore`, under 1 ms at
+100k cells). It costs what that call costs today: about 235 ms at 100k cells and 90 ms
+on the 145,005-entry sheet (Node).
 
-- state vector: `Y.encodeStateVectorFromUpdate(update)`
-- deleted count: sum of range lengths in `Y.decodeUpdate(update).ds`
+- **Not used:** `Y.encodeStateVectorFromUpdate` plus the delete ranges of
+  `Y.decodeUpdate(update).ds` (the first draft). It is wrong for a merge of raw
+  IndexedDB rows: a row written when the document received a compacted body carries
+  that body's GC structs with no delete range (1 deleted entry against 22). At 100k
+  cells it is also slower (380 ms).
+- Body reads (`readDsheetContent`, `mergeDsheetContent`) already build a document from
+  every row; their snapshot gets a `fingerprint` field from that document (one
+  delete-set scan, under 1.5 ms), so a stored body is checked at today's vector cost.
 
-Verified (T9, Node): this equals the live-doc fingerprint for bodies produced by
-`Y.mergeUpdates` over IndexedDB-style rows, including overlapping full-copy rows,
-exact duplicate rows, rows from two peers with concurrent deletes, and `gc: false`.
-`Y.mergeUpdates` merges overlapping delete ranges, so nothing is counted twice.
+First-draft verification, kept for history (T9, Node): equal to the live-doc
+fingerprint for `Y.mergeUpdates` over IndexedDB-style rows with overlapping full-copy
+rows, duplicates, concurrent deletes and `gc: false`. T9 must be re-run against the
+temporary-document implementation and extended with a row that carries GC structs.
 
 ### 4.2 Wiring
 
@@ -132,9 +148,13 @@ exact duplicate rows, rows from two peers with concurrent deletes, and `gc: fals
 type DSheetContentChange = {
   hasContent: boolean;
   userEdited: boolean;
-  fingerprint: string; // state vector + deleted count, see this spec
+  fingerprint: string | null; // state vector + deleted count; null until y-indexeddb is attached and synced
 };
 ```
+
+`getContentFingerprint()` returns `null` for the same period. Before that the live
+document can be empty while IndexedDB holds the sheet; callers then use the body
+read's fingerprint.
 
 Coalescing, firing points and `userEdited` rules are unchanged.
 
@@ -147,14 +167,26 @@ Coalescing, firing points and `userEdited` rules are unchanged.
   `lastPublishedSnapshot`.
 - Open sheet: dirty when `latestChange.fingerprint !== lastPublishedFingerprint`
   (or the sheet was never published, or the title changed — unchanged rules).
-- Background sheet: dirty when `fingerprintFromUpdate(body) !== lastPublishedFingerprint`.
+- Background sheet (or an open sheet whose live fingerprint is still `null`): dirty when the
+  body read's fingerprint `!== lastPublishedFingerprint`. **Updated 2026-10-26:** the
+  read already builds a document, so the fingerprint adds under 1.5 ms (about 340 ms
+  read at 100k cells, 100 ms on the 145,005-entry sheet).
 - At cycle start capture `fingerprintAtStart`; after a confirmed publish store that
-  value, never the current one, so edits made during upload stay dirty.
+  value, never the current one, so edits made during upload stay dirty. The body read
+  must be a fresh IndexedDB read opened after the fingerprint was taken. A publish of a
+  sheet not open in an editor stores the body's own fingerprint (or
+  `fingerprintFromUpdate` of the merged body when a remote delta was merged in).
+- Every writer stores fingerprints, including the open-time load, which stores
+  `fingerprintFromUpdate` of the on-chain body and the on-chain title.
 - D4 unchanged in spirit: on `already_confirmed`, do not store a fingerprint.
 
-**Migration.** Existing stored values are bare state vectors (no `:`). They never
-equal a new fingerprint, so each sheet publishes once more after upgrade. No data
-migration needed. Do not try to compare old and new formats.
+**Migration.** *(Replaced 2026-10-26; the first draft republished every sheet once.)*
+Existing stored values are bare state vectors (no `:`). A bare vector is compared with
+the body's state vector, as today, until the open-time load replaces it with the
+on-chain body's fingerprint. No sheet publishes again only because of the upgrade.
+Until a sheet is opened once, a clear-only change made before the upgrade stays
+unpublished, as it would today. Rejected: replacing a matching bare vector with the
+local body's fingerprint, which marks such a clear as published.
 
 ## 5. Performance budget
 
@@ -211,7 +243,7 @@ wait for a cycle, expect a publish.
 
 ## 8. Open questions
 
-1. dsheets.new `readSheetBody`: does it merge the IndexedDB rows with
+1. *(Answered 2026-10-26: yes, the body read returns `snap.fingerprint` from the document it already builds.)* dsheets.new `readSheetBody`: does it merge the IndexedDB rows with
    `Y.mergeUpdates` (T9 covers that) or by another route? It already decodes the
    body; can it return
    `fingerprintFromUpdate` from that pass instead of decoding twice?

@@ -79,7 +79,7 @@ Budgets in the fingerprint spec:
 
 Open costs about 3 ms more on a 114k-struct body.
 
-**Finding for D5.** `fingerprintFromUpdate` decodes every struct (`Y.decodeUpdate`), which takes 35 ms on this body. Running it every 20 s cycle for background sheets is not cheap. A reader that skips struct contents and reads only the delete set is a candidate before D5 adopts it.
+**Finding for D5 (superseded 2026-10-26: the ticket now builds `fingerprintFromUpdate` from a temporary document plus a delete-set scan, and the dirty check uses the body read's fingerprint; re-measure the new implementation, this number is for the `Y.decodeUpdate` version).** `fingerprintFromUpdate` decodes every struct (`Y.decodeUpdate`), which takes 35 ms on this body. Running it every 20 s cycle for background sheets is not cheap. A reader that skips struct contents and reads only the delete set is a candidate before D5 adopts it.
 
 S1–S4 are unchanged in `after.json`. Nothing that removes them (A1's `onContentChange` prop and throttle, A2, A3) has landed yet.
 
