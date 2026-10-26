@@ -14,6 +14,7 @@ const methods = (): DSheetEditorMethods => ({
   updateCollaboratorName: vi.fn(),
   updateSessionTitle: vi.fn(),
   navigateToSheet: vi.fn(async () => true),
+  getContentFingerprint: vi.fn(() => null),
 });
 
 describe("DSheetEditorHandle composition", () => {

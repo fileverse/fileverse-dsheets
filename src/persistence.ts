@@ -18,6 +18,8 @@ export type {
   DSheetContentStatus,
 } from './persistence-utils';
 
+export { fingerprintFromUpdate } from './editor/utils/content-fingerprint';
+
 const pendingReads = new Map<string, Promise<DSheetContentSnapshot>>();
 
 export const getDsheetStateVector = (

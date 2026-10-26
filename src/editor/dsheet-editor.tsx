@@ -44,6 +44,7 @@ import { SmartContractReadingErrorToast } from './components/smart-contract/erro
 import { SMART_CONTRACT_PANEL_ID } from './utils/smart-contract/constants';
 import './components/smart-contract/index.css';
 import { shouldInitializeDefaultWorkbook } from './hooks/collaboration-lifecycle';
+import { INIT_ORIGIN } from './utils/content-change';
 
 // Use the types defined in types.ts
 type OnboardingHandler = OnboardingHandlerType;
@@ -471,7 +472,8 @@ const EditorContent = ({
         //@ts-ignore
         currentDataRef.current = sData;
       }
-    });
+      // Seed content, not a user edit (A1 userEdited).
+    }, INIT_ORIGIN);
   }, [
     isNewSheet,
     syncStatus,
@@ -655,6 +657,7 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
       dsheetId = '',
       portalContent,
       onContentUpdate,
+      onContentChange,
       onChange,
       username,
       selectedTemplate,
@@ -706,6 +709,7 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
         enableIndexeddbSync={enableIndexeddbSync}
         isReadOnly={isReadOnly}
         onContentUpdate={onContentUpdate}
+        onContentChange={onContentChange}
         onChange={onChange}
         externalEditorRef={forwardedEditorRef}
         legacyEditorRef={externalSheetEditorRef}
