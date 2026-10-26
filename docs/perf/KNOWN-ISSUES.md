@@ -1,6 +1,6 @@
 # P1 Stabilise: issues found and not worked on
 
-Written 2026-10-26, updated after G5 (K4 and K5 fixed by Tasks 17 and 16; K40 and K41 added from Tasks 6 and 7; see the results doc). Everything here was seen while doing the P1 Stabilise tasks (G1–G4) and is **not** fixed and **not** assigned to a task, unless the Task column says so. Plan: `docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md`. Handoff: `docs/perf/NEXT.md`.
+Written 2026-10-26, updated after G6 (K42 to K44 added from Task 8) (K4 and K5 fixed by Tasks 17 and 16; K40 and K41 added from Tasks 6 and 7; see the results doc). Everything here was seen while doing the P1 Stabilise tasks (G1–G4) and is **not** fixed and **not** assigned to a task, unless the Task column says so. Plan: `docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md`. Handoff: `docs/perf/NEXT.md`.
 
 Evidence labels: **Observed** = seen running (browser or test run). **Code-read** = read in code or reported by a reviewer, not run. **[Inference]** = reasoning, not confirmed. **[Unverified]** = no check done.
 
@@ -69,6 +69,9 @@ Evidence labels: **Observed** = seen running (browser or test run). **Code-read*
 | K39 | **B3 two-tab check was run once, with the same user name in both tabs and the demo's dev collaboration server.** Not repeated with different users or with a slow network. | Repeat before release. |
 | K40 | **`rebuildLocalStore` ordering logic has no automated test** (in-flight bootstrap, refresh during a rebuild, unmount during the wait): vitest has no React renderer. Also: a blocked delete (another tab holds the database) leaves the new `whenSynced` waiting with no timeout; a rebuild waiting on a bootstrap started by a changed `dsheetId`/`ydoc` uses the old closure values. Task 6. | Browser check with two tabs; renderer test if one is added; consider a timeout. |
 | K41 | **`appendDsheetUpdate` cannot tell a wrong delta** (not diffed against the true local state vector; Yjs keeps it pending), grows the row count until the next compaction, and a timeout during an in-flight add can still commit the row. Task 7. | The app must diff against the real local vector (D5 step 3); retry is safe. |
+| K42 | **Format gate (F): UI wiring has no automated test** (vitest has no React renderer). The permission chip still shows the prop's state while locked; the comment toolbar item still shows (its anchor write is guarded); a template apply that returns early leaves `selectedTemplate` set; `watchFormatGate` creates the empty `meta` root type. Task 8. | Browser check with two tabs; renderer test if one is added. |
+| K43 | **Format gate (F): second-tab demo check not run.** Only a single-tab check (format set on the doc locally) was done. Also, in the demo, edits do not survive a reload even without the lock, so the rig cannot show persistence. Task 8. | Repeat with two tabs in one room, and on dsheets.new. |
+| K44 | **Format gate (F): writes made before the watch starts** (bootstrap) are not blocked except merge and migrate, which have a read-only pre-check. Task 8. | Accept, or pre-check earlier. |
 
 ## How to use this list
 

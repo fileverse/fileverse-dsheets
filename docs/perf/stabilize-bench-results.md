@@ -770,7 +770,7 @@ Not covered:
 - The cost is measured at one size (500 formulas, 1 dependent). Larger sheets with a never-true flag will pay proportionally more per commit; a fix is to make the flag true (hydrate or index sparse tabs in the warm-up), not done here.
 - No browser check.
 
-## D3 (package side): `rebuildLocalStore` (Task 6, 2026-10-26, uncommitted)
+## D3 (package side): `rebuildLocalStore` (Task 6, 2026-10-26, commit 4d181b5)
 
 Today the app's heal deletes the sheet's y-indexeddb database and remounts, so edits that exist only in the live document are lost. The package now offers `DSheetEditorHandle.rebuildLocalStore()`: destroy the provider, delete the database, attach a new provider to the same live `Y.Doc`, wait for `whenSynced`. The document is never replaced. The app side (calling it instead of delete-and-remount, passing `onIndexedDbError`) is in dsheets.new and is not part of this repo.
 
@@ -806,7 +806,7 @@ Tests: 6 in 2 files plus a handle-forwarding case in `editor-handle.test.ts`. Un
 
 Not covered: the hook's ordering logic (in-flight bootstrap, refresh during a rebuild, unmount during the wait) has no automated test because vitest here has no React renderer; it is covered by code review only. A blocked delete has no timeout on the new `whenSynced`. A rebuild that waits on a bootstrap started by a changed `dsheetId` or `ydoc` uses the old closure values. Not run in the browser.
 
-## D5 (package side): `appendDsheetUpdate` (Task 7, S12, 2026-10-26, uncommitted)
+## D5 (package side): `appendDsheetUpdate` (Task 7, S12, 2026-10-26, commit 4603bd9)
 
 `appendDsheetUpdate(dsheetId, update)` in `src/persistence.ts` (shipped through the `./persistence` entry, like `mergeDsheetContent`; it is not exported from `src/index.ts`, which exports none of the persistence helpers). It adds exactly one row to the y-indexeddb `updates` store: no document is built and no full copy is written. If the database does not exist it is created with y-indexeddb's schema. The app (dsheets.new) calls it with `Y.diffUpdate(remote, localStateVector)`.
 
@@ -827,3 +827,28 @@ Rulings: the plan said "export from `src/index.ts`"; persistence helpers ship th
 Tests: unit suite 43 files, 334 tests; `tsc` clean.
 
 Not covered: a delta not diffed against the true local state vector is not detected (Yjs would keep it pending). Each call adds a row, so the row count grows until the next compaction. Another tab with the database attached sees the row only on its next attach. A timeout during an in-flight add can still commit the row (a retry is safe, Yjs applies duplicates idempotently). The D5 steps in the app (hash skip, one body read, `mergeUpdates` upload body) are not part of this repo.
+
+## F: format gate on `meta.format` (Task 8, S13, 2026-10-26, uncommitted)
+
+New `src/editor/utils/format-gate.ts`: `SUPPORTED_FORMAT = 1`, `readFormatVersion(doc, dsheetId)` (missing map, key or a non-number means 1; the read does not create the map), `isFormatLocked(doc, dsheetId?)` and `watchFormatGate(doc, dsheetId, onLocked)`. The editor reads `${dsheetId}/meta` key `format` after bootstrap and observes it while open. Above 1 it locks that sheet on that doc: the grid turns read-only (`isReadOnly` the prop OR the lock; `useEditorSync` still gets the raw prop, because the combined value is in the bootstrap dependency lists and would re-bootstrap IndexedDB on lock), the write helpers return early, and the alert `This sheet was updated. Reload to continue.` shows. The lock is per doc and sheet id, and `onLocked` runs once per watcher, so an effect re-run re-locks the UI.
+
+**Guarded writers:** `updateYdocSheetData` (and so every `*YdocUpdate`), `writeCommentAnchorsToYdoc`, `syncDefinedNamesToYdoc`, the sheet add and delete handler in `editor-workbook-sync.ts`, template apply, CSV import, XLSX import, the default-workbook init, both `migrateSheetArrayIfNeeded` calls in `use-editor-data.tsx`, and the pre-watch merge and migrate in `use-editor-sync.tsx`. Not guarded: `spreadsheet-import.ts` (writes a fresh unwatched doc; its CSV and XLSX writers are guarded).
+
+**S13** (`npx vite-node docs/perf/bench/stabilize-bench.ts -- before-f --only=S13`, then `-- after-f --only=S13`): open cost, applying a 4000x25 body into a fresh doc with the `update` and `observeDeep` listeners, plus the gate (one map read and one observer, then unsubscribe) when the module exists. Node, not browser.
+
+| S13 | Before (no gate) | After (gate) |
+|---|---|---|
+| `before-f` / `after-f` single runs, median of 25 | 379.5, 395.4, 385.8 ms | 384 to 437 ms over 8 runs |
+| Paired, interleaved in one process, 40 opens per arm, 3 runs | 378.8, 378.4, 385.6 ms | 379.3, 377.4, 385.9 ms |
+
+The same code varied between about 369 and 437 ms across separate runs on this machine, so the separate-run rows cannot show a difference. The paired rows hit both arms with the same drift: medians within 1.0 ms of each other in all three runs. The gate alone costs about 0.9 microseconds per open (2,000 fresh docs).
+
+Failing run: no module (`Failed to load url ./format-gate`), then with the module and no guards `Tests 2 failed | 7 passed (9)` (the write helpers still wrote: state vector advanced). Passing: `src/editor/utils/format-gate.test.ts`, 12 tests (no meta map reads 1; format 2 locks once and the helpers write nothing, state vector unchanged; a doc that receives `format: 2` through `Y.applyUpdate` locks; format 1 and non-numbers do not; unsubscribe stops it; reading does not create the map or change the state vector; comment-anchor and defined-names writers write nothing when locked; lock on sheet A does not lock sheet B; re-watch of a locked sheet notifies the new watcher).
+
+**Demo check** (built-in browser, one tab; `window.ydocRef` is the doc): a UI edit before the lock grew the doc from 15 to 16 structs; setting `meta.format` to 2 on the doc showed the alert and a read-only toolbar (17 structs, the meta write itself); typing and Enter in a cell afterwards left it at 17. Not done: the second-tab version of the check. Rig note: in the demo, edits made through the UI or `setCellValue` do not survive a reload even without the lock (control run), so persistence was not used as evidence.
+
+Rulings: the spec says "the Yjs write helpers return without writing", so every writer reachable without the toolbar is guarded (reviewer Important: host-driven import and template paths, and pre-watch merge and migrate). Cost if wrong: a few extra one-line guards.
+
+Tests: unit suite 44 files, 346 tests; `tsc` clean.
+
+Not covered: no mounted-React test of the editor-context wiring (vitest has no React renderer). The permission chip still shows the prop's state and the comment toolbar item still shows while locked (its anchor write is guarded). A template apply that returns early leaves `selectedTemplate` set. `watchFormatGate` creates the empty `meta` root type. Format 2 edits already merged before this client opened are not detected until the watch starts, except where the read-only pre-watch check is used (merge, migrate).
