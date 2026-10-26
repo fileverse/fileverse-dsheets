@@ -286,3 +286,50 @@ Found during this check (not caused by A4 or A5):
    - [Inference] A remount during the connect/hydrate path builds the engine from a copy that lacks the edit, and the calcChain sync hook then diffs against that copy.
    - Not traced yet.
 2. **`[DSheet] Compaction failed: TypeError: Cannot assign to read only property 'config'`** at `compact-committed-celldata.ts:67` (`markCompactionRevInMemory`). The file is not changed on this branch; whether the base commit logs it too was not checked.
+
+## C1, C2, C3, C6, C7: engine hot spots
+
+Same Node harness, 4000×25 sheet (`before-c.json` → `after-c.json`, scenario S8). It calls the engine's real functions.
+
+| Item | Scenario | Before | After |
+|---|---|---|---|
+| **C1** text-measure cache | 1,000 visible texts, second frame | 1,000 of 1,000 re-measured (cache never hit) | 0 re-measured |
+| **C2** conditional-format compute | `getComputeMap` per draw, 1 rule over 100k cells | 83.6 ms | 0.002 ms |
+| **C3** `delFunctionGroup` | plain-value commit, 500-entry chain, 50 dynamic arrays | 0.271 ms | 0.004 ms |
+| **C6** border compute | per draw, 300 border entries, 200 merges, 50×20 window | 3.13 ms | 0.001 ms |
+| **C7** dropdown validation | 400 dropdown cells, 200 options each | 31.7 ms | 0.044 ms |
+
+What changed:
+
+- **C1:** one key builder for read and write: value, zoom, text baseline, and the font in use (`fontset` or the context's font). Callers only read the cached object.
+- **C2:** last compute map per sheet. Keyed by the identities of `luckysheetfile`, the sheet's rules and `conditionRules`, the live-preview draft flag, and the draft selection while a preview is active.
+  - `luckysheetfile` is used rather than the sheet's data alone, because formula rules can read other sheets.
+  - The cache is bypassed inside Immer drafts: a draft keeps its identity while it changes.
+- **C3:** find the entry first, then copy and splice only when found, for both `calcChain` and `dynamicArray`. Before, both lists were deep-cloned on every call.
+- **C6:** two parts.
+  - A per-row index of merges, built once per `config.merge` object, replaces the four scans over all merges done for every bordered row.
+  - The canvas calls a new `getBorderInfoComputeRangeCached`. Up to four windows per sheet (one per frozen pane), keyed by the identities of `borderInfo`, `merge`, `rowhidden` and `colhidden`, the grid size and the drawn bounds. Bypassed inside drafts. Other callers keep the uncached function.
+- **C7:** new `getDropdownOptions(ctx, txt)`: a parsed list plus a `Set`, cached per option text. For range-based options it is cached per source sheet `data` identity, and bypassed inside drafts.
+  - `validateCellData` checks membership with the `Set`.
+  - The canvas pill colours use a memoized `value1.split(',')`, keeping the raw split because colours are picked by position.
+  - The first version still ran the range regex before the cache lookup (17.3 ms); literal lists are now looked up first.
+
+Tests (`core/modules/engine-hot-spots.test.ts`, 12 tests):
+
+- **C1:** a hit on a repeat; a miss on a different zoom, baseline or font.
+- **C2:** a hit while unchanged; a miss with the correct new result after a data change and after a rule change; no caching inside a draft.
+- **C3:** both lists keep their identity when the cell is not a formula; matching entries are removed.
+- **C6:**
+  - the cached result equals the uncached one and hits on a repeat;
+  - each keyed change (`borderInfo`, `merge`, `rowhidden`, `colhidden`, bounds) misses and equals the uncached result;
+  - all four pane windows hit on a repeat.
+- **C7:** same result as the previous validation on a table of inputs (literal, duplicates and empties, multi-select, range-based, numbers, null); range options re-read after the source sheet changes.
+
+C6 merge-index equivalence: HEAD's `getBorderInfoComputeRange` and the new one agreed on 300 randomized layouts (5,929 border entries; every border type, cell borders, merges, hidden rows and columns). This was a one-off script against a temporary copy of HEAD's file, which was removed afterwards; it is not a committed test.
+
+Not covered:
+
+- [Inference] C2 is still a full recompute on the first draw after any edit, because the cache is keyed on `luckysheetfile`, which changes on every edit.
+- An `occurrenceDate` (today/yesterday) rule keeps its result across midnight until something on the sheet changes.
+
+Browser: the demo grid loads and scrolls with no type errors. Conditional formats, borders and dropdowns were not checked visually.

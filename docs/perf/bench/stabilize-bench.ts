@@ -556,6 +556,145 @@ const freshCopyOf = (doc: Y.Doc) => {
   }
 }
 
+// S8: engine hot spots per draw / per commit (C1, C2, C3, C6, C7).
+{
+  const { defaultContext } = await import('../../../src/sheet-engine/core/context');
+  const { loadLocale } = await import('../../../src/sheet-engine/core/locale');
+  await loadLocale('en');
+  const textMod = await import('../../../src/sheet-engine/core/modules/text');
+  const cfMod = await import('../../../src/sheet-engine/core/modules/ConditionFormat');
+  const formulaMod = await import('../../../src/sheet-engine/core/modules/formula');
+  const borderMod: any = await import('../../../src/sheet-engine/core/modules/border');
+  const dvMod = await import('../../../src/sheet-engine/core/modules/dataVerification');
+  const rand = mulberry32(21);
+  const ROWS8 = 4000;
+  const COLS8 = 25;
+  const makeCtx8 = () => {
+    const ctx: any = defaultContext({
+      globalCache: { undoList: [], redoList: [] },
+      cellInput: { current: null },
+      fxInput: { current: null },
+      canvas: { current: null },
+      cellArea: { current: null },
+      workbookContainer: { current: null },
+    } as any);
+    const data = Array.from({ length: ROWS8 }, (_, r) =>
+      Array.from({ length: COLS8 }, (__, c) => makeCell(r, c, rand).v),
+    );
+    ctx.luckysheetfile = [
+      { id: 's0', name: 'Sheet1', order: 0, status: 1, data, config: {}, calcChain: [] },
+    ];
+    ctx.currentSheetId = 's0';
+    ctx.config = ctx.luckysheetfile[0].config;
+    ctx.zoomRatio = 1;
+    return ctx;
+  };
+
+  // C1: 1,000 visible cell texts measured on two consecutive frames.
+  {
+    const ctx = makeCtx8();
+    let calls = 0;
+    const renderCtx: any = {
+      font: 'normal normal 400 14.6px Arial',
+      textBaseline: 'top',
+      measureText: (t: string) => {
+        calls += 1;
+        return { width: t.length * 7, actualBoundingBoxAscent: 0, actualBoundingBoxDescent: 11 };
+      },
+    };
+    textMod.clearMeasureTextCache();
+    const texts = Array.from({ length: 1000 }, (_, i) => `cell ${i}`);
+    texts.forEach((t) => textMod.getMeasureText(t, renderCtx, ctx));
+    const firstFrame = calls;
+    calls = 0;
+    const t0 = performance.now();
+    texts.forEach((t) => textMod.getMeasureText(t, renderCtx, ctx));
+    log('S8 C1 measureText calls, second frame of 1000 texts', {
+      firstFrame,
+      secondFrame: calls,
+      secondFrameMs: +(performance.now() - t0).toFixed(3),
+    });
+  }
+
+  // C2: one greaterThan rule over all 100k cells, repeated draws.
+  {
+    const ctx = makeCtx8();
+    ctx.luckysheetfile[0].luckysheet_conditionformat_save = [
+      {
+        type: 'default',
+        cellrange: [{ row: [0, ROWS8 - 1], column: [0, COLS8 - 1] }],
+        format: { textColor: '#000', cellColor: '#ff0' },
+        conditionName: 'greaterThan',
+        conditionRange: [],
+        conditionValue: ['500'],
+      },
+    ];
+    log('S8 C2 getComputeMap per draw, 1 rule over 100k cells', measure(() => {
+      cfMod.getComputeMap(ctx);
+    }, 15));
+  }
+
+  // C3: plain-value commit with 500 formulas in the chain (cell not in it).
+  {
+    const ctx = makeCtx8();
+    ctx.luckysheetfile[0].calcChain = Array.from({ length: 500 }, (_, i) => ({
+      r: i,
+      c: 24,
+      id: 's0',
+    }));
+    ctx.luckysheetfile[0].dynamicArray = Array.from({ length: 50 }, (_, i) => ({
+      r: i,
+      c: 23,
+      f: '=A1',
+      data: [[1, 2], [3, 4]],
+    }));
+    log('S8 C3 delFunctionGroup, cell not in 500-entry chain', measure(() => {
+      formulaMod.delFunctionGroup(ctx, 3000, 3, 's0');
+    }, 200));
+  }
+
+  // C6: 300 border entries and 200 merges; one 50x20 viewport, repeated draws.
+  {
+    const ctx = makeCtx8();
+    const borderInfo: any[] = [];
+    const types = ['border-all', 'border-left', 'border-right', 'border-top', 'border-bottom', 'border-outside'];
+    for (let i = 0; i < 300; i += 1) {
+      const r = Math.floor(rand() * 200);
+      const c = Math.floor(rand() * 20);
+      borderInfo.push({
+        rangeType: 'range',
+        borderType: types[i % types.length],
+        color: '#000',
+        style: '1',
+        range: [{ row: [r, r + 5], column: [c, c + 3] }],
+      });
+    }
+    const merge: Record<string, any> = {};
+    for (let i = 0; i < 200; i += 1) {
+      const r = (i * 7) % 3000;
+      const c = (i * 3) % 20;
+      merge[`${r}_${c}`] = { r, c, rs: 2, cs: 2 };
+      ctx.luckysheetfile[0].data[r][c] = { ...(ctx.luckysheetfile[0].data[r][c] ?? {}), mc: { r, c, rs: 2, cs: 2 } };
+    }
+    ctx.luckysheetfile[0].config.borderInfo = borderInfo;
+    ctx.luckysheetfile[0].config.merge = merge;
+    const draw = borderMod.getBorderInfoComputeRangeCached ?? borderMod.getBorderInfoComputeRange;
+    log('S8 C6 border compute per draw, 300 entries, 200 merges', measure(() => {
+      draw(ctx, 0, 49, 0, 19);
+    }, 30));
+  }
+
+  // C7: 400 visible dropdown cells, 200 options each.
+  {
+    const ctx = makeCtx8();
+    const options = Array.from({ length: 200 }, (_, i) => `opt${i}`).join(',');
+    const item = { type: 'dropdown', value1: options, value2: '' };
+    log('S8 C7 validateCellData for 400 dropdown cells, 200 options', measure(() => {
+      for (let i = 0; i < 400; i += 1) dvMod.validateCellData(ctx, item, `opt${i % 250}`);
+    }, 30));
+  }
+}
+
 // S6: how many whole-doc encodes the legacy onChange throttle runs for 4
 // edits 50 ms apart, then 10 edits 50 ms apart. Replays editor-context's
 // throttle setup with lodash: base = call + flush() per write (removed by A1);
