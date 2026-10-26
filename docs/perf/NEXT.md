@@ -65,3 +65,7 @@ The complete list, 39 items with evidence labels, locations and next steps, is `
 ## App-side work (outside this repo)
 
 D0–D2, D4 and D6 live in dsheets.new and are not part of this plan. Tasks 6 and 7 only add the package APIs (`rebuildLocalStore`, `appendDsheetUpdate`) that D3 and D5 call.
+
+## Regression test list
+
+End-to-end checklist for the changes on this branch (owner only, and owner and collaborator): `docs/perf/e2e-regression-checklist.md`.
