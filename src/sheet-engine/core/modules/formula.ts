@@ -2576,8 +2576,11 @@ export function execFunctionGroup(
     !_.isNil(origin_r) &&
     !_.isNil(origin_c) &&
     !_.isNil(id) &&
-    (ctx.formulaCache.revDepsByCell.size > 0 || depGraphComplete)
+    depGraphComplete
   ) {
+    // Narrow only on a complete graph: a formula that was never evaluated has
+    // no recorded edges, so a partial graph would leave it off the run list
+    // and its value stale (Task 16). Otherwise run the full list.
     const dependents = collectTransitiveFormulaDependents(
       originKey,
       ctx.formulaCache.revDepsByCell,
@@ -2585,7 +2588,7 @@ export function execFunctionGroup(
     ctx.formulaCache.formulasWithWideRangeDeps.forEach((formulaKey) => {
       dependents.add(formulaKey);
     });
-    // Cold dep graph / named-range-only formulas: if the edited cell sits inside
+    // Named-range-only formulas (no cell edges): if the edited cell sits inside
     // a defined name, include calc-chain formulas that mention that name.
     const coveringNames = (ctx.definedNames || []).filter(
       (dn) =>
@@ -2622,13 +2625,12 @@ export function execFunctionGroup(
       calcChainsToProcess = calcChains.filter((cell) =>
         dependents.has(`${cell.id}:${cell.r}:${cell.c}`),
       );
-    } else if (depGraphComplete) {
-      if (depGraphCoversSheetSize(ctx, id, getFlowdata(ctx, id))) {
-        // C8: the graph is complete and nothing depends on the edited cell.
-        ctx.formulaCache.execFunctionExist = undefined;
-        clearRangeValuePassCache(ctx.formulaCache);
-        return;
-      }
+    } else if (depGraphCoversSheetSize(ctx, id, getFlowdata(ctx, id))) {
+      // C8: the graph is complete and nothing depends on the edited cell.
+      ctx.formulaCache.execFunctionExist = undefined;
+      clearRangeValuePassCache(ctx.formulaCache);
+      return;
+    } else {
       ctx.formulaCache.markDepGraphIncomplete();
     }
   }

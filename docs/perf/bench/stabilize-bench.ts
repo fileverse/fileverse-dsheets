@@ -16,6 +16,7 @@
  *   S5 change-detection signal: state vector, Y.snapshot, A1 fingerprint
  *   S9 commit to a cell no formula refers to (C8)
  *   S14 the same commit after open, with and without the C8 warm-up
+ *   S15 commit to a referenced cell, flag never true vs flag true (Task 16)
  *   S10 crypto-banner scan (C4)
  *   S11 paste auto-fit layout reads (C5)
  *
@@ -916,6 +917,102 @@ if (want('S14')) {
       depGraphComplete: ctx.formulaCache.depGraphComplete,
     });
     log(`${tag}: commit to unreferenced cell (updateCell)`, measure(commit, 20, 2));
+  }
+}
+
+// S15: Task 16. One typed commit to a cell that 1 formula reads, on a sheet
+// of 4000x25 values and 500 =SUM(A{r}:T{r}) formulas (column Y), after one
+// forced full pass. "flag-false": the workbook also holds a sparse (demoted)
+// tab with a formula, so the forced pass cannot complete the graph and
+// depGraphComplete stays false while the graph is non-empty. "flag-true": no
+// sparse tab, the forced pass completes the graph. Before Task 16 the
+// flag-false commit narrowed to the 1 dependent (and could leave a
+// never-evaluated formula stale); after it, it runs the full list.
+if (want('S15')) {
+  const { defaultContext } = await import('../../../src/sheet-engine/core/context');
+  const { loadLocale } = await import('../../../src/sheet-engine/core/locale');
+  await loadLocale('en');
+  const formulaMod = await import('../../../src/sheet-engine/core/modules/formula');
+  const { updateCell } = await import('../../../src/sheet-engine/core/modules/cell');
+  for (const sparse of [true, false]) {
+    const rand = mulberry32(41);
+    const ROWS15 = 4000;
+    const COLS15 = 25;
+    const FORMULAS15 = 500;
+    const FCOL15 = 24;
+    const ctx: any = defaultContext({
+      globalCache: { undoList: [], redoList: [] },
+      cellInput: { current: null },
+      fxInput: { current: null },
+      canvas: { current: null },
+      cellArea: { current: null },
+      workbookContainer: { current: null },
+    } as any);
+    const data: any[][] = Array.from({ length: ROWS15 }, (_, r) =>
+      Array.from({ length: COLS15 }, (__, c) =>
+        c < 20 ? { v: r + c, m: String(r + c), ct: { fa: 'General', t: 'n' } } : makeCell(r, c, rand).v,
+      ),
+    );
+    const read = new Set<string>();
+    for (let r = 0; r < FORMULAS15; r += 1) {
+      const f = `=SUM(A${r + 1}:T${r + 1})`;
+      const cell: any = { v: 0, m: '0' };
+      Object.defineProperty(cell, 'f', {
+        enumerable: true,
+        configurable: true,
+        get: () => {
+          read.add(`${r}`);
+          return f;
+        },
+      });
+      data[r][FCOL15] = cell;
+    }
+    ctx.luckysheetfile = [
+      {
+        id: 's0',
+        name: 'Sheet1',
+        order: 0,
+        status: 1,
+        data,
+        config: {},
+        calcChain: Array.from({ length: FORMULAS15 }, (_, r) => ({ r, c: FCOL15, id: 's0' })),
+      },
+    ];
+    if (sparse) {
+      ctx.luckysheetfile.push({
+        id: 's1',
+        name: 'Sheet2',
+        order: 1,
+        status: 0,
+        celldata: [{ r: 0, c: 0, v: { f: '=Sheet1!AC1', v: 0, m: '0' } }],
+        config: {},
+        calcChain: [{ r: 0, c: 0, id: 's1' }],
+      });
+    }
+    ctx.currentSheetId = 's0';
+    ctx.config = ctx.luckysheetfile[0].config;
+    ctx.hooks = {};
+    formulaMod.execFunctionGroup(ctx, null as any, null as any, null, undefined, undefined, true);
+    while (ctx.formulaAsyncEval) {
+      if (formulaMod.runFormulaEvalChunk(ctx, ctx.formulaAsyncEval, 50)) {
+        ctx.formulaAsyncEval = null;
+        ctx.isFormulaCalculating = false;
+      }
+    }
+    const tag = `S15 ${sparse ? 'flag-false (sparse tab)' : 'flag-true'}`;
+    log(`${tag}: after the forced full pass`, {
+      depGraphComplete: ctx.formulaCache.depGraphComplete ?? 'n/a',
+      revDepsSize: ctx.formulaCache.revDepsByCell?.size,
+    });
+    let k = 0;
+    const commit = () => {
+      k += 1;
+      updateCell(ctx, k % FORMULAS15, 0, null, k + 100000); // A{r}: one SUM reads it
+    };
+    read.clear();
+    commit();
+    log(`${tag}: commit to a cell 1 formula reads, formulas read`, { formulasRead: read.size });
+    log(`${tag}: commit (updateCell)`, measure(commit, 30, 3));
   }
 }
 

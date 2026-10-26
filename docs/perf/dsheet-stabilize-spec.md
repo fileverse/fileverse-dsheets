@@ -17,7 +17,7 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | C2, C6, C7 | done | 03fc133, 4ef4fd4, 9290e13 | |
 | **C8** | done | fb80dfc, a324b38 | Plus a warm-up pass after open so the flag turns true; shadow indexes merged at completion. |
 | **C4, C5** | done | 29843e6 | C5 browser timing: 10k single-line cells 1,827 ms to 49 ms median. |
-| July narrowing bug (commit 1611aee, not a spec item) | open, plan Task 16 | | Commit-path narrowing must wait for a complete graph. |
+| July narrowing bug (commit 1611aee, not a spec item) | done (Task 16), uncommitted | | Commit-path narrowing waits for a complete graph; flag-false sheets run the full list per commit (S15: 0.21 ms to 3.9 ms at 500 formulas). |
 | D3, D5 (package side) | not started | | Plan Tasks 6, 7. |
 | F | not started | | Plan Task 8. |
 | E1–E6 | not started | | Plan Tasks 9–14. |
@@ -279,7 +279,7 @@ Note: today's code measures with the wrong font (`ff` index used as a family nam
 
 **C8. No formula pass for a cell nothing depends on.**
 
-**Implemented (fb80dfc, a324b38).** The skip runs only when `depGraphComplete` is true. Because only forced passes complete the graph, a dependency-only warm-up (`formula-warmup.ts`) runs in idle slices after open and publishes its edges into shadow indexes that are merged only when the whole warm-up finishes, so a partial graph never narrows a commit. Open: the pre-existing narrowing at commit 1611aee (July) still narrows on `revDepsByCell.size > 0` while the flag is false, which can leave a never-evaluated formula stale; plan Task 16 changes it to narrow only when the graph is complete.
+**Implemented (fb80dfc, a324b38).** The skip runs only when `depGraphComplete` is true. Because only forced passes complete the graph, a dependency-only warm-up (`formula-warmup.ts`) runs in idle slices after open and publishes its edges into shadow indexes that are merged only when the whole warm-up finishes, so a partial graph never narrows a commit. Task 16 (uncommitted): the narrowing added at commit 1611aee (July) used to apply on `revDepsByCell.size > 0` while the flag was false, which could leave a never-evaluated formula stale. It now narrows only when `depGraphComplete` is true. Sheets where the flag never turns true (for example a sparse tab holding a formula) run the full list on every commit: slower, correct (S15, 500 formulas: 0.211 ms to 3.897 ms; flag-true sheets 0.155 ms to 0.158 ms).
 
 Today the commit-time pass (`core/modules/formula.ts:2466-2518`) narrows the formula list to the edited cell's dependents only when the graph has entries and the dependents set is not empty. Otherwise it processes every formula: a commit to a cell no formula refers to re-tokenizes every formula and walks every referenced range. The teammate audit measured 11 ms against 2 ms at 500 `SUM(A:T)` formulas; it grows with formulas times range size.
 

@@ -2,7 +2,7 @@
 
 Every change gets numbers measured the same way before and after.
 
-**Status index (2026-10-26).** Sections below, in file order: baseline; A1, A2; B4, B2, B6; A3; A5; A4; C1, C2, C3, C6, C7; C8 and the C8 warm-up; C4; C5 (and C5 browser timing); B3 (and B3 browser check); B5 (and B5 browser check). Still to add: Task 16 (July narrowing bug, scenario S15), D3, D5 (S12), F (S13), E1–E6. Scenarios used so far: S1–S11 and S14; next free are S12, S13 (reserved by the plan for D5 and F) and S15.
+**Status index (2026-10-26).** Sections below, in file order: baseline; A1, A2; B4, B2, B6; A3; A5; A4; C1, C2, C3, C6, C7; C8 and the C8 warm-up; C4; C5 (and C5 browser timing); B3 (and B3 browser check); B5 (and B5 browser check). Task 16 (July narrowing bug, scenario S15) and Task 17 (B5 exact tab names) are done and have sections at the end. Still to add: D3, D5 (S12), F (S13), E1–E6. Scenarios used so far: S1–S11, S14 and S15; next free are S12 and S13 (reserved by the plan for D5 and F).
 
 B5 case rule: resolved by Task 17 (uncommitted); see the Task 17 subsection at the end of the B5 section.
 
@@ -472,7 +472,7 @@ The demo has no `onContentChange` consumer, so the A1 signal was checked through
 
 Not covered:
 
-- Workbooks whose formulas sit on inactive (sparse) tabs keep the flag false: the C8 dense-tab guard is unchanged, and the warm-up does not hydrate tabs. Switching tabs does not re-trigger the warm-up.
+- Workbooks whose formulas sit on inactive (sparse) tabs keep the flag false: the C8 dense-tab guard is unchanged, and the warm-up does not hydrate tabs. Switching tabs does not re-trigger the warm-up. Since Task 16, such workbooks take the full formula pass on every commit (the 1611aee narrowing on a partial graph is gone; see the Task 16 section).
 - [Inference] Re-warm churn during active collaboration: each remote formula snapshot calls `markDepGraphIncomplete`, so every quiet 2 s re-walks the whole chain (about 140 ms of idle-time work for 5,000 formulas).
 - [Inference] The Workbook's `contextRef` can lag one update behind a state update that React has computed but not rendered. The re-evaluated-formula guard covers formula edits made in that window. A sheet deleted in that window could leave edges from an older context. That is the same class as "sheet delete does not clear the flag" above.
 
@@ -699,3 +699,73 @@ The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troub
 ```
 
 Full `npm run test:unit`: 39 files, 318 tests pass. `npx tsc --noEmit -p .`: no errors. Browser check not re-run.
+
+
+## Task 16: commit narrowing only when the dependency graph is complete (S15, 2026-10-26, uncommitted)
+
+Commit 1611aee (July) narrowed a commit's run list to the edited cell's dependents as soon as `revDepsByCell` held any entry, even with `depGraphComplete` false. A formula that was never evaluated has no recorded edges, so it was left off the list and kept a stale value. The warm-up closes most cases after open but not sheets where the flag never turns true (a sparse tab holding a formula keeps the forced pass from completing it).
+
+**Before / after** (`npx vite-node docs/perf/bench/stabilize-bench.ts -- before-narrow --only=S15`, then `-- after-narrow`). 4000x25 values, 500 `=SUM(A:T)` formulas, one forced full pass, then a typed commit through `updateCell` to a cell exactly one formula reads. Median of 30 runs, 3 warm-ups. Flag-false: the workbook also holds a sparse tab with a formula.
+
+| S15 | Before | After |
+|---|---|---|
+| flag-false sheet: formulas read per commit | 1 | 500 |
+| flag-false sheet: commit median (p95) | 0.211 ms (0.718) | 3.897 ms (4.963) |
+| flag-true sheet: formulas read per commit | 1 | 1 |
+| flag-true sheet: commit median (p95) | 0.155 ms (0.212) | 0.158 ms (0.239) |
+
+Plainly: every commit made while `depGraphComplete` is false now pays a full formula pass (about 3.7 ms more at 500 formulas; it grows with formulas times range size, as before 1611aee). That is slower and correct. The flag is false not only on sheets where it never turns true (a sparse tab holding a formula), but also (a) after open until the warm-up finishes, and (b) after every `markDepGraphIncomplete()` until the re-warm (about 2 s debounce plus idle slices) completes: remote formula snapshots (`Workbook/index.tsx:709`, `:782`), row/column edits, sort, move. In a collaborative room, where remote formula snapshots keep clearing the flag, the full pass is the common case. Flag-true sheets are unchanged. The old flag-false number was fast because it skipped formulas it did not know about.
+
+What changed:
+
+- `execFunctionGroup` (`formula.ts`): the commit narrows only when `depGraphComplete` is true. The old `revDepsByCell.size > 0 ||` condition is gone, and with it the `else if (depGraphComplete)` after `dependents.size > 0`, which is now the plain `else if`. The defined-name and wide-range additions stay inside the narrowed branch. When the flag is false the full list runs, as before 1611aee.
+- Task 15's shadow-index merge and every `markDepGraphIncomplete` path are untouched.
+
+Tests (`formula-narrowing.test.ts`, 3 tests):
+
+1. A never-evaluated `C1 = A1*2` joins the chain after a full pass, the flag goes false with a non-empty graph, `A1` is edited through `updateCell`; `C1` must be 100.
+2. Flag true: a commit to an unreferenced cell evaluates no formula.
+3. Flag true: a commit to `A2` evaluates only its one dependent (`B2`), not the unrelated `E1`.
+
+Before (today's code, test 1 fails; the first draft of the fixture had no dependent on `A1`, which falls back to the full list and hid the bug):
+
+```
+ RUN  v3.2.4 /Users/maitrakhatri/Developer/fileverse-dsheet
+
+ ❯ src/sheet-engine/core/modules/formula-narrowing.test.ts (3 tests | 1 failed) 17ms
+   × commit narrowing needs a complete dependency graph (Task 16) > a never-evaluated formula updates when its precedent is edited, flag false, graph non-empty 11ms
+     → expected 10 to be 100 // Object.is equality
+   ✓ commit narrowing needs a complete dependency graph (Task 16) > with the flag true, a commit to an unreferenced cell processes no formula 4ms
+   ✓ commit narrowing needs a complete dependency graph (Task 16) > with the flag true, a commit evaluates only the dependents of the edited cell 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/sheet-engine/core/modules/formula-narrowing.test.ts > commit narrowing needs a complete dependency graph (Task 16) > a never-evaluated formula updates when its precedent is edited, flag false, graph non-empty
+AssertionError: expected 10 to be 100 // Object.is equality
+
+- Expected
++ Received
+
+- 100
++ 10
+```
+
+After:
+
+```
+ RUN  v3.2.4 /Users/maitrakhatri/Developer/fileverse-dsheet
+
+ ✓ src/sheet-engine/core/modules/formula-narrowing.test.ts (3 tests) 14ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  19:42:46
+```
+
+Full `npm run test:unit`: 40 files, 321 tests pass (318 plus these 3; the C8 and warm-up tests that assume narrowing after completion pass). `tsc --noEmit -p .`: no errors.
+
+Not covered:
+
+- The window where the flag is false (before the warm-up finishes, and after each clear until the re-warm completes) was not timed in S15; S15 measures the steady state of a never-true flag and of a true flag. Re-warm churn in collaboration (K17) makes the full pass more frequent in rooms.
+- The cost is measured at one size (500 formulas, 1 dependent). Larger sheets with a never-true flag will pay proportionally more per commit; a fix is to make the flag true (hydrate or index sparse tabs in the warm-up), not done here.
+- No browser check.

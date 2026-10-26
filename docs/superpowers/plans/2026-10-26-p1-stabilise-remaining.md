@@ -14,7 +14,7 @@
 | G1b | Task 15 (C8 warm-up, added at the user's request) | committed | a324b38 |
 | G2 | Tasks 2+3 (C4, C5) | committed | 29843e6 |
 | G3 | Task 4 (B3), Task 5 (B5) | committed, browser-checked | 1587101 (B3), 8b18a94 (B5), f2f0972 (results doc) |
-| G4 | **Task 17 (B5 case rule fix), new; Task 16 (July narrowing bug), new** | not started; next | |
+| G4 | Task 17 (B5 case rule fix), Task 16 (July narrowing bug) | done, uncommitted, awaiting user check and commit (two commits proposed: Task 17, Task 16) | |
 | G5 | Task 6 (D3), Task 7 (D5) | not started | |
 | G6 | Task 8 (F) | not started | |
 | G7 | Tasks 9–14 (E1–E6) | not started | |
@@ -22,7 +22,7 @@
 
 Unit suite at G3: 39 files, 318 tests passing; `tsc` clean on touched files. Remaining count: 10 plan tasks (6, 7, 8, 9–14) plus Tasks 16 and 17 = 12, plus the final review.
 
-Bench scenario numbers: S9–S11 and S14 are used. New ones start at **S12** (Task 7), **S13** (Task 8), and **S15** (Task 16).
+Bench scenario numbers: S9–S11, S14 and S15 are used. Free: **S12** (Task 7), **S13** (Task 8).
 
 **Rulings that changed the plan**
 - C8 ships as specified, then a warm-up (Task 15) was added so the flag turns true after open. The warm-up builds shadow indexes and merges them at completion, so a partial graph never narrows commits.
@@ -41,8 +41,8 @@ Bench scenario numbers: S9–S11 and S14 are used. New ones start at **S12** (Ta
 
 ## Next
 
-1. **G4, Task 17 then Task 16** (below). Both formula work: opus reviewer. Task 17 is small (about 3 lines plus tests) and fixes a divergence from the spec, so it goes first.
-2. **G5**, Tasks 6 and 7 (package APIs for D3/D5; app side lives in dsheets.new, outside this repo).
+1. **G4 done** (Tasks 17 and 16, uncommitted; user checks and commits). Unit suite 40 files, 321 tests; tsc clean.
+2. **G5 next**, Tasks 6 and 7 (package APIs for D3/D5; app side lives in dsheets.new, outside this repo).
 3. Then G6, G7, final review. After each group the controller stops for the user to check and commit, as before.
 
 ## Global Constraints
