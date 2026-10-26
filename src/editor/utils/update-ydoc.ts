@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { isFormatLocked } from "./format-gate";
 import _ from "lodash";
 import { Sheet } from "@sheet-engine/react";
 import { Cell } from "../../sheet-engine/core/types";
@@ -190,7 +191,7 @@ export const updateYdocSheetData = (
   /** Transaction origin; omit for user edits. */
   origin?: unknown,
 ) => {
-  if (!ydoc || !changes.length) return;
+  if (!ydoc || !changes.length || isFormatLocked(ydoc, dsheetId)) return;
 
   const sheetArray = ydoc.getArray<any>(dsheetId);
   const committedFormatRanges = new Map<string, CellFormatRange[]>();

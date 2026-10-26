@@ -10,6 +10,7 @@ import type { OpenApiKeyModalFn } from '../utils/data-block-error-handler';
 import type { DataBlockEvent } from '../types';
 import { readYdocSheetField, ySheetArrayToPlain } from '../utils/update-ydoc';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
+import { isFormatLocked } from '../utils/format-gate';
 import { applyCommentMarkers } from '../utils/apply-comment-markers';
 import {
   applyYdocCommentAnchors,
@@ -153,7 +154,9 @@ export const useEditorData = (
 
     try {
       const sheetArray = ydocRef.current.getArray(dsheetId);
-      migrateSheetArrayIfNeeded(ydocRef.current, sheetArray);
+      if (!isFormatLocked(ydocRef.current, dsheetId)) {
+        migrateSheetArrayIfNeeded(ydocRef.current, sheetArray);
+      }
 
       const plain = ySheetArrayToPlain(
         // @ts-ignore
@@ -1242,7 +1245,9 @@ export const useEditorData = (
 
       try {
         const sheetArray = ydocRef.current.getArray(dsheetId);
-        migrateSheetArrayIfNeeded(ydocRef.current, sheetArray);
+        if (!isFormatLocked(ydocRef.current, dsheetId)) {
+          migrateSheetArrayIfNeeded(ydocRef.current, sheetArray);
+        }
 
         // @ts-ignore
         const plain = ySheetArrayToPlain(sheetArray as Y.Array<Y.Map>);

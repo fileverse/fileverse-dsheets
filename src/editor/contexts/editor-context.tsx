@@ -16,6 +16,7 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { fromUint8Array } from 'js-base64';
 
 import { ySheetArrayToPlain } from '../utils/update-ydoc';
+import { watchFormatGate } from '../utils/format-gate';
 import { useEditorSync } from '../hooks/use-editor-sync';
 import {
   getWorkbookHydrationReason,
@@ -67,6 +68,8 @@ export interface EditorContextType {
   getDocumentTitle?: (dsheetId: string) => Promise<string>;
   updateDocumentTitle?: (title: string) => void;
   isAuthorized: boolean;
+  /** True once the sheet's meta.format is above what this client supports. */
+  formatLocked?: boolean;
   dataBlockCalcFunction: { [key: string]: { [key: string]: any } };
   setDataBlockCalcFunction: React.Dispatch<
     React.SetStateAction<{ [key: string]: { [key: string]: any } }>
@@ -178,7 +181,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   username = 'Anonymous',
   portalContent = '',
   enableIndexeddbSync = true,
-  isReadOnly = false,
+  isReadOnly: isReadOnlyProp = false,
   onContentUpdate,
   onContentChange,
   onChange,
@@ -349,12 +352,28 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   } = useEditorSync(
     dsheetId,
     enableIndexeddbSync,
-    isReadOnly,
+    isReadOnlyProp,
     portalContent,
     collaboration,
     onRemoteApplied,
     onIndexedDbError,
   );
+
+  // A collaborator may upgrade the sheet to a format this client cannot write.
+  // Lock the editor read-only as soon as the doc says so, on open or later.
+  const [formatLocked, setFormatLocked] = useState(false);
+  const isReadOnly = isReadOnlyProp || formatLocked;
+  useEffect(() => {
+    const ydoc = ydocRef.current;
+    if (!isContentBootstrapReady || !ydoc) return undefined;
+    const unwatch = watchFormatGate(ydoc, dsheetId, () =>
+      setFormatLocked(true),
+    );
+    return () => {
+      unwatch();
+      setFormatLocked(false);
+    };
+  }, [isContentBootstrapReady, ydocRef, dsheetId]);
 
   // Let host apps gate collab start/resume on real sync completion.
   useEffect(() => {
@@ -673,6 +692,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
       handleLiveQuery,
       initialiseLiveQueryData,
       isReadOnly,
+      formatLocked,
       handleOnChangePortalUpdate,
       // Socket.IO collab
       collabEnabled: collaboration?.enabled === true,
@@ -719,6 +739,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     handleLiveQuery,
     initialiseLiveQueryData,
     isReadOnly,
+    formatLocked,
     collaboration?.enabled,
     isLiveCollabSession,
     collabIsOwner,

@@ -45,6 +45,7 @@ import { SMART_CONTRACT_PANEL_ID } from './utils/smart-contract/constants';
 import './components/smart-contract/index.css';
 import { shouldInitializeDefaultWorkbook } from './hooks/collaboration-lifecycle';
 import { INIT_ORIGIN } from './utils/content-change';
+import { FORMAT_LOCKED_MESSAGE, isFormatLocked } from './utils/format-gate';
 
 // Use the types defined in types.ts
 type OnboardingHandler = OnboardingHandlerType;
@@ -59,7 +60,7 @@ const EditorContent = ({
   showNavbar = true,
   showToolbar = true,
   showFormulaBar = true,
-  isReadOnly,
+  isReadOnly: isReadOnlyProp,
   permissionMode,
   onEnterEdit,
   onSignInToComment,
@@ -118,7 +119,7 @@ const EditorContent = ({
 }) => {
   const resolvedPermissionMode = resolvePermissionChipMode({
     allowComments: !commentsConfig?.disabled,
-    isReadOnly: Boolean(isReadOnly),
+    isReadOnly: Boolean(isReadOnlyProp),
     permissionMode,
   });
   const {
@@ -137,7 +138,9 @@ const EditorContent = ({
     apiKeyModalState,
     isAuthorized,
     smartContract,
+    formatLocked,
   } = useEditor();
+  const isReadOnly = Boolean(isReadOnlyProp) || Boolean(formatLocked);
 
   const { activePanel, isOpen, openPanel, closePanel, togglePanel } =
     useSidebar();
@@ -455,6 +458,7 @@ const EditorContent = ({
       return;
     }
 
+    if (isFormatLocked(ydocRef.current, dsheetId)) return;
     ydocRef.current.transact(() => {
       const sheetArray = ydocRef.current?.getArray(dsheetId);
       //@ts-ignore
@@ -606,6 +610,17 @@ const EditorContent = ({
           onSave={apiKeyModalState.onSave}
           onClose={apiKeyModalState.onClose}
         />
+      )}
+
+      {formatLocked && (
+        <div
+          role="alert"
+          className="fixed bottom-10 left-1/2 z-[9999] -translate-x-1/2 border color-border-danger color-bg-danger-light rounded-lg py-2 px-3 flex items-center gap-2"
+        >
+          <p className="text-helper-text-sm lg:!text-[14px] color-text-danger font-normal">
+            {FORMAT_LOCKED_MESSAGE}
+          </p>
+        </div>
       )}
 
       {smartContract.enabled && (

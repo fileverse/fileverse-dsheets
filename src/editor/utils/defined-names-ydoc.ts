@@ -2,6 +2,7 @@ import type { WorkbookInstance } from '@sheet-engine/react';
 import type { DefinedName } from '../../sheet-engine/core/types';
 import type { RefObject } from 'react';
 import * as Y from 'yjs';
+import { isFormatLocked } from './format-gate';
 
 /** Sibling share key on the same Y.Doc as the sheet array. */
 export function getDefinedNamesMapKey(dsheetId: string): string {
@@ -120,6 +121,7 @@ export function syncDefinedNamesToYdoc({
   definedNames: DefinedName[];
   handleContentPortal?: () => void;
 }): void {
+  if (isFormatLocked(ydoc, dsheetId)) return;
   const map = getDefinedNamesYMap(ydoc, dsheetId);
   const nextById = new Map(
     (definedNames || []).map((dn) => [dn.id, cloneDefinedName(dn)]),

@@ -3,6 +3,7 @@ import { Sheet } from '@sheet-engine/react';
 import { WorkbookInstance } from '@sheet-engine/react';
 import * as Y from 'yjs';
 import { migrateSheetFactoryForImport } from '../utils/migrate-new-yjs';
+import { isFormatLocked } from '../utils/format-gate';
 import { ySheetArrayToPlain } from '../utils/update-ydoc';
 
 /**
@@ -67,6 +68,7 @@ export const useApplyTemplatesBtn = ({
         if (!templateData[0].id) {
           templateData[0].id = newSheetId;
         }
+        if (isFormatLocked(ydocRef.current, dsheetId)) return;
         const finalData = [...data, ...templateData];
         ydocRef.current.transact(() => {
           finalData.forEach((sheet) => {

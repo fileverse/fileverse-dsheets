@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { isFormatLocked } from './format-gate';
 
 /** Sibling share key on the same Y.Doc as the sheet array. */
 export function getCommentAnchorsMapKey(dsheetId: string): string {
@@ -129,7 +130,7 @@ export function writeCommentAnchorsToYdoc({
   /** old cell-key → new cell-key so indexer keys still resolve after remap. */
   keyMoves?: Record<string, string>;
 }): void {
-  if (!ydoc || !dsheetId || !commentsData) {
+  if (!ydoc || !dsheetId || !commentsData || isFormatLocked(ydoc, dsheetId)) {
     return;
   }
   const map = getCommentAnchorsYMap(ydoc, dsheetId);

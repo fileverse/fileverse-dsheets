@@ -10,6 +10,7 @@ import {
   unavailableDsheetContentSnapshot,
 } from '../../persistence-utils';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
+import { isFormatLocked } from '../utils/format-gate';
 import { rebuildIndexedDbStore } from '../utils/rebuild-indexeddb-store';
 import { compactDsheetPersistence } from '../../persistence-compaction';
 import { attachContentFingerprint } from '../utils/content-fingerprint';
@@ -188,12 +189,16 @@ export const useEditorSync = (
 
       // dDoc parity: host/published state is present in the one Y.Doc before
       // SyncManager is allowed to connect.
-      mergePublishedContentIntoYdoc(ydoc, portalContent);
+      if (!isFormatLocked(ydoc, dsheetId)) {
+        mergePublishedContentIntoYdoc(ydoc, portalContent);
+      }
 
       // IndexedDB may contain a legacy plain-object sheet array. Persist its
       // migration before connection so local-only diff seeding sends the same
       // structure Fortune will render.
-      migrateSheetArrayIfNeeded(ydoc, ydoc.getArray(dsheetId));
+      if (!isFormatLocked(ydoc, dsheetId)) {
+        migrateSheetArrayIfNeeded(ydoc, ydoc.getArray(dsheetId));
+      }
 
       if (generation !== bootstrapGenerationRef.current) return;
       setSyncStatus('synced');

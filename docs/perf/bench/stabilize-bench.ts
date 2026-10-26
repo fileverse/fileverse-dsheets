@@ -20,6 +20,7 @@
  *   S10 crypto-banner scan (C4)
  *   S11 paste auto-fit layout reads (C5)
  *   S12 merge a small remote change into the local store (D5, runs with S4)
+ *   S13 open cost of a 4000x25 sheet, plus the format gate when present (F)
  *
  * Run only some scenarios (default: all):
  *   npx vite-node docs/perf/bench/stabilize-bench.ts -- <label> --only=S9
@@ -1289,6 +1290,49 @@ if (want('S11')) {
   log('S11 canvas measureText calls, first paste', measureCalls);
   log('S11 calculateRangeCellSize, 10,000 cells (stub DOM)', measure(run, 10, 1));
   g.document = prevDoc;
+}
+
+// S13: open cost of a 4000x25 sheet (F). Apply the body into a fresh doc with
+// today's listeners (update + observeDeep on the sheet array). After Task 8 the
+// format gate adds one map read and one observer on `${dsheetId}/meta`; the
+// scenario calls it only when the module exists, so it runs the same before
+// and after.
+if (want('S13')) {
+  const gateMod: any = await import('../../../src/editor/utils/format-gate').catch(
+    () => null,
+  );
+  const src = buildDoc(1, 4000, 25);
+  const body = Y.encodeStateAsUpdate(src);
+  const openOnce = (withGate: boolean) => {
+    const fresh = new Y.Doc();
+    fresh.on('update', noop);
+    fresh.getArray<any>(DSHEET_ID).observeDeep(noop);
+    Y.applyUpdate(fresh, body);
+    const off = withGate ? gateMod.watchFormatGate(fresh, DSHEET_ID, noop) : null;
+    if (off) off();
+    fresh.destroy();
+  };
+  log(
+    `S13 open 4000x25 (${gateMod ? 'with format gate' : 'no gate module'})`,
+    measure(() => openOnce(Boolean(gateMod)), 25, 3),
+  );
+  if (gateMod) {
+    // Paired arms, interleaved in one process, so machine drift hits both.
+    const samples: Record<string, number[]> = { noGate: [], gate: [] };
+    for (let i = 0; i < 3; i += 1) openOnce(false);
+    for (let i = 0; i < 40; i += 1) {
+      for (const [k, g] of [['noGate', false], ['gate', true]] as const) {
+        const t0 = performance.now();
+        openOnce(g);
+        samples[k].push(performance.now() - t0);
+      }
+    }
+    const med = (xs: number[]) => +[...xs].sort((x, y) => x - y)[xs.length >> 1].toFixed(3);
+    log('S13 paired interleaved (40 runs each)', {
+      noGateMedian: med(samples.noGate),
+      gateMedian: med(samples.gate),
+    });
+  }
 }
 
 // S6: how many whole-doc encodes the legacy onChange throttle runs for 4
