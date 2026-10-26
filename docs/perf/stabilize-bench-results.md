@@ -229,3 +229,60 @@ Same harness, 1 tab of 4000×25. The real hook runs with an editor ref backed by
 | `configYdocUpdate` | 35.0 ms | 0.003 ms |
 
 Not checked in the browser yet. A5 and A4 not started.
+
+## A5: remote cell batches apply in one quiet update
+
+What changed:
+
+- New `WorkbookInstance.applyRemoteCells(cells, { id }, onSkip)`, backed by `api.applyRemoteCells`. The observer uses it for each sheet's remote cell batch instead of one `applyRemoteCellValue` (one `setContext`) per cell.
+- The batch runs in one Immer `produce` with `noHistory`, so a collaborator's cells never land on the local undo stack. A cell that fails is reported through `onSkip`, and the rest still apply.
+- The history path also calls `emitOp` → `settings.onOp`. The editor never sets `onOp`, so skipping history drops nothing.
+- `patchPlainCelldata` moved to `editor/utils/patch-plain-celldata.ts`. It now finds every patched cell in one pass, with a row → column number lookup.
+
+The first rewrite built an `"r_c"` string map over all entries. Building that map cost about as much as the 50 scans it replaced (14.6 → 12.0 ms), so it was replaced with the lookup pass.
+
+Tests:
+
+- `patch-plain-celldata.test.ts`: equal to the old `findIndex` algorithm on 200 randomized batches; untouched entries keep their order.
+- `core/api/remote-apply.test.ts`: `applyRemoteCells` gives the same data and `calcChain` as one update per cell; a failing cell is reported and the rest apply.
+
+Same harness, 4000×25 (100k cells), a remote batch of 50 cells (`before-a5.json` → `after-a5.json`):
+
+| Step | Before | After |
+|---|---|---|
+| Plain snapshot patch (`patchPlainCelldata`) | 14.6 ms | 1.36 ms |
+| Engine apply: one `produceWithPatches` per cell (today's path, minus the undo push) vs one `produce` for the batch | 73.5 ms | 2.25 ms |
+
+The engine rows replay the engine's real `applyRemoteCellValue` with immer in Node. They don't include the React re-render that each per-cell `setContext` also caused. Off-the-undo-stack is code-confirmed (`noHistory` skips `undoList.push`), not tested in the browser.
+
+## A4: remote formula-list changes apply in place
+
+What changed:
+
+- The observer used to treat a `[sheetIndex, 'calcChain']` event, or a whole `calcChain` key replacement, as structural, which meant a full grid rebuild on every peer.
+- It now collects those sheets and calls the new `WorkbookInstance.setSheetCalcChain(chain, { id })` (`noHistory`) after remote cells are applied. That call sets the sheet's chain from Yjs (read with `readYdocSheetField`, same conversion as the rebuild) and resets `formulaCache` dependency indexes plus the dense-sheet cache, which is a fresh mount's state.
+- The plain snapshot's chain is updated too, for later remounts.
+
+Tests (`core/api/remote-apply.test.ts`):
+
+- The chain is replaced, and the dependency indexes are emptied.
+- A missing chain becomes `[]`.
+
+Browser (demo app, two tabs in one collab room on the dev server). Rebuilds were counted with a `MutationObserver` that notices when the grid canvas element is replaced:
+
+| Collaborator commits a formula (`=A1*n`) | Before | After |
+|---|---|---|
+| Remounts on the other tab | 1 | 0 |
+| Value shown on the other tab | 10 (=5*2) | 20 (=5*4) |
+
+Then the other tab changed A1 locally. Its B1 (`=A1*2`) and B2 (`=A1*3`) recalculated from the chain A4 had applied: 112 and 168.
+
+Found during this check (not caused by A4 or A5):
+
+1. **After a reconnect, the tab whose edit triggered it shows a stale grid.**
+   - The edit is in Yjs and reaches the other tab, but its own grid doesn't show it until reload.
+   - In one case the formula's `calcChain` entry was not written either: B3 `=A1*4` is in celldata but not in the stored chain, so peers don't recalculate it.
+   - Seen 3 times in this check. It matches the "first edit in a freshly opened collab tab" note above, which predates B2.
+   - [Inference] A remount during the connect/hydrate path builds the engine from a copy that lacks the edit, and the calcChain sync hook then diffs against that copy.
+   - Not traced yet.
+2. **`[DSheet] Compaction failed: TypeError: Cannot assign to read only property 'config'`** at `compact-committed-celldata.ts:67` (`markCompactionRevInMemory`). The file is not changed on this branch; whether the base commit logs it too was not checked.
