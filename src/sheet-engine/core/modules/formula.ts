@@ -1499,50 +1499,31 @@ export function delFunctionGroup(
 
   const file = ctx.luckysheetfile[getSheetIndex(ctx, id)!];
 
+  // Find first; copy only when the cell is in the list (C3). Every
+  // plain-value commit and every remote cell runs this, and a deep clone of
+  // both lists on each call was the common case.
   const { calcChain } = file;
   if (!_.isNil(calcChain)) {
-    let modified = false;
-    const calcChainClone = _.cloneDeep(calcChain);
-    for (let i = 0; i < calcChainClone.length; i += 1) {
-      const calc = calcChainClone[i];
-      if (calc.r === r && calc.c === c && calc.id === id) {
-        calcChainClone.splice(i, 1);
-        modified = true;
-        // server.saveParam("fc", index, calc, {
-        //   op: "del",
-        //   pos: i,
-        // });
-        break;
-      }
-    }
-    if (modified) {
-      file.calcChain = calcChainClone;
+    const i = calcChain.findIndex(
+      (calc) => calc.r === r && calc.c === c && calc.id === id,
+    );
+    if (i >= 0) {
+      file.calcChain = [...calcChain.slice(0, i), ...calcChain.slice(i + 1)];
       invalidateSheetsRequiredDenseCache();
     }
   }
 
   const { dynamicArray } = file;
   if (!_.isNil(dynamicArray)) {
-    let modified = false;
-    const dynamicArrayClone = _.cloneDeep(dynamicArray);
-    for (let i = 0; i < dynamicArrayClone.length; i += 1) {
-      const calc = dynamicArrayClone[i];
-      if (
-        calc.r === r &&
-        calc.c === c &&
-        (_.isNil(calc.id) || calc.id === id)
-      ) {
-        dynamicArrayClone.splice(i, 1);
-        modified = true;
-        // server.saveParam("ac", index, null, {
-        //   op: "del",
-        //   pos: i,
-        // });
-        break;
-      }
-    }
-    if (modified) {
-      file.dynamicArray = dynamicArrayClone;
+    const i = dynamicArray.findIndex(
+      (calc) =>
+        calc.r === r && calc.c === c && (_.isNil(calc.id) || calc.id === id),
+    );
+    if (i >= 0) {
+      file.dynamicArray = [
+        ...dynamicArray.slice(0, i),
+        ...dynamicArray.slice(i + 1),
+      ];
     }
   }
 }
