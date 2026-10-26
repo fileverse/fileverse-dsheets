@@ -39,8 +39,10 @@ describe('functionStrChange only shifts references to the edited tab (B5)', () =
     expect(addRow('=A!B5', 'A', 'B')).toBe('A!B6');
   });
 
-  it('compares the tab name case-insensitively', () => {
-    expect(addRow("='a'!B5", 'A', 'B')).toBe("'a'!B6");
+  it('compares the tab name exactly, case-sensitively', () => {
+    // Tab `a` is not tab `A` (the engine resolves names case-sensitively).
+    expect(addRow("='a'!B5", 'A', 'B')).toBe("'a'!B5");
+    expect(addRow('=A!B5', 'A', 'B')).toBe('A!B6');
   });
 
   it("unquotes ''-escaped names", () => {

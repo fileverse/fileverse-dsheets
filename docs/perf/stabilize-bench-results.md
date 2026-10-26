@@ -2,9 +2,9 @@
 
 Every change gets numbers measured the same way before and after.
 
-**Status index (2026-10-26).** Sections below, in file order: baseline; A1, A2; B4, B2, B6; A3; A5; A4; C1, C2, C3, C6, C7; C8 and the C8 warm-up; C4; C5 (and C5 browser timing); B3 (and B3 browser check); B5 (and B5 browser check). Still to add: Task 17 (B5 case rule), Task 16 (July narrowing bug, scenario S15), D3, D5 (S12), F (S13), E1–E6. Scenarios used so far: S1–S11 and S14; next free are S12, S13 (reserved by the plan for D5 and F) and S15.
+**Status index (2026-10-26).** Sections below, in file order: baseline; A1, A2; B4, B2, B6; A3; A5; A4; C1, C2, C3, C6, C7; C8 and the C8 warm-up; C4; C5 (and C5 browser timing); B3 (and B3 browser check); B5 (and B5 browser check). Still to add: Task 16 (July narrowing bug, scenario S15), D3, D5 (S12), F (S13), E1–E6. Scenarios used so far: S1–S11 and S14; next free are S12, S13 (reserved by the plan for D5 and F) and S15.
 
-Known corrections pending: the B5 section and its browser table describe `='a'!B5` shifting; that follows the shipped case-insensitive rule, which Task 17 reverses to match the spec.
+B5 case rule: resolved by Task 17 (uncommitted); see the Task 17 subsection at the end of the B5 section.
 
 **Method.** `npx vite-node docs/perf/bench/stabilize-bench.ts -- <label>`. It writes `docs/perf/bench/results/<label>.json`.
 
@@ -600,7 +600,7 @@ Old behaviour: every reference was shifted whatever its prefix, so `=C!B5` on ta
 
 What changed:
 
-- `functionStrChange(..., tabs: { editedTab, formulaTab })` (tabs last). A reference moves only when its tab is the edited tab. The prefix is unquoted (outer `'` stripped, `''` collapsed) and compared case-insensitively; no prefix means `formulaTab`.
+- `functionStrChange(..., tabs: { editedTab, formulaTab })` (tabs last). A reference moves only when its tab is the edited tab. The prefix is unquoted (outer `'` stripped, `''` collapsed) and compared exactly, case-sensitively (Task 17; originally shipped case-insensitive); no prefix means `formulaTab`.
 - `rowcol.ts`: all call sites in `insertRowCol` / `deleteRowCol` pass `editedTab = file.name` (the tab the edit happens on) and `formulaTab = ctx.luckysheetfile[SheetIndex].name` (the tab being scanned). `rewriteFormulasByScanningSheet` takes `editedTab` and uses `sheet.name`. Formula cells on other tabs were already visited by the loops; they used to be shifted unconditionally.
 - The tokenizer now keeps a single-quoted tab name in one token, so `='A-B, 1'!B5` is not split at `-` or `,`. Prefix and range are split at the last `!`.
 
@@ -623,9 +623,79 @@ Three tabs `A`, `B`, `C`, each with B5 filled (5, 7, 9). Formulas: A1 `=B5`, A2 
 | B!A1 | `=A!B5` | `=A!B6` | shifts |
 | B!A2 | `=B5` | `=B5` | unchanged |
 | B!A3 | `=C!B5` | `=C!B5` | unchanged |
-| B!A4 | `='a'!B5` | `='a'!B6` | shifts (case-insensitive) |
+| B!A4 | `='a'!B5` | `='a'!B5` | unchanged (tab `a` is not tab `A`; case-sensitive after Task 17) (derived from unit test, not re-run in browser) |
 | C!A1 | `=A!B5` | `=A!B6` | shifts |
 
-All seven match. The evaluator returned `#ERROR` for `='a'!B5` (lower-case tab name); the formula text shifted correctly, the value is a separate, existing evaluator behaviour.
+All seven match under the case-sensitive rule. The run above was done with the shipped case-insensitive rule, where B!A4 shifted to `='a'!B6`; the row shown is the Task 17 result, derived from the unit test, not re-run in the browser. The evaluator returned `#ERROR` for `='a'!B5` (lower-case tab name); that is a separate, existing evaluator behaviour. Under the case-sensitive rule the formula text is no longer shifted for that row (see the table).
 
 Not fixed here: on a second client in the same room, the inserted row arrives but the rewritten formula text does not (tab B kept `=B5` and `=A!B5` after tab A had `=B7` and `=A!B7`). Not checked whether this predates this change.
+
+### Task 17: B5 compares tab names exactly (2026-10-26, uncommitted)
+
+`sameTabName` in `src/sheet-engine/core/modules/formula.ts` now uses `===` after unquoting (the `''` collapse is unchanged). The test "compares the tab name case-insensitively" became "compares the tab name exactly, case-sensitively": `addRow("='a'!B5", 'A', 'B')` stays `'a'!B5`, and `addRow('=A!B5', 'A', 'B')` gives `A!B6`.
+
+**Before** (test changed, code not yet): `npx vitest run src/sheet-engine/core/modules/formula.str-change.test.ts`
+
+```
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v3.2.4 /Users/maitrakhatri/Developer/fileverse-dsheet
+
+ ❯ src/sheet-engine/core/modules/formula.str-change.test.ts (14 tests | 1 failed) 8ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > shifts an unprefixed ref on the edited tab 2ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > leaves a ref to another tab unchanged 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > leaves an unprefixed ref on a different tab unchanged 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > shifts a ref prefixed with the edited tab, from another tab 0ms
+   × functionStrChange only shifts references to the edited tab (B5) > compares the tab name exactly, case-sensitively 3ms
+     → expected '\'a\'!B6' to be '\'a\'!B5' // Object.is equality
+   ✓ functionStrChange only shifts references to the edited tab (B5) > unquotes ''-escaped names 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > shifts both ends of a quoted-prefix range 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > handles a prefixed ref inside a function with mixed refs 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > does not split a quoted tab name containing an operator or comma 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > keeps $-absolute markers 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > delete: shifts refs below the deleted row on the edited tab only 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > delete: a ref to the deleted row becomes #REF! only for the edited tab 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > columns: insert shifts only refs to the edited tab 0ms
+   ✓ functionStrChange only shifts references to the edited tab (B5) > whole-row and whole-column ranges respect the tab 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/sheet-engine/core/modules/formula.str-change.test.ts > functionStrChange only shifts references to the edited tab (B5) > compares the tab name exactly, case-sensitively
+AssertionError: expected '\'a\'!B6' to be '\'a\'!B5' // Object.is equality
+
+Expected: "'a'!B5"
+Received: "'a'!B6"
+
+ ❯ src/sheet-engine/core/modules/formula.str-change.test.ts:44:41
+     42|   it('compares the tab name exactly, case-sensitively', () => {
+     43|     // Tab `a` is not tab `A` (the engine resolves names case-sensitiv…
+     44|     expect(addRow("='a'!B5", 'A', 'B')).toBe("'a'!B5");
+       |                                         ^
+     45|     expect(addRow('=A!B5', 'A', 'B')).toBe('A!B6');
+     46|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 passed (14)
+   Start at  19:33:22
+   Duration  1.29s (transform 679ms, setup 0ms, collect 919ms, tests 8ms, environment 0ms, prepare 31ms)
+```
+
+**After** (same command):
+
+```
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+ RUN  v3.2.4 /Users/maitrakhatri/Developer/fileverse-dsheet
+
+ ✓ src/sheet-engine/core/modules/formula.str-change.test.ts (14 tests) 4ms
+
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+   Start at  19:33:30
+   Duration  1.14s (transform 679ms, setup 0ms, collect 905ms, tests 4ms, environment 0ms, prepare 34ms)
+```
+
+Full `npm run test:unit`: 39 files, 318 tests pass. `npx tsc --noEmit -p .`: no errors. Browser check not re-run.

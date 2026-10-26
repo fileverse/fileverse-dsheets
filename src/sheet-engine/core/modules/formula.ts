@@ -4947,7 +4947,7 @@ function unquoteTabName(name: string) {
 }
 
 function sameTabName(a: string, b: string) {
-  return (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
+  return (a ?? '') === (b ?? '');
 }
 
 function functionStrChange_range(

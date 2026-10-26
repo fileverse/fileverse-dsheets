@@ -12,7 +12,7 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | B1 | done | cf58246 | |
 | B2, B4, B6 | done | b3e38a9 | |
 | **B3** | done | 1587101 | Deviation from the Fix text below: the guard is not held while the remount is deferred; it begins once right before the remount (see B3). Browser-checked. |
-| **B5** | done, **one rule wrong** | 8b18a94 | Shipped case-insensitive; the spec says case-sensitive. Fix is plan Task 17. |
+| **B5** | done | 8b18a94; case rule fixed in Task 17, uncommitted | Shipped case-insensitive; Task 17 made the comparison exact and case-sensitive, as this spec says. |
 | C1, C3 | done | 7a1a19e | |
 | C2, C6, C7 | done | 03fc133, 4ef4fd4, 9290e13 | |
 | **C8** | done | fb80dfc, a324b38 | Plus a warm-up pass after open so the flag turns true; shadow indexes merged at completion. |
@@ -226,7 +226,7 @@ Consequences, accepted: while the remount is deferred, every remote surgical eve
 - A reference shifts only when it points at the edited tab: its prefix names that tab, or it has no prefix and the formula is on that tab.
 - Prefixes are compared unquoted (`'My Sheet'!A1` names My Sheet) and exactly, as the engine resolves tab names: case-sensitive (`getSheetIdByName`, `core/utils/index.ts:131-138`).
 
-**Implemented (8b18a94), with one divergence:** `functionStrChange` takes `tabs: { editedTab, formulaTab }` as its last argument and the tokenizer keeps a quoted tab name in one token. The shipped comparison is case-insensitive; this section says exact and case-sensitive. Plan Task 17 brings the code back to this text.
+**Implemented (8b18a94); case rule fixed in Task 17, uncommitted:** `functionStrChange` takes `tabs: { editedTab, formulaTab }` as its last argument and the tokenizer keeps a quoted tab name in one token. The comparison was first shipped case-insensitive; Task 17 (uncommitted) made it exact and case-sensitive, matching this section.
 
 Part 2 removes this rewrite altogether (formulas store row IDs).
 
