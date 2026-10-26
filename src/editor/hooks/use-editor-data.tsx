@@ -768,30 +768,35 @@ export const useEditorData = (
         (id) => id && !workbookSheetIds.has(id),
       );
 
+      const isEditingCell = () =>
+        (sheetEditorRef.current?.getWorkbookContext?.()?.luckysheetCellUpdate
+          ?.length ?? 0) > 0;
       const scheduleStructuralRemount = () =>
-        scheduleGuardedStructuralRemount(structuralRemountRefs, () => {
-          const isEditingCell =
-            (sheetEditorRef.current?.getWorkbookContext?.()
-              ?.luckysheetCellUpdate?.length ?? 0) > 0;
-          try {
-            const plain = ySheetArrayToPlain(sheetArray as any);
-            applyCommentMarkers(
-              plain,
-              commentsForMarkers(),
-              allowCommentsRef.current,
-            );
-            currentDataRef.current = plain;
-            syncDataBlockCalcFromPlain(plain);
-          } catch (e) {
-            console.error(
-              '[DSheet] ySheetArrayToPlain after ydoc observe failed',
-              e,
-            );
-          }
-          if (!isEditingCell && setForceSheetRender) {
-            setForceSheetRender((prev) => prev + 1);
-          }
-        });
+        scheduleGuardedStructuralRemount(
+          structuralRemountRefs,
+          () => {
+            try {
+              const plain = ySheetArrayToPlain(sheetArray as any);
+              applyCommentMarkers(
+                plain,
+                commentsForMarkers(),
+                allowCommentsRef.current,
+              );
+              currentDataRef.current = plain;
+              syncDataBlockCalcFromPlain(plain);
+            } catch (e) {
+              console.error(
+                '[DSheet] ySheetArrayToPlain after ydoc observe failed',
+                e,
+              );
+            }
+            if (setForceSheetRender) {
+              setForceSheetRender((prev) => prev + 1);
+            }
+          },
+          50,
+          isEditingCell,
+        );
 
       const needsStructuralRemount =
         hasStructural ||
