@@ -6,6 +6,7 @@ import { loadLocale } from '../locale';
 import {
   applyRemoteCellValue,
   applyRemoteCells,
+  setSheetCalcChain,
 } from './cell';
 
 const makeCtx = () => {
@@ -77,5 +78,29 @@ describe('applyRemoteCells (A5)', () => {
     );
     expect(onSkip).toHaveBeenCalledTimes(1);
     expect(next.luckysheetfile[0].data[1][1]?.v).toBe('remote');
+  });
+});
+
+describe('setSheetCalcChain (A4)', () => {
+  it('replaces the chain and resets dependency indexes to a fresh mount', () => {
+    const ctx = makeCtx();
+    ctx.formulaCache.depsByCell.set('s1:0:1', new Set(['s1:0:0']));
+    ctx.formulaCache.revDepsByCell.set('s1:0:0', new Set(['s1:0:1']));
+    ctx.formulaCache.formulasWithWideRangeDeps.add('s1:3:3');
+    const chain = [{ r: 0, c: 1, id: 's1' }];
+    const next = produce<any>(ctx, (d: any) =>
+      setSheetCalcChain(d, chain, { id: 's1' }),
+    );
+    expect(next.luckysheetfile[0].calcChain).toEqual(chain);
+    expect(next.formulaCache.depsByCell.size).toBe(0);
+    expect(next.formulaCache.revDepsByCell.size).toBe(0);
+    expect(next.formulaCache.formulasWithWideRangeDeps.size).toBe(0);
+  });
+
+  it('treats a missing chain as empty', () => {
+    const next = produce<any>(makeCtx(), (d: any) =>
+      setSheetCalcChain(d, undefined, { id: 's1' }),
+    );
+    expect(next.luckysheetfile[0].calcChain).toEqual([]);
   });
 });

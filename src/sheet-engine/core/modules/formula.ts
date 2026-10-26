@@ -389,6 +389,17 @@ export class FormulaCache {
 
   rangeValuePassCacheStats?: { hits: number; misses: number };
 
+  /**
+   * Drop every recorded formula dependency, back to the state a fresh mount
+   * has. Used when a sheet's formula list is replaced from outside the
+   * engine (a collaborator's calcChain change, A4).
+   */
+  resetDependencyIndexes() {
+    this.depsByCell = new Map();
+    this.revDepsByCell = new Map();
+    this.formulasWithWideRangeDeps = new Set();
+  }
+
   constructor() {
     const that = this;
     const toCellKey = (sheetId: string, r: number, c: number) =>

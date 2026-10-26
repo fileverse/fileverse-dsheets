@@ -8,7 +8,7 @@ import { useLiveQuery } from './live-query/use-live-query';
 import type { ApiKeyStorage } from '../utils/api-key-storage';
 import type { OpenApiKeyModalFn } from '../utils/data-block-error-handler';
 import type { DataBlockEvent } from '../types';
-import { ySheetArrayToPlain } from '../utils/update-ydoc';
+import { readYdocSheetField, ySheetArrayToPlain } from '../utils/update-ydoc';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
 import { applyCommentMarkers } from '../utils/apply-comment-markers';
 import {
@@ -356,6 +356,8 @@ export const useEditorData = (
       const mapFieldUpdates = new Map<string, MapFieldBatch>();
       const configUpdates = new Map<string, ConfigSubKeyBatch>();
       const conditionFormatUpdates = new Map<string, ConditionFormatBatch>();
+      // Sheets whose formula list (calcChain) changed remotely (A4).
+      const calcChainUpdates = new Set<string>();
       const sheetMetaUpdates = new Map<
         string,
         { sheetId: string; sheetMap: Y.Map<any>; changedKeys: string[] }
@@ -428,6 +430,21 @@ export const useEditorData = (
             celldataMap,
             changedKeys: (event as Y.YMapEvent<any>).changes.keys,
           });
+        } else if (
+          path.length === 2 &&
+          path[1] === 'calcChain' &&
+          typeof path[0] === 'number'
+        ) {
+          // A peer committed or removed a formula: apply the chain in place
+          // instead of rebuilding the grid (A4).
+          const sheetMap = sheetsArr[path[0] as number];
+          const sheetId =
+            sheetMap instanceof Y.Map ? (sheetMap.get('id') as string) : '';
+          if (!sheetId) {
+            hasStructural = true;
+            continue;
+          }
+          calcChainUpdates.add(sheetId);
         } else if (
           path.length === 2 &&
           path[1] === 'dataVerification' &&
@@ -574,6 +591,7 @@ export const useEditorData = (
                   SURGICAL_MAP_FIELD_KEYS.has(k) ||
                   SURGICAL_OBJECT_FIELD_KEYS.has(k) ||
                   k === 'luckysheet_conditionformat_save' ||
+                  k === 'calcChain' ||
                   k === 'config',
               )
             ) {
@@ -655,6 +673,9 @@ export const useEditorData = (
                     hasStructural = true;
                   }
                 }
+                if (changedKeys.includes('calcChain')) {
+                  calcChainUpdates.add(sheetId);
+                }
                 if (changedKeys.includes('luckysheet_conditionformat_save')) {
                   const rulesArr = sheetMap.get(
                     'luckysheet_conditionformat_save',
@@ -712,7 +733,8 @@ export const useEditorData = (
           filterUpdates.size > 0 ||
           mapFieldUpdates.size > 0 ||
           configUpdates.size > 0 ||
-          conditionFormatUpdates.size > 0
+          conditionFormatUpdates.size > 0 ||
+          calcChainUpdates.size > 0
         )
           continue;
         const changedKeys = Array.from((event as Y.YMapEvent<any>).keys.keys());
@@ -740,6 +762,7 @@ export const useEditorData = (
         ...Array.from(mapFieldUpdates.values()).map((b) => b.sheetId),
         ...configUpdates.keys(),
         ...conditionFormatUpdates.keys(),
+        ...calcChainUpdates,
       ];
       const hasUnknownSheet = remoteSheetIds.some(
         (id) => id && !workbookSheetIds.has(id),
@@ -990,6 +1013,32 @@ export const useEditorData = (
         }
       };
 
+      // A4: apply the remote formula list in place; the engine resets its
+      // dependency indexes, as a fresh mount would. Also keep the plain
+      // snapshot's chain current for later remounts.
+      const applyRemoteCalcChains = () => {
+        const ydoc = ydocRef.current;
+        if (!ydoc) return;
+        for (const sheetId of calcChainUpdates) {
+          const calcChain =
+            readYdocSheetField(ydoc, dsheetId, sheetId, 'calcChain') ?? [];
+          try {
+            sheetEditorRef.current?.setSheetCalcChain?.(calcChain, {
+              id: sheetId,
+            });
+          } catch (error) {
+            console.warn(
+              '[DSheet] Skipped remote calcChain apply — workbook not ready',
+              { sheetId, error },
+            );
+          }
+          const plainSheet = currentDataRef.current?.find(
+            (sheet) => sheet.id === sheetId,
+          );
+          if (plainSheet) plainSheet.calcChain = calcChain;
+        }
+      };
+
       const syncPlainSnapshot = () => {
         try {
           const plain = ySheetArrayToPlain(sheetArray as any);
@@ -1080,11 +1129,15 @@ export const useEditorData = (
               filterUpdates.size > 0 ||
               mapFieldUpdates.size > 0 ||
               configUpdates.size > 0 ||
-              conditionFormatUpdates.size > 0)
+              conditionFormatUpdates.size > 0 ||
+              calcChainUpdates.size > 0)
           ) {
             // Metadata-only: config rematerialize is fine with no cell deletes.
             if (configUpdates.size > 0) {
               applyRemoteConfig();
+            }
+            if (calcChainUpdates.size > 0) {
+              applyRemoteCalcChains();
             }
             // currentDataRef must pick up new cellFormatRanges for later remounts.
             if (cellFormatRangesTouched) {
@@ -1133,6 +1186,12 @@ export const useEditorData = (
 
           if (configUpdates.size > 0) {
             applyRemoteConfig();
+          }
+
+          // After cells: applying a cell can edit the engine's chain; the
+          // Yjs value is authoritative.
+          if (calcChainUpdates.size > 0) {
+            applyRemoteCalcChains();
           }
 
           if (totalCells > 0) {
