@@ -223,6 +223,7 @@ const rewriteFormulasByScanningSheet = (
   orient: 'lefttop' | 'rightbottom' | null,
   stindex: number,
   step: number,
+  editedTab: string,
 ) => {
   const sheetData = sheet.data;
   if (!sheetData) return;
@@ -241,7 +242,10 @@ const rewriteFormulasByScanningSheet = (
       const cell = row[c] as any;
       if (!cell?.f) continue;
       if (calcChainSet.has(`${r}_${c}`)) continue;
-      const newF = `=${functionStrChange(cell.f, mode, rc, orient, stindex, step)}`;
+      const newF = `=${functionStrChange(cell.f, mode, rc, orient, stindex, step, {
+        editedTab,
+        formulaTab: sheet.name,
+      })}`;
       cell.f = newF;
       if (newF.includes('#REF!')) markCellRefError(cell);
     }
@@ -499,6 +503,10 @@ export function insertRowCol(
           direction,
           index,
           count,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         if (d[calc_r]?.[calc_c]?.f === calc_funcStr) {
@@ -524,6 +532,10 @@ export function insertRowCol(
           direction,
           index,
           count,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         // Guard: other sheets may have calcChain before data is hydrated.
@@ -539,6 +551,10 @@ export function insertRowCol(
           direction,
           index,
           count,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         if (d[calc_r]?.[calc_c]?.f === calc_funcStr) {
@@ -564,6 +580,10 @@ export function insertRowCol(
           direction,
           index,
           count,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         const otherColCell = data?.[calc_r]?.[calc_c];
@@ -580,6 +600,7 @@ export function insertRowCol(
       direction,
       index,
       count,
+      file.name,
     );
   }
 
@@ -1933,6 +1954,10 @@ export function deleteRowCol(
             null,
             start,
             slen,
+            {
+              editedTab: file.name,
+              formulaTab: ctx.luckysheetfile[SheetIndex].name,
+            },
           )}`;
 
           if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
@@ -1955,6 +1980,10 @@ export function deleteRowCol(
           null,
           start,
           slen,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         const otherDelRowCell = data?.[calc_r]?.[calc_c];
@@ -1971,6 +2000,10 @@ export function deleteRowCol(
             null,
             start,
             slen,
+            {
+              editedTab: file.name,
+              formulaTab: ctx.luckysheetfile[SheetIndex].name,
+            },
           )}`;
 
           if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
@@ -1993,6 +2026,10 @@ export function deleteRowCol(
           null,
           start,
           slen,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         const otherDelColCell = data?.[calc_r]?.[calc_c];
@@ -2010,6 +2047,7 @@ export function deleteRowCol(
       null,
       start,
       slen,
+      file.name,
     );
   }
 

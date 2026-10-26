@@ -869,13 +869,8 @@ function parseElement(eleString: string) {
 export function iscelldata(txt: string) {
   // 判断是否为单元格格式
   const val = txt.split('!');
-  let rangetxt: string;
-
-  if (val.length > 1) {
-    [, rangetxt] = val;
-  } else {
-    [rangetxt] = val;
-  }
+  // The range is the part after the last '!' (a quoted tab name may hold one).
+  const rangetxt: string = val[val.length - 1];
 
   // Allow:
   // - A1:A2 (cell-to-cell)
@@ -4940,6 +4935,21 @@ export function toggleFormulaAbsoluteReferenceAtCaret(
   return true;
 }
 
+export type FormulaTabs = { editedTab: string; formulaTab: string };
+
+/** `'Bob''s Sheet'` -> `Bob's Sheet`; unquoted names pass through. */
+function unquoteTabName(name: string) {
+  const t = name.trim();
+  if (t.length >= 2 && t.startsWith("'") && t.endsWith("'")) {
+    return t.slice(1, -1).replace(/''/g, "'");
+  }
+  return t;
+}
+
+function sameTabName(a: string, b: string) {
+  return (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
+}
+
 function functionStrChange_range(
   txt: string,
   type: string,
@@ -4947,16 +4957,24 @@ function functionStrChange_range(
   orient: string | null,
   stindex: number,
   step: number,
+  tabs: FormulaTabs,
 ) {
-  const val = txt.split('!');
-  let rangetxt;
+  const bang = txt.lastIndexOf('!');
+  let rangetxt: any;
   let prefix = '';
 
-  if (val.length > 1) {
-    [, rangetxt] = val;
-    prefix = `${val[0]}!`;
+  if (bang >= 0) {
+    rangetxt = txt.slice(bang + 1);
+    prefix = txt.slice(0, bang + 1);
   } else {
-    [rangetxt] = val;
+    rangetxt = txt;
+  }
+
+  // A reference only moves when it points at the edited tab. No prefix means
+  // the tab that owns the formula.
+  const refTab = bang >= 0 ? unquoteTabName(txt.slice(0, bang)) : tabs.formulaTab;
+  if (!sameTabName(refTab, tabs.editedTab)) {
+    return txt;
   }
 
   let r1;
@@ -5530,7 +5548,8 @@ export function functionStrChange(
   orient: string | null,
   stindex: number,
   step: number,
-) {
+  tabs: FormulaTabs,
+): string {
   if (!txt) {
     return '';
   }
@@ -5553,7 +5572,14 @@ export function functionStrChange(
   while (i < funcstack.length) {
     const s = funcstack[i];
 
-    if (s === '(' && matchConfig.dquote === 0) {
+    if (s === "'" && matchConfig.dquote === 0) {
+      // Quoted tab name ('Q1 2026'!B2, 'A-B'!C1): keep it inside the token.
+      // An escaped '' toggles twice and stays inside.
+      matchConfig.squote = matchConfig.squote === 0 ? 1 : 0;
+      str += s;
+    } else if (matchConfig.squote > 0 && matchConfig.dquote === 0) {
+      str += s;
+    } else if (s === '(' && matchConfig.dquote === 0) {
       matchConfig.bracket += 1;
 
       if (str.length > 0) {
@@ -5572,6 +5598,7 @@ export function functionStrChange(
         orient,
         stindex,
         step,
+        tabs,
       )})`;
       str = '';
     } else if (s === '"' && matchConfig.squote === 0) {
@@ -5591,6 +5618,7 @@ export function functionStrChange(
         orient,
         stindex,
         step,
+        tabs,
       )},`;
       str = '';
     } else if (s === '&' && matchConfig.dquote === 0) {
@@ -5602,6 +5630,7 @@ export function functionStrChange(
           orient,
           stindex,
           step,
+          tabs,
         )}&`;
         str = '';
       } else {
@@ -5626,7 +5655,7 @@ export function functionStrChange(
       if (s + s_next in operatorjson) {
         if (str.length > 0) {
           function_str +=
-            functionStrChange(str, type, rc, orient, stindex, step) +
+            functionStrChange(str, type, rc, orient, stindex, step, tabs) +
             s +
             s_next;
           str = '';
@@ -5648,7 +5677,7 @@ export function functionStrChange(
       } else {
         if (str.length > 0) {
           function_str +=
-            functionStrChange(str, type, rc, orient, stindex, step) + s;
+            functionStrChange(str, type, rc, orient, stindex, step, tabs) + s;
           str = '';
         } else {
           function_str += s;
@@ -5667,6 +5696,7 @@ export function functionStrChange(
           orient,
           stindex,
           step,
+          tabs,
         );
       } else {
         function_str += _.trim(str);
