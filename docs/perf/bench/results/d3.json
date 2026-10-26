@@ -1,0 +1,108 @@
+{
+  "label": "d3",
+  "date": "2026-10-26T17:16:56.816Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S4 old 100x10 store": {
+    "structs": 113913,
+    "deletedLen": 112810,
+    "clients": 101,
+    "bodyBytes": 1088898
+  },
+  "S4 fresh copy store": {
+    "structs": 1105,
+    "deletedLen": 0,
+    "clients": 1,
+    "bodyBytes": 88136
+  },
+  "S4 old full encode": {
+    "median": 8.76,
+    "p95": 13.001,
+    "min": 8.3593,
+    "runs": 20
+  },
+  "S4 fresh full encode": {
+    "median": 1.033,
+    "p95": 1.151,
+    "min": 1.0292,
+    "runs": 20
+  },
+  "S4 old full decode (new doc + apply)": {
+    "median": 56.828,
+    "p95": 64.194,
+    "min": 53.5652,
+    "runs": 10
+  },
+  "S4 fresh full decode (new doc + apply)": {
+    "median": 2.494,
+    "p95": 5.264,
+    "min": 2.3952,
+    "runs": 10
+  },
+  "S4 old write + handleOnChange body": {
+    "median": 9.16,
+    "p95": 11.079,
+    "min": 8.9113,
+    "runs": 20
+  },
+  "S5 old encodeStateVector+base64": {
+    "median": 0.026,
+    "p95": 0.047,
+    "min": 0.0246,
+    "runs": 50
+  },
+  "S5 old Y.snapshot+encodeSnapshot": {
+    "median": 0.313,
+    "p95": 0.388,
+    "min": 0.2849,
+    "runs": 30
+  },
+  "S5 old fingerprint getFingerprint()": {
+    "median": 0.019,
+    "p95": 0.03,
+    "min": 0.0175,
+    "runs": 50
+  },
+  "S5 old fingerprintFromUpdate(body)": {
+    "median": 32.142,
+    "p95": 94.279,
+    "min": 28.6024,
+    "runs": 20
+  },
+  "S5 old write with tracker attached": {
+    "median": 0.027,
+    "p95": 0.055,
+    "min": 0.0256,
+    "runs": 50
+  },
+  "S5 old write without tracker": {
+    "median": 0.019,
+    "p95": 0.029,
+    "min": 0.0189,
+    "runs": 50
+  },
+  "S5 old open (apply body) with tracker": {
+    "median": 57.728,
+    "p95": 59.888,
+    "min": 53.092,
+    "runs": 10
+  },
+  "S5 old open (apply body) without tracker": {
+    "median": 59.9,
+    "p95": 116.941,
+    "min": 55.9875,
+    "runs": 10
+  },
+  "D3 before: destroy + delete + reopen fresh doc (heal, loses live-only edits)": {
+    "median": 0.5,
+    "p95": 12.424,
+    "min": 0.4088,
+    "runs": 10
+  },
+  "D3 after: rebuildIndexedDbStore (live doc re-persisted)": {
+    "median": 9.436,
+    "p95": 11.702,
+    "min": 8.7031,
+    "runs": 10
+  }
+}

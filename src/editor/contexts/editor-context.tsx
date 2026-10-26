@@ -72,6 +72,7 @@ export interface EditorContextType {
     React.SetStateAction<{ [key: string]: { [key: string]: any } }>
   >;
   refreshIndexedDB: () => Promise<void>;
+  rebuildLocalStore: () => Promise<void>;
   // Core refs
   sheetEditorRef: React.MutableRefObject<WorkbookInstance | null>;
   setSheetEditorRef: React.RefCallback<WorkbookInstance>;
@@ -333,6 +334,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     syncStatus,
     isContentBootstrapReady,
     refreshIndexedDB,
+    rebuildLocalStore,
     getContentSnapshot,
     getContentFingerprint,
     getContentChange,
@@ -386,6 +388,8 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   // capturing stale collaboration methods in the composed imperative handle.
   const refreshIndexedDBRef = useRef(refreshIndexedDB);
   refreshIndexedDBRef.current = refreshIndexedDB;
+  const rebuildLocalStoreRef = useRef(rebuildLocalStore);
+  rebuildLocalStoreRef.current = rebuildLocalStore;
   const terminateSessionRef = useRef(terminateSession);
   terminateSessionRef.current = terminateSession;
   const updateCollaboratorNameRef = useRef(updateCollaboratorName);
@@ -402,6 +406,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
         workbook,
         {
           refreshIndexedDB: () => refreshIndexedDBRef.current(),
+          rebuildLocalStore: () => rebuildLocalStoreRef.current(),
           terminateSession: () => terminateSessionRef.current(),
           updateCollaboratorName: (name) =>
             updateCollaboratorNameRef.current(name),
@@ -664,6 +669,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
       syncStatus,
       isAuthorized,
       refreshIndexedDB,
+      rebuildLocalStore,
       handleLiveQuery,
       initialiseLiveQueryData,
       isReadOnly,

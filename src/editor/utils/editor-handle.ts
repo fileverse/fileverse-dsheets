@@ -5,6 +5,7 @@ import type { DSheetEditorHandle } from "../types";
 export type DSheetEditorMethods = Pick<
   DSheetEditorHandle,
   | "refreshIndexedDB"
+  | "rebuildLocalStore"
   | "terminateSession"
   | "updateCollaboratorName"
   | "updateSessionTitle"

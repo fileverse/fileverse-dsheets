@@ -26,7 +26,9 @@
  */
 import fs from 'fs';
 import path from 'path';
+import 'fake-indexeddb/auto';
 import * as Y from 'yjs';
+import { IndexeddbPersistence, clearDocument } from 'y-indexeddb';
 import { fromUint8Array } from 'js-base64';
 import throttle from 'lodash/throttle';
 import {
@@ -487,6 +489,66 @@ if (want('S4', 'S5')) {
     log('S5 old open (apply body) without tracker', measure(() => {
       Y.applyUpdate(new Y.Doc(), body);
     }, 10));
+  }
+
+  // D3: local store rebuild on the S4 old sheet. fake-indexeddb in Node, so
+  // this is relative cost only, not browser timing.
+  {
+    const { rebuildIndexedDbStore } = await import(
+      '../../../src/editor/utils/rebuild-indexeddb-store'
+    );
+    const timeAsync = async (fn: () => Promise<void>, runs: number): Promise<Stat> => {
+      await fn();
+      const samples: number[] = [];
+      for (let i = 0; i < runs; i += 1) {
+        const t0 = performance.now();
+        await fn();
+        samples.push(performance.now() - t0);
+      }
+      samples.sort((a, b) => a - b);
+      return {
+        median: +samples[Math.floor(samples.length / 2)].toFixed(3),
+        p95: +samples[Math.min(samples.length - 1, Math.floor(0.95 * samples.length))].toFixed(3),
+        min: +samples[0].toFixed(4),
+        runs,
+      };
+    };
+    const name = 'bench-d3';
+    const seedStore = async () => {
+      await clearDocument(name);
+      const p = new IndexeddbPersistence(name, doc);
+      await p.whenSynced;
+      return p;
+    };
+    let cur = await seedStore();
+    {
+      const samples: number[] = [];
+      for (let i = 0; i < 11; i += 1) {
+        const t0 = performance.now();
+        await cur.destroy();
+        await clearDocument(name);
+        const d = new Y.Doc();
+        const p = new IndexeddbPersistence(name, d);
+        await p.whenSynced;
+        const dt = performance.now() - t0;
+        await p.destroy();
+        cur = await seedStore(); // untimed: restore the old store for the next run
+        if (i > 0) samples.push(dt);
+      }
+      samples.sort((a, b) => a - b);
+      log('D3 before: destroy + delete + reopen fresh doc (heal, loses live-only edits)', {
+        median: +samples[5].toFixed(3),
+        p95: +samples[9].toFixed(3),
+        min: +samples[0].toFixed(4),
+        runs: 10,
+      });
+    }
+    await cur.destroy();
+    cur = await seedStore();
+    log('D3 after: rebuildIndexedDbStore (live doc re-persisted)', await timeAsync(async () => {
+      cur = await rebuildIndexedDbStore(name, doc, cur);
+    }, 10));
+    await cur.destroy();
   }
 }
 

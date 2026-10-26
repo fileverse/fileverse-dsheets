@@ -10,6 +10,7 @@ import {
   unavailableDsheetContentSnapshot,
 } from '../../persistence-utils';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
+import { rebuildIndexedDbStore } from '../utils/rebuild-indexeddb-store';
 import { compactDsheetPersistence } from '../../persistence-compaction';
 import { attachContentFingerprint } from '../utils/content-fingerprint';
 import {
@@ -93,11 +94,30 @@ export const useEditorSync = (
     ignoredOrigins: [persistenceRef],
   });
 
-  const initialiseEditorIndexedDB = useCallback(async () => {
+  // Latest bootstrap run, and the rebuild (D3) in flight. A rebuild never
+  // bumps bootstrapGenerationRef: it waits for the bootstrap, and a bootstrap
+  // that starts during a rebuild waits for the rebuild.
+  const bootstrapPromiseRef = useRef<Promise<void> | null>(null);
+  const rebuildInFlightRef = useRef<Promise<void> | null>(null);
+  // True once a rebuild has finished waiting for bootstrap and is touching the
+  // store. A bootstrap only waits for it then (waiting earlier would deadlock).
+  const rebuildWritingRef = useRef(false);
+  // True between the bootstrap effect's cleanup and its next mount. A rebuild
+  // must not create a provider on a doc whose lifecycle has ended.
+  const unmountedRef = useRef(false);
+
+  const bootstrapEditorIndexedDB = useCallback(async () => {
     const generation = ++bootstrapGenerationRef.current;
     indexeddbSyncedRef.current = false;
     setSyncStatus('syncing');
     setIsContentBootstrapReady(false);
+
+    if (rebuildWritingRef.current && rebuildInFlightRef.current) {
+      // The rebuild sees the generation change, destroys its provider and
+      // rejects; we only need it to be finished before touching persistenceRef.
+      await rebuildInFlightRef.current.catch(() => {});
+      if (generation !== bootstrapGenerationRef.current) return;
+    }
 
     if (persistenceRef.current) {
       try {
@@ -188,6 +208,85 @@ export const useEditorSync = (
     }
   }, [dsheetId, enableIndexeddbSync, isReadOnly, portalContent, ydoc]);
 
+  const initialiseEditorIndexedDB = useCallback((): Promise<void> => {
+    const run = bootstrapEditorIndexedDB();
+    bootstrapPromiseRef.current = run;
+    return run;
+  }, [bootstrapEditorIndexedDB]);
+
+  /**
+   * D3: delete the IndexedDB database and rewrite it from the live Y.Doc.
+   * Resolves as a no-op when read-only, sync is disabled or there is no id.
+   * Concurrent calls share the in-flight promise. Never bumps the bootstrap
+   * generation: it waits for any running bootstrap first. If a bootstrap is
+   * requested or the hook unmounts during the rebuild, the new provider is
+   * destroyed and the call rejects.
+   */
+  const rebuildLocalStore = useCallback((): Promise<void> => {
+    if (isReadOnly || !enableIndexeddbSync || !dsheetId) {
+      return Promise.resolve();
+    }
+    if (unmountedRef.current) {
+      return Promise.reject(new Error('[DSheet] IndexedDB rebuild after unmount'));
+    }
+    if (rebuildInFlightRef.current) return rebuildInFlightRef.current;
+    const reportError = (error: unknown) => {
+      const indexedDbError =
+        error instanceof Error ? error : new Error(String(error));
+      console.error('[DSheet] IndexedDB persistence error:', indexedDbError);
+      onIndexedDbErrorRef.current?.(indexedDbError);
+    };
+    const run = async () => {
+      // Let the latest bootstrap finish (it may be superseded meanwhile).
+      let waited: Promise<void> | null = null;
+      while (
+        bootstrapPromiseRef.current &&
+        bootstrapPromiseRef.current !== waited
+      ) {
+        waited = bootstrapPromiseRef.current;
+        await waited.catch(() => {});
+      }
+      if (unmountedRef.current) {
+        throw new Error('[DSheet] IndexedDB rebuild after unmount');
+      }
+      const generation = bootstrapGenerationRef.current;
+      rebuildWritingRef.current = true;
+      indexeddbSyncedRef.current = false;
+      let next: IndexeddbPersistence | null = null;
+      try {
+        next = await rebuildIndexedDbStore(
+          dsheetId,
+          ydoc,
+          persistenceRef.current,
+          (created) => {
+            persistenceRef.current = created;
+            created.on('error', reportError);
+          },
+        );
+      } catch (error) {
+        persistenceRef.current = null;
+        indexeddbSyncedRef.current = false;
+        if (generation === bootstrapGenerationRef.current) {
+          reportError(error);
+        }
+        throw error;
+      }
+      if (generation !== bootstrapGenerationRef.current) {
+        // Superseded by a refresh or unmount: that path owns the provider.
+        if (persistenceRef.current === next) persistenceRef.current = null;
+        await next.destroy().catch(() => {});
+        throw new Error('[DSheet] IndexedDB rebuild superseded');
+      }
+      indexeddbSyncedRef.current = true;
+    };
+    const promise = run().finally(() => {
+      rebuildWritingRef.current = false;
+      rebuildInFlightRef.current = null;
+    });
+    rebuildInFlightRef.current = promise;
+    return promise;
+  }, [dsheetId, enableIndexeddbSync, isReadOnly, ydoc]);
+
   const getContentSnapshot = useCallback(
     () =>
       ydocRef.current
@@ -246,9 +345,11 @@ export const useEditorSync = (
   // Content bootstrap effect: IndexedDB replay → published state → migration.
   // Never replaces the Y.Doc — SyncManager, persistence, and Fortune share it.
   useEffect(() => {
+    unmountedRef.current = false;
     void initialiseEditorIndexedDB();
 
     return () => {
+      unmountedRef.current = true;
       bootstrapGenerationRef.current += 1;
       indexeddbSyncedRef.current = false;
       if (persistenceRef.current) {
@@ -354,6 +455,7 @@ export const useEditorSync = (
     syncStatus,
     isContentBootstrapReady,
     refreshIndexedDB: initialiseEditorIndexedDB,
+    rebuildLocalStore,
     getContentSnapshot,
     getContentFingerprint,
     getContentChange,

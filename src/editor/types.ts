@@ -42,6 +42,14 @@ export interface EditorValues {
 
 export type DSheetEditorHandle = WorkbookInstance & {
   refreshIndexedDB: () => Promise<void>;
+  /**
+   * Delete this sheet's IndexedDB database and rewrite it from the live
+   * document (same Y.Doc, never replaced), so local edits are kept. Resolves
+   * once the new store has synced. Resolves as a no-op when the editor is
+   * read-only, local persistence is disabled or there is no sheet id. Rejects
+   * if the rebuild fails or a refresh/unmount supersedes it. Concurrent calls share one rebuild.
+   */
+  rebuildLocalStore: () => Promise<void>;
   terminateSession: () => void;
   updateCollaboratorName: (name: string) => void;
   updateSessionTitle: (args: {
