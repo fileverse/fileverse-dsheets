@@ -14,15 +14,15 @@
 | G1b | Task 15 (C8 warm-up, added at the user's request) | committed | a324b38 |
 | G2 | Tasks 2+3 (C4, C5) | committed | 29843e6 |
 | G3 | Task 4 (B3), Task 5 (B5) | committed, browser-checked | 1587101 (B3), 8b18a94 (B5), f2f0972 (results doc) |
-| G4 | Task 17 (B5 case rule fix), Task 16 (July narrowing bug) | done, uncommitted, awaiting user check and commit (two commits proposed: Task 17, Task 16) | |
-| G5 | Task 6 (D3), Task 7 (D5) | not started | |
+| G4 | Task 17 (B5 case rule fix), Task 16 (July narrowing bug) | done, committed: Task 17 `782aacd`, Task 16 `627aeda` | |
+| G5 | Task 6 (D3), Task 7 (D5) | done, uncommitted, awaiting user check and commit (two commits proposed: Task 6, Task 7) | |
 | G6 | Task 8 (F) | not started | |
 | G7 | Tasks 9–14 (E1–E6) | not started | |
 | end | final whole-branch review; triage deferred minors and open findings below | not started | |
 
 Unit suite at G3: 39 files, 318 tests passing; `tsc` clean on touched files. Remaining count: 10 plan tasks (6, 7, 8, 9–14) plus Tasks 16 and 17 = 12, plus the final review.
 
-Bench scenario numbers: S9–S11, S14 and S15 are used. Free: **S12** (Task 7), **S13** (Task 8).
+Bench scenario numbers: S9–S12, S14 and S15 are used. Free: **S13** (Task 8).
 
 **Rulings that changed the plan**
 - C8 ships as specified, then a warm-up (Task 15) was added so the flag turns true after open. The warm-up builds shadow indexes and merges them at completion, so a partial graph never narrows commits.
@@ -41,9 +41,9 @@ Bench scenario numbers: S9–S11, S14 and S15 are used. Free: **S12** (Task 7), 
 
 ## Next
 
-1. **G4 done** (Tasks 17 and 16, uncommitted; user checks and commits). Unit suite 40 files, 321 tests; tsc clean.
-2. **G5 next**, Tasks 6 and 7 (package APIs for D3/D5; app side lives in dsheets.new, outside this repo).
-3. Then G6, G7, final review. After each group the controller stops for the user to check and commit, as before.
+1. **G4 done** (Task 17 `782aacd`, Task 16 `627aeda`). Unit suite 40 files, 321 tests; tsc clean.
+2. **G5 done** (Tasks 6 and 7, uncommitted; user checks and commits). Unit suite 43 files, 334 tests; tsc clean. Package APIs for D3/D5; app side lives in dsheets.new, outside this repo.
+3. **G6 next** (Task 8, F, bench S13). Then G7, final review. After each group the controller stops for the user to check and commit, as before.
 
 ## Global Constraints
 

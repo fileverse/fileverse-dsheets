@@ -4,7 +4,7 @@ Every change gets numbers measured the same way before and after.
 
 **Status index (2026-10-26).** Sections below, in file order: baseline; A1, A2; B4, B2, B6; A3; A5; A4; C1, C2, C3, C6, C7; C8 and the C8 warm-up; C4; C5 (and C5 browser timing); B3 (and B3 browser check); B5 (and B5 browser check). Task 16 (July narrowing bug, scenario S15) and Task 17 (B5 exact tab names) are done and have sections at the end. Still to add: D3, D5 (S12), F (S13), E1–E6. Scenarios used so far: S1–S11, S14 and S15; next free are S12 and S13 (reserved by the plan for D5 and F).
 
-B5 case rule: resolved by Task 17 (uncommitted); see the Task 17 subsection at the end of the B5 section.
+B5 case rule: resolved by Task 17 (782aacd); see the Task 17 subsection at the end of the B5 section.
 
 **Method.** `npx vite-node docs/perf/bench/stabilize-bench.ts -- <label>`. It writes `docs/perf/bench/results/<label>.json`.
 
@@ -630,7 +630,7 @@ All seven match under the case-sensitive rule. The run above was done with the s
 
 Not fixed here: on a second client in the same room, the inserted row arrives but the rewritten formula text does not (tab B kept `=B5` and `=A!B5` after tab A had `=B7` and `=A!B7`). Not checked whether this predates this change.
 
-### Task 17: B5 compares tab names exactly (2026-10-26, uncommitted)
+### Task 17: B5 compares tab names exactly (2026-10-26, 782aacd)
 
 `sameTabName` in `src/sheet-engine/core/modules/formula.ts` now uses `===` after unquoting (the `''` collapse is unchanged). The test "compares the tab name case-insensitively" became "compares the tab name exactly, case-sensitively": `addRow("='a'!B5", 'A', 'B')` stays `'a'!B5`, and `addRow('=A!B5', 'A', 'B')` gives `A!B6`.
 
@@ -701,7 +701,7 @@ The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troub
 Full `npm run test:unit`: 39 files, 318 tests pass. `npx tsc --noEmit -p .`: no errors. Browser check not re-run.
 
 
-## Task 16: commit narrowing only when the dependency graph is complete (S15, 2026-10-26, uncommitted)
+## Task 16: commit narrowing only when the dependency graph is complete (S15, 2026-10-26, 627aeda)
 
 Commit 1611aee (July) narrowed a commit's run list to the edited cell's dependents as soon as `revDepsByCell` held any entry, even with `depGraphComplete` false. A formula that was never evaluated has no recorded edges, so it was left off the list and kept a stale value. The warm-up closes most cases after open but not sheets where the flag never turns true (a sparse tab holding a formula keeps the forced pass from completing it).
 
@@ -769,3 +769,61 @@ Not covered:
 - The window where the flag is false (before the warm-up finishes, and after each clear until the re-warm completes) was not timed in S15; S15 measures the steady state of a never-true flag and of a true flag. Re-warm churn in collaboration (K17) makes the full pass more frequent in rooms.
 - The cost is measured at one size (500 formulas, 1 dependent). Larger sheets with a never-true flag will pay proportionally more per commit; a fix is to make the flag true (hydrate or index sparse tabs in the warm-up), not done here.
 - No browser check.
+
+## D3 (package side): `rebuildLocalStore` (Task 6, 2026-10-26, uncommitted)
+
+Today the app's heal deletes the sheet's y-indexeddb database and remounts, so edits that exist only in the live document are lost. The package now offers `DSheetEditorHandle.rebuildLocalStore()`: destroy the provider, delete the database, attach a new provider to the same live `Y.Doc`, wait for `whenSynced`. The document is never replaced. The app side (calling it instead of delete-and-remount, passing `onIndexedDbError`) is in dsheets.new and is not part of this repo.
+
+**Correctness (repro test, `src/editor/utils/rebuild-indexeddb-store.test.ts`, `fake-indexeddb/auto`).** 50 local edits are persisted, then the store is healed.
+
+| Case | Before (delete, reopen fresh doc) | After (`rebuildIndexedDbStore`) |
+|---|---|---|
+| Fingerprint of a fresh doc opened on the same database name | `AA==:0` (all 50 edits lost; live doc was `AY3/48QDMg==:5`) | equals the live doc's fingerprint |
+| Rows in the `updates` store after the call | n/a | exactly 1; a stale row planted before the call is gone |
+| Live `Y.Doc` | n/a | same instance, content intact |
+
+Failing run (the module did not exist yet; `task-6-failing.txt`):
+
+```
+FAIL  src/editor/utils/rebuild-indexeddb-store.test.ts
+Error: Cannot find module './rebuild-indexeddb-store' imported from '.../rebuild-indexeddb-store.test.ts'
+Test Files  1 failed (1)   Tests  no tests
+```
+
+Passing run (`task-6-passing.txt`): `rebuild-indexeddb-store.failure.test.ts (1 test)`, `rebuild-indexeddb-store.test.ts (5 tests)`, 6 passed.
+
+**Time on the S4 old sheet** (100x10, 100 sessions; fake-indexeddb in Node, **not browser timing**; 10 runs; `docs/perf/bench/results/d3.json`): before (destroy, delete, reopen) median 0.5 ms (p95 12.4), cheap only because it drops the data; after (`rebuildIndexedDbStore`, rewrites the full state) median 9.44 ms (p95 11.7).
+
+What changed:
+
+- `rebuild-indexeddb-store.ts`: `rebuildIndexedDbStore(dsheetId, doc, current, onCreated?)`. A delete that is blocked by another tab resolves (as the app's heal util does); the new open then waits for that tab. If `whenSynced` rejects, the new provider is destroyed and the error is rethrown.
+- `use-editor-sync.tsx`: `rebuildLocalStore` is a no-op when read-only, sync is off or there is no id. Concurrent calls share one promise. It never bumps the bootstrap generation: it waits for the running bootstrap; a bootstrap or refresh that starts during the write waits for the rebuild; an unmount or a new bootstrap during the write destroys the new provider and rejects. The new provider and its `'error'` listener (to `onIndexedDbError`) are set before `whenSynced`, as in the bootstrap. A failed rebuild leaves `persistenceRef` null and reports the error.
+- Wired into the handle (`types.ts`, `editor-handle.ts`, `editor-context.tsx`).
+
+Ruling: the first version bumped the bootstrap generation, which would have left a bootstrap in flight with `syncStatus` stuck on "syncing" (reviewer, Critical). Fixed as above (two fix rounds).
+
+Tests: 6 in 2 files plus a handle-forwarding case in `editor-handle.test.ts`. Unit suite 42 files, 327 tests at Task 6; `tsc` clean.
+
+Not covered: the hook's ordering logic (in-flight bootstrap, refresh during a rebuild, unmount during the wait) has no automated test because vitest here has no React renderer; it is covered by code review only. A blocked delete has no timeout on the new `whenSynced`. A rebuild that waits on a bootstrap started by a changed `dsheetId` or `ydoc` uses the old closure values. Not run in the browser.
+
+## D5 (package side): `appendDsheetUpdate` (Task 7, S12, 2026-10-26, uncommitted)
+
+`appendDsheetUpdate(dsheetId, update)` in `src/persistence.ts` (shipped through the `./persistence` entry, like `mergeDsheetContent`; it is not exported from `src/index.ts`, which exports none of the persistence helpers). It adds exactly one row to the y-indexeddb `updates` store: no document is built and no full copy is written. If the database does not exist it is created with y-indexeddb's schema. The app (dsheets.new) calls it with `Y.diffUpdate(remote, localStateVector)`.
+
+**S12** (`npx vite-node docs/perf/bench/stabilize-bench.ts -- before-d5 --only=S4`, then `-- after-d5 --only=S4`). S4 old sheet (1.08 MB body), one-cell remote change, fake-indexeddb in Node (**not browser timing**), 12 runs after a warm-up, bytes counted at `IDBObjectStore.add/put`. Both arms use the same harness (`runArm`); the before arm ran before the function existed.
+
+| S12 | Before: `mergeDsheetContent` | After: `appendDsheetUpdate` |
+|---|---|---|
+| Median (p95) | 113.5 ms (155.1) in `before-d5`; 110.0 ms (162.5) in `after-d5` | 0.235 ms (3.9) |
+| Bytes written to `updates` | 1,088,509 / 1,083,447 (the remote body, a full copy) | 1,580 (equal to the delta size) |
+| Rows written | 1 | 1 |
+
+The two runs differ by a few bytes because the bench uses random client ids. The time ratio is large mostly because the after arm builds no document; read the milliseconds as relative cost, the bytes as exact.
+
+Failing run (`task-7-failing.txt`): `TypeError: appendDsheetUpdate is not a function` in 5 of 5 tests. Passing: `src/persistence.append.test.ts`, 7 tests (one row added; row bytes equal the delta; replaying all rows gives the same content, state vector and fingerprint as `mergeDsheetContent`; the live doc untouched; creates the schema on a new database; rejects a non-`Uint8Array`; rejects when `indexedDB` is missing; rejects a database without an `updates` store; a timed-out open that succeeds late closes the connection and writes nothing).
+
+Rulings: the plan said "export from `src/index.ts`"; persistence helpers ship through `./persistence`, so this one does too (cost if wrong: none for the app, which already imports `mergeDsheetContent` from there). Reviewer Important findings fixed in one round: a late open success after a timeout wrote the row and leaked the connection; `onblocked` rejected a request that can still succeed; no `onversionchange` close.
+
+Tests: unit suite 43 files, 334 tests; `tsc` clean.
+
+Not covered: a delta not diffed against the true local state vector is not detected (Yjs would keep it pending). Each call adds a row, so the row count grows until the next compaction. Another tab with the database attached sees the row only on its next attach. A timeout during an in-flight add can still commit the row (a retry is safe, Yjs applies duplicates idempotently). The D5 steps in the app (hash skip, one body read, `mergeUpdates` upload body) are not part of this repo.

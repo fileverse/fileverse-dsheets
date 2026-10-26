@@ -4,28 +4,30 @@ Written 2026-10-26. Branch `maitra/stabilize-package`. Plan: `docs/superpowers/p
 
 ## State
 
-Done and committed: A1–A5, B1–B6, C1–C8 (with the C8 warm-up). Done, uncommitted (awaiting user check): G4 = Task 17 (B5 case-sensitive) and Task 16 (narrow only when `depGraphComplete`). Last commits before G4: `1587101` B3, `8b18a94` B5, `f2f0972` results doc. At G3 the unit suite had 39 files and 318 tests passing and `tsc` showed no errors in touched files. [Not re-run after the docs edits; they touch only `.md` files.]
+Done and committed: A1–A5, B1–B6, C1–C8 (with the C8 warm-up). Done and committed: G4 = Task 17 (`782aacd`, B5 case-sensitive) and Task 16 (`627aeda`, narrow only when `depGraphComplete`). Last commits before G4: `1587101` B3, `8b18a94` B5, `f2f0972` results doc. At G3 the unit suite had 39 files and 318 tests passing and `tsc` showed no errors in touched files. [Not re-run after the docs edits; they touch only `.md` files.]
 
-Not done: 10 tasks (6, 7, 8, 9–14), then a final review.
+Done, uncommitted (awaiting user check): G5 = Task 6 (`rebuildLocalStore`, D3 package side) and Task 7 (`appendDsheetUpdate`, D5 package side, S12). Unit suite 43 files, 334 tests; `tsc` clean.
+
+Not done: 8 tasks (8, 9–14), then a final review.
 
 | Order | Group | Task | What | Reviewer |
 |---|---|---|---|---|
 | done | G4 | 17 | B5 compares tab prefixes exactly and case-sensitively (spec says so; the shipped code is case-insensitive) | opus |
 | done | G4 | 16 | Commit-path narrowing only when `depGraphComplete` is true (July bug, commit 1611aee) | opus |
-| 3 | G5 | 6 | `rebuildLocalStore` (D3, package side) | sonnet |
-| 4 | G5 | 7 | `appendDsheetUpdate` (D5, package side), bench S12 | sonnet |
+| done | G5 | 6 | `rebuildLocalStore` (D3, package side) | sonnet |
+| done | G5 | 7 | `appendDsheetUpdate` (D5, package side), bench S12 | sonnet |
 | 5 | G6 | 8 | Format gate on `meta.format` (F), bench S13 | sonnet |
 | 6 | G7 | 9–14 | E1–E6 fewer whole-UI re-renders (demo render counters) | sonnet |
 | 7 | end | | Final whole-branch review on the most capable model; triage the minors below | |
 
-Each task has a full brief in the plan. S9–S11, S14 and S15 are used; S12 and S13 belong to Tasks 7 and 8.
+Each task has a full brief in the plan. S9–S12, S14 and S15 are used; S13 belongs to Task 8.
 
 ## How to resume
 
 Paste this into a new session:
 
 ```text
-Resume P1 Stabilise. Plan: docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md (Status and Next at the top), branch maitra/stabilize-package. Read docs/perf/NEXT.md first. Use superpowers:subagent-driven-development. Sonnet implementers; opus reviewer for formula work; batch small same-shape tasks. Do G5 now: Task 6, then Task 7. Never commit, stage or stash. Stop after G4 for my check with commit messages, descriptions and numbered test cases per commit.
+Resume P1 Stabilise. Plan: docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md (Status and Next at the top), branch maitra/stabilize-package. Read docs/perf/NEXT.md first. Use superpowers:subagent-driven-development. Sonnet implementers; opus reviewer for formula work; batch small same-shape tasks. Do G6 now: Task 8. Never commit, stage or stash. Stop after G6 for my check with commit messages, descriptions and numbered test cases per commit.
 ```
 
 The ledger `.superpowers/sdd/2026-10-26-p1-stabilise-remaining/progress.md` is git-ignored, so it exists only on this machine. If it is gone, rebuild state from the plan's Status table and `git log`.

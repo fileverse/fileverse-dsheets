@@ -12,13 +12,14 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | B1 | done | cf58246 | |
 | B2, B4, B6 | done | b3e38a9 | |
 | **B3** | done | 1587101 | Deviation from the Fix text below: the guard is not held while the remount is deferred; it begins once right before the remount (see B3). Browser-checked. |
-| **B5** | done | 8b18a94; case rule fixed in Task 17, uncommitted | Shipped case-insensitive; Task 17 made the comparison exact and case-sensitive, as this spec says. |
+| **B5** | done | 8b18a94; case rule fixed in Task 17 (782aacd) | Shipped case-insensitive; Task 17 made the comparison exact and case-sensitive, as this spec says. |
 | C1, C3 | done | 7a1a19e | |
 | C2, C6, C7 | done | 03fc133, 4ef4fd4, 9290e13 | |
 | **C8** | done | fb80dfc, a324b38 | Plus a warm-up pass after open so the flag turns true; shadow indexes merged at completion. |
 | **C4, C5** | done | 29843e6 | C5 browser timing: 10k single-line cells 1,827 ms to 49 ms median. |
-| July narrowing bug (commit 1611aee, not a spec item) | done (Task 16), uncommitted | | Commit-path narrowing waits for a complete graph; flag-false sheets run the full list per commit (S15: 0.21 ms to 3.9 ms at 500 formulas). |
-| D3, D5 (package side) | not started | | Plan Tasks 6, 7. |
+| July narrowing bug (commit 1611aee, not a spec item) | done (Task 16, 627aeda) | | Commit-path narrowing waits for a complete graph; flag-false sheets run the full list per commit (S15: 0.21 ms to 3.9 ms at 500 formulas). |
+| D3 (package side) | done, uncommitted (Task 6) | | `rebuildLocalStore()` on the editor handle; results doc "D3 (package side)". App side (call it instead of delete-and-remount, `onIndexedDbError`) is in dsheets.new. |
+| D5 step 3 (package side) | done, uncommitted (Task 7) | | `appendDsheetUpdate` in `./persistence` (not `src/index.ts`); S12: 113 ms and 1.09 MB written to 0.24 ms and 1,580 B (Node, fake-indexeddb). Other D5 steps are app side. |
 | F | not started | | Plan Task 8. |
 | E1–E6 | not started | | Plan Tasks 9–14. |
 | D0–D2, D4, D6 (app side, dsheets.new) | not in this repo | | See NEXT.md. |
@@ -226,7 +227,7 @@ Consequences, accepted: while the remount is deferred, every remote surgical eve
 - A reference shifts only when it points at the edited tab: its prefix names that tab, or it has no prefix and the formula is on that tab.
 - Prefixes are compared unquoted (`'My Sheet'!A1` names My Sheet) and exactly, as the engine resolves tab names: case-sensitive (`getSheetIdByName`, `core/utils/index.ts:131-138`).
 
-**Implemented (8b18a94); case rule fixed in Task 17, uncommitted:** `functionStrChange` takes `tabs: { editedTab, formulaTab }` as its last argument and the tokenizer keeps a quoted tab name in one token. The comparison was first shipped case-insensitive; Task 17 (uncommitted) made it exact and case-sensitive, matching this section.
+**Implemented (8b18a94); case rule fixed in Task 17 (782aacd):** `functionStrChange` takes `tabs: { editedTab, formulaTab }` as its last argument and the tokenizer keeps a quoted tab name in one token. The comparison was first shipped case-insensitive; Task 17 (782aacd) made it exact and case-sensitive, matching this section.
 
 Part 2 removes this rewrite altogether (formulas store row IDs).
 
@@ -279,7 +280,7 @@ Note: today's code measures with the wrong font (`ff` index used as a family nam
 
 **C8. No formula pass for a cell nothing depends on.**
 
-**Implemented (fb80dfc, a324b38).** The skip runs only when `depGraphComplete` is true. Because only forced passes complete the graph, a dependency-only warm-up (`formula-warmup.ts`) runs in idle slices after open and publishes its edges into shadow indexes that are merged only when the whole warm-up finishes, so a partial graph never narrows a commit. Task 16 (uncommitted): the narrowing added at commit 1611aee (July) used to apply on `revDepsByCell.size > 0` while the flag was false, which could leave a never-evaluated formula stale. It now narrows only when `depGraphComplete` is true. Sheets where the flag never turns true (for example a sparse tab holding a formula) run the full list on every commit: slower, correct (S15, 500 formulas: 0.211 ms to 3.897 ms; flag-true sheets 0.155 ms to 0.158 ms).
+**Implemented (fb80dfc, a324b38).** The skip runs only when `depGraphComplete` is true. Because only forced passes complete the graph, a dependency-only warm-up (`formula-warmup.ts`) runs in idle slices after open and publishes its edges into shadow indexes that are merged only when the whole warm-up finishes, so a partial graph never narrows a commit. Task 16 (627aeda): the narrowing added at commit 1611aee (July) used to apply on `revDepsByCell.size > 0` while the flag was false, which could leave a never-evaluated formula stale. It now narrows only when `depGraphComplete` is true. Sheets where the flag never turns true (for example a sparse tab holding a formula) run the full list on every commit: slower, correct (S15, 500 formulas: 0.211 ms to 3.897 ms; flag-true sheets 0.155 ms to 0.158 ms).
 
 Today the commit-time pass (`core/modules/formula.ts:2466-2518`) narrows the formula list to the edited cell's dependents only when the graph has entries and the dependents set is not empty. Otherwise it processes every formula: a commit to a cell no formula refers to re-tokenizes every formula and walks every referenced range. The teammate audit measured 11 ms against 2 ms at 500 `SUM(A:T)` formulas; it grows with formulas times range size.
 
