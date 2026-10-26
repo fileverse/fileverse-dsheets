@@ -20,7 +20,7 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | July narrowing bug (commit 1611aee, not a spec item) | done (Task 16, 627aeda) | | Commit-path narrowing waits for a complete graph; flag-false sheets run the full list per commit (S15: 0.21 ms to 3.9 ms at 500 formulas). |
 | D3 (package side) | done, committed `4d181b5` (Task 6) | | `rebuildLocalStore()` on the editor handle; results doc "D3 (package side)". App side (call it instead of delete-and-remount, `onIndexedDbError`) is in dsheets.new. |
 | D5 step 3 (package side) | done, committed `4603bd9` (Task 7) | | `appendDsheetUpdate` in `./persistence` (not `src/index.ts`); S12: 113 ms and 1.09 MB written to 0.24 ms and 1,580 B (Node, fake-indexeddb). Other D5 steps are app side. |
-| F | done, uncommitted (Task 8) | | `format-gate.ts`; S13: gate costs 0.9 microseconds per open, paired medians within 1 ms; results doc "F". Every writer reachable without the toolbar is guarded. |
+| F | done, committed `71d758d` (Task 8) | | `format-gate.ts`; S13: gate costs 0.9 microseconds per open, paired medians within 1 ms; results doc "F". Every writer reachable without the toolbar is guarded. |
 | E1–E6 | not started | | Plan Tasks 9–14. |
 | D0–D2, D4, D6 (app side, dsheets.new) | not in this repo | | See NEXT.md. |
 

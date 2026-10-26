@@ -828,7 +828,7 @@ Tests: unit suite 43 files, 334 tests; `tsc` clean.
 
 Not covered: a delta not diffed against the true local state vector is not detected (Yjs would keep it pending). Each call adds a row, so the row count grows until the next compaction. Another tab with the database attached sees the row only on its next attach. A timeout during an in-flight add can still commit the row (a retry is safe, Yjs applies duplicates idempotently). The D5 steps in the app (hash skip, one body read, `mergeUpdates` upload body) are not part of this repo.
 
-## F: format gate on `meta.format` (Task 8, S13, 2026-10-26, uncommitted)
+## F: format gate on `meta.format` (Task 8, S13, 2026-10-26, commit 71d758d)
 
 New `src/editor/utils/format-gate.ts`: `SUPPORTED_FORMAT = 1`, `readFormatVersion(doc, dsheetId)` (missing map, key or a non-number means 1; the read does not create the map), `isFormatLocked(doc, dsheetId?)` and `watchFormatGate(doc, dsheetId, onLocked)`. The editor reads `${dsheetId}/meta` key `format` after bootstrap and observes it while open. Above 1 it locks that sheet on that doc: the grid turns read-only (`isReadOnly` the prop OR the lock; `useEditorSync` still gets the raw prop, because the combined value is in the bootstrap dependency lists and would re-bootstrap IndexedDB on lock), the write helpers return early, and the alert `This sheet was updated. Reload to continue.` shows. The lock is per doc and sheet id, and `onLocked` runs once per watcher, so an effect re-run re-locks the UI.
 

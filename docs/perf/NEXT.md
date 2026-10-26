@@ -8,7 +8,7 @@ Done and committed: A1–A5, B1–B6, C1–C8 (with the C8 warm-up). Done and co
 
 Done and committed: G5 = Task 6 (`4d181b5`, `rebuildLocalStore`, D3 package side) and Task 7 (`4603bd9`, `appendDsheetUpdate`, D5 package side, S12); docs `0c55ba4`. Unit suite 43 files, 334 tests; `tsc` clean.
 
-Done, uncommitted (awaiting user check): G6 = Task 8 (format gate F, S13). Unit suite 44 files, 346 tests; `tsc` clean.
+Done and committed: G6 = Task 8 (`71d758d`, format gate F, S13); docs `4122b95`. Unit suite 44 files, 346 tests; `tsc` clean.
 
 Not done: 6 tasks (9–14), then a final review.
 

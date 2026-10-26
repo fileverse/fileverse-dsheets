@@ -16,7 +16,7 @@
 | G3 | Task 4 (B3), Task 5 (B5) | committed, browser-checked | 1587101 (B3), 8b18a94 (B5), f2f0972 (results doc) |
 | G4 | Task 17 (B5 case rule fix), Task 16 (July narrowing bug) | done, committed: Task 17 `782aacd`, Task 16 `627aeda` | |
 | G5 | Task 6 (D3), Task 7 (D5) | done, committed: Task 6 `4d181b5`, Task 7 `4603bd9`; docs `0c55ba4` | |
-| G6 | Task 8 (F) | done, uncommitted, awaiting user check | |
+| G6 | Task 8 (F) | done, committed: Task 8 `71d758d`; docs `4122b95` | |
 | G7 | Tasks 9–14 (E1–E6) | not started | |
 | end | final whole-branch review; triage deferred minors and open findings below | not started | |
 
@@ -43,7 +43,7 @@ Bench scenario numbers: S9–S15 are all used (S13 = Task 8).
 
 1. **G4 done** (Task 17 `782aacd`, Task 16 `627aeda`). Unit suite 40 files, 321 tests; tsc clean.
 2. **G5 done** (Task 6 `4d181b5`, Task 7 `4603bd9`, docs `0c55ba4`). Unit suite 43 files, 334 tests; tsc clean. Package APIs for D3/D5; app side lives in dsheets.new, outside this repo.
-3. **G6 done** (Task 8, F, S13; uncommitted). Unit suite 44 files, 346 tests; tsc clean. **G7 next** (Tasks 9–14), then the final review. After each group the controller stops for the user to check and commit, as before.
+3. **G6 done** (Task 8, F, S13; `71d758d`, docs `4122b95`). Unit suite 44 files, 346 tests; tsc clean. **G7 next** (Tasks 9–14), then the final review. After each group the controller stops for the user to check and commit, as before.
 
 ## Global Constraints
 
@@ -250,7 +250,7 @@ Test: `denomination-scan.test.ts`. Bench: S10.
 - [ ] Implement with the same database and store names `persistence.ts` uses; tests; type check.
 - [ ] **After:** S12 with `appendDsheetUpdate`, `-- after-d5`; expected bytes written equal to the delta size. Results section.
 
-### Task 8: Format gate on `meta.format` (F) — DONE, uncommitted (G6)
+### Task 8: Format gate on `meta.format` (F) — DONE, committed 71d758d (G6)
 
 **Files:** Create `src/editor/utils/format-gate.ts`. Modify `src/editor/contexts/editor-context.tsx` (start after bootstrap; on lock, set read-only and show the prompt with the existing toast or banner) and `src/editor/utils/update-ydoc.ts` (write helpers return early while locked). Test: `format-gate.test.ts`. Bench: S13.
 
