@@ -82,6 +82,7 @@ import {
   initFormulaWorkerSnapshot,
   invalidateFormulaWorkerSnapshot,
 } from '@sheet-engine/core/modules/formula-worker-bridge';
+import { scheduleFormulaWarmup } from '@sheet-engine/core/modules/formula-warmup';
 import { syncAndDemoteInactiveFlowdata } from '@sheet-engine/core/api/sheet-flowdata-lifecycle';
 import { ensureSheetFlowdata } from '@sheet-engine/core/api/sheet';
 import { setActiveDraftContext } from '@sheet-engine/core/utils/active-draft-context';
@@ -114,6 +115,7 @@ import ContextMenu from '../ContextMenu';
 import SVGDefines from '../SVGDefines';
 import SheetTabContextMenu from '../ContextMenu/SheetTab';
 import { generateAPIs } from './api';
+import { applyDenominationBanner, hasDenominatedCell } from './denomination-scan';
 import { ModalProvider } from '../../context/modal';
 import FilterMenu from '../ContextMenu/FilterMenu';
 import SheetList from '../SheetList';
@@ -843,54 +845,33 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       getCryptoPrice('bitcoin', 'usd');
     }, []);
 
+    // Crypto-denomination banner (C4): scan the grid in idle time when the
+    // data identity changes, not on every selection change.
+    const denominationGridData = getFlowdata(context);
+    const lastDenominatedRef = useRef<boolean | null>(null);
     useEffect(() => {
-      setContext((ctx: any) => {
-        const gridData = getFlowdata(ctx);
-        const cellData = api.dataToCelldata(gridData as any);
-        const denominatedUsed = (cellData ?? []).some((cell: any) => {
-          const value = cell?.v?.m?.toString();
-          return (
-            value?.includes('BTC') ||
-            value?.includes('ETH') ||
-            value?.includes('SOL')
-          );
-        });
-        const denoWarn = document.getElementById('denomination-warning');
-        const scrollBar = document.getElementsByClassName(
-          'luckysheet-scrollbar-x',
-        )[0] as HTMLElement;
-        const addRowBar = document.getElementById(
-          'luckysheet-bottom-controll-row',
+      const applyBanner = () => {
+        const denominatedUsed = hasDenominatedCell(
+          (denominationGridData ?? []) as any,
         );
-        if (denominatedUsed && denoWarn) {
-          denoWarn.style.display = 'block';
-          denoWarn.style.left = '0px';
-          if (scrollBar) {
-            scrollBar.setAttribute(
-              'style',
-              'bottom: 36px !important; width: calc(100% - 60px);',
-            );
-          }
-          // Lift add-row bar so its white band sits directly on top of the disclaimer bar (no grid gap).
-          if (addRowBar) {
-            addRowBar.style.bottom = '54px';
-          }
-        } else if (!denominatedUsed && denoWarn) {
-          denoWarn.style.display = 'none';
-          denoWarn.style.left = '-9999px';
-          if (scrollBar) {
-            scrollBar.setAttribute(
-              'style',
-              'bottom: 10px !important; width: calc(100% - 60px);',
-            );
-          }
-          if (addRowBar) {
-            addRowBar.style.bottom = '38px';
-          }
-        }
-        return ctx;
-      });
+        lastDenominatedRef.current = denominatedUsed;
+        applyDenominationBanner(denominatedUsed);
+      };
+      const w = window as any;
+      if (typeof w.requestIdleCallback === 'function') {
+        const handle = w.requestIdleCallback(applyBanner, { timeout: 1000 });
+        return () => w.cancelIdleCallback?.(handle);
+      }
+      const timer = setTimeout(applyBanner, 0);
+      return () => clearTimeout(timer);
+    }, [denominationGridData, context.currentSheetId]);
 
+    useEffect(() => {
+      // The host supplies #denomination-warning and may mount it after the
+      // scan ran: re-apply the last scan result (no scan) on selection change.
+      if (lastDenominatedRef.current != null) {
+        applyDenominationBanner(lastDenominatedRef.current);
+      }
       if (context.luckysheet_select_save != null) {
         mergedSettings.hooks?.afterSelectionChange?.(
           context.currentSheetId,
@@ -976,6 +957,30 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
         (sheet) => sheet.id === context?.currentSheetId,
       );
     }, [context?.luckysheetfile, context?.currentSheetId]);
+
+    // C8 warm-up: record every formula's dependencies in idle time once the
+    // data is ready, and again after each markDepGraphIncomplete (debounced),
+    // so a commit to a cell nothing reads can skip the formula pass. It reads
+    // the context through the ref and never calls setContext.
+    const formulaWarmupRef = useRef<ReturnType<
+      typeof scheduleFormulaWarmup
+    > | null>(null);
+    const formulaWarmupTriggeredRef = useRef(false);
+    useEffect(() => {
+      const warmup = scheduleFormulaWarmup(() => contextRef.current);
+      formulaWarmupRef.current = warmup;
+      formulaWarmupTriggeredRef.current = false;
+      return () => {
+        warmup.dispose();
+        formulaWarmupRef.current = null;
+      };
+    }, []);
+    const sheetDataReady = !!currentSheet?.data?.length;
+    useEffect(() => {
+      if (!sheetDataReady || formulaWarmupTriggeredRef.current) return;
+      formulaWarmupTriggeredRef.current = true;
+      formulaWarmupRef.current?.trigger();
+    }, [sheetDataReady]);
 
     useEffect(() => {
       if (context?.hooks?.calcChainChange) {

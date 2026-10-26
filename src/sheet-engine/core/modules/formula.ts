@@ -430,6 +430,17 @@ export class FormulaCache {
   markDepGraphIncomplete() {
     this.depGraphComplete = false;
     this.depGraphEpoch += 1;
+    this.depGraphIncompleteListeners.forEach((listener) => listener());
+  }
+
+  /** Called after each `markDepGraphIncomplete` (the C8 warm-up re-runs). */
+  depGraphIncompleteListeners = new Set<() => void>();
+
+  onDepGraphIncomplete(listener: () => void): () => void {
+    this.depGraphIncompleteListeners.add(listener);
+    return () => {
+      this.depGraphIncompleteListeners.delete(listener);
+    };
   }
 
   constructor() {
