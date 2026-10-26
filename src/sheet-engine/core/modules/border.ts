@@ -1,7 +1,41 @@
 import _ from 'lodash';
+import { isDraft } from 'immer';
 import { Context, getFlowdata } from '../context';
 import { CellMatrix } from '../types';
 import { getSheetIndex } from '../utils';
+
+type MergeRect = { r: number; c: number; rs: number; cs: number };
+
+/** Per-row index of merges, built once per `config.merge` object (C6). */
+const mergeRowIndexCache = new WeakMap<object, Map<number, MergeRect[]>>();
+const NO_MERGES: MergeRect[] = [];
+
+/**
+ * Merges whose rows include `row`. The border pass used to scan every merge
+ * for every bordered row (entries x rows x merges per draw); the checks that
+ * follow are unchanged, so the result is the same.
+ */
+function mergesCoveringRow(
+  merge: Record<string, MergeRect> | undefined,
+  row: number,
+): MergeRect[] {
+  if (!merge) return NO_MERGES;
+  let index = mergeRowIndexCache.get(merge);
+  if (!index) {
+    index = new Map();
+    Object.keys(merge).forEach((key) => {
+      const rect = merge[key];
+      if (!rect) return;
+      for (let r = rect.r; r <= rect.r + rect.rs - 1; r += 1) {
+        let list = index!.get(r);
+        if (!list) index!.set(r, (list = []));
+        list.push(rect);
+      }
+    });
+    mergeRowIndexCache.set(merge, index);
+  }
+  return index.get(row) ?? NO_MERGES;
+}
 
 // 获取表格边框数据计算值
 export function getBorderInfoComputeRange(
@@ -121,9 +155,7 @@ export function getBorderInfoComputeRange(
               }
             }
 
-            const mc = cfg.merge || {};
-            Object.keys(mc).forEach((key) => {
-              const { c, r, cs, rs } = mc[key];
+            mergesCoveringRow(cfg.merge, bd_r).forEach(({ c, r, cs, rs }) => {
               if (
                 bd_c1 <= c + cs - 1 &&
                 bd_c1 > c &&
@@ -174,9 +206,7 @@ export function getBorderInfoComputeRange(
                 };
               }
             }
-            const mc = cfg.merge || {};
-            Object.keys(mc).forEach((key) => {
-              const { c, r, cs, rs } = mc[key];
+            mergesCoveringRow(cfg.merge, bd_r).forEach(({ c, r, cs, rs }) => {
               if (
                 bd_c2 < c + cs - 1 &&
                 bd_c2 >= c &&
@@ -224,9 +254,7 @@ export function getBorderInfoComputeRange(
               }
             }
 
-            const mc = cfg.merge || {};
-            Object.keys(mc).forEach((key) => {
-              const { c, r, cs, rs } = mc[key];
+            mergesCoveringRow(cfg.merge, bd_r1).forEach(({ c, r, cs, rs }) => {
               if (
                 bd_r1 <= r + rs - 1 &&
                 bd_r1 > r &&
@@ -278,9 +306,7 @@ export function getBorderInfoComputeRange(
               }
             }
 
-            const mc = cfg.merge || {};
-            Object.keys(mc).forEach((key) => {
-              const { c, r, cs, rs } = mc[key];
+            mergesCoveringRow(cfg.merge, bd_r2).forEach(({ c, r, cs, rs }) => {
               if (
                 bd_r2 < r + rs - 1 &&
                 bd_r2 >= r &&
@@ -1516,6 +1542,93 @@ export function getBorderInfoComputeRange(
   }
 
   return borderInfoCompute;
+}
+
+type BorderComputeCacheEntry = {
+  borderInfo: unknown;
+  merge: unknown;
+  rowhidden: unknown;
+  colhidden: unknown;
+  rows: number;
+  cols: number;
+  bounds: string;
+  result: ReturnType<typeof getBorderInfoComputeRange>;
+};
+
+/** Up to one entry per frozen pane: each is drawn with its own bounds. */
+const BORDER_CACHE_PER_SHEET = 4;
+const borderComputeCache = new Map<string, BorderComputeCacheEntry[]>();
+
+/**
+ * getBorderInfoComputeRange for the current sheet's canvas draw, cached (C6).
+ * The draw re-expanded every borderInfo entry on every repaint. Keyed by the
+ * identities of borderInfo, merge, rowhidden and colhidden (Immer gives each
+ * a new identity on change; merged cells' `mc` follows `merge`), the grid
+ * size and the drawn bounds, so redraws for scroll-back, selection moves,
+ * edits and remote cells reuse the result. Callers only read it.
+ */
+export function getBorderInfoComputeRangeCached(
+  ctx: Context,
+  dataset_row_st: number,
+  dataset_row_ed: number,
+  dataset_col_st: number,
+  dataset_col_ed: number,
+) {
+  const cfg = ctx.config;
+  const data = getFlowdata(ctx);
+  if (!cfg || !data || isDraft(cfg)) {
+    return getBorderInfoComputeRange(
+      ctx,
+      dataset_row_st,
+      dataset_row_ed,
+      dataset_col_st,
+      dataset_col_ed,
+    );
+  }
+  const key = {
+    borderInfo: cfg.borderInfo,
+    merge: cfg.merge,
+    rowhidden: cfg.rowhidden,
+    colhidden: cfg.colhidden,
+    rows: data.length,
+    cols: data[0]?.length ?? 0,
+    bounds: `${dataset_row_st}_${dataset_row_ed}_${dataset_col_st}_${dataset_col_ed}`,
+  };
+  const entries = borderComputeCache.get(ctx.currentSheetId) ?? [];
+  const hit = entries.find(
+    (e) =>
+      e.borderInfo === key.borderInfo &&
+      e.merge === key.merge &&
+      e.rowhidden === key.rowhidden &&
+      e.colhidden === key.colhidden &&
+      e.rows === key.rows &&
+      e.cols === key.cols &&
+      e.bounds === key.bounds,
+  );
+  if (hit) return hit.result;
+  const result = getBorderInfoComputeRange(
+    ctx,
+    dataset_row_st,
+    dataset_row_ed,
+    dataset_col_st,
+    dataset_col_ed,
+  );
+  // Drop entries computed for older inputs, keep the newest few windows.
+  const fresh = entries.filter(
+    (e) =>
+      e.borderInfo === key.borderInfo &&
+      e.merge === key.merge &&
+      e.rowhidden === key.rowhidden &&
+      e.colhidden === key.colhidden &&
+      e.rows === key.rows &&
+      e.cols === key.cols,
+  );
+  fresh.push({ ...key, result });
+  borderComputeCache.set(
+    ctx.currentSheetId,
+    fresh.slice(-BORDER_CACHE_PER_SHEET),
+  );
+  return result;
 }
 
 export function getBorderInfoCompute(ctx: Context, sheetId?: string) {
