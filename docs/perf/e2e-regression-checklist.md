@@ -1,6 +1,6 @@
 # P1 Stabilise: end-to-end regression checklist
 
-Written 2026-10-26 for branch `maitra/stabilize-package` (changes since `main`: A1–A5, B1–B6, C1–C8 incl. the C8 warm-up). Purpose: confirm existing behaviour still works after the refactor. Format: **do X → expect Y**. The tag in brackets names the change the case guards (see `docs/perf/dsheet-stabilize-spec.md`).
+Written 2026-10-26 for branch `maitra/stabilize-package` (changes since `main`: A1–A5, B1–B6, C1–C8 incl. the C8 warm-up; sections 1.15–1.21 and 2.11–2.13 added later for the July narrowing fix (Task 16), B5 case rule (Task 17), D3/D5 package APIs (Tasks 6, 7), the format gate F (Task 8), and gaps found in a review of the first list; E1–E6 are not implemented yet and have no cases). Purpose: confirm existing behaviour still works after the refactor. Format: **do X → expect Y**. The tag in brackets names the change the case guards (see `docs/perf/dsheet-stabilize-spec.md`).
 
 ## Setup
 
@@ -38,7 +38,7 @@ Cases marked **KNOWN** fail today for a reason already recorded in `docs/perf/KN
 6. Wide range: `=SUM(A1:Z20000)` (more than 10,000 cells); edit a cell inside it → the sum updates, and a formula that refers to that sum also updates. [C8 wide-range path]
 7. Defined name `Sales` covering B2:B10 and `=SUM(Sales)`; edit B5 → the sum updates. [C8 named-range path]
 8. Open a sheet that has many formulas, wait 3 s idle, then edit a precedent cell → dependents update (the warm-up does not change results). Do it right after open too (within 1 s) → dependents still update. [C8 warm-up]
-9. A formula that has never been shown (type `=A1*2` in a cell, do not select anything else), then edit A1 immediately → the formula updates. [July narrowing bug, **KNOWN risk**: may fail on sheets with a sparse tab; record the result]
+9. A formula that has never been shown (type `=A1*2` in a cell, do not select anything else), then edit A1 immediately → the formula updates. [July narrowing bug, fixed by Task 16 (627aeda); must pass now. Also try it on a sheet with a sparse tab: the flag may stay false there, so commits are slower but still correct]
 10. Dynamic array (e.g. `=SORT(A1:A10)` or `=UNIQUE(...)`) → spills; edit a source cell → the spill updates; delete the formula → the spilled cells clear. [C3, F4 not changed; check nothing broke]
 11. Delete a formula cell, then edit what it referred to → no ghost value, no error.
 12. Copy a formula cell (Ctrl+C, Ctrl+V) to another cell → relative references shift; value is right.
@@ -63,7 +63,7 @@ Create tabs `A`, `B`, `C` with a value in B5 of each.
 6. Rename tab `A` → formulas that pointed at it keep working (or are updated, as today; compare with `main`).
 7. Delete a tab other tabs refer to → `#REF!`, no crash.
 8. Add, reorder, hide and unhide tabs → no console error; order survives reload.
-9. **KNOWN (K4):** a reference with the wrong tab-name case (`='a'!B5` when the tab is `A`) is currently shifted by an insert on `A`; the spec says it must not be. Expect this to fail until Task 17.
+9. A reference with the wrong tab-name case (`='a'!B5` when the tab is `A`) → shows `#ERROR` (K30, engine is case-sensitive) and is **not** shifted by an insert on `A`. [Task 17, 782aacd; must pass now]
 
 ### 1.4 Rows and columns [B5, C6, C3]
 
@@ -168,112 +168,252 @@ Create tabs `A`, `B`, `C` with a value in B5 of each.
 
 ### 1.14 Console and stability
 
-1. Run sections 1.1–1.13 with the console open → no new uncaught errors beyond K28 in `KNOWN-ISSUES.md`.
+1. Run sections 1.1–1.13 and 1.15–1.21 with the console open → no new uncaught errors beyond K28 in `KNOWN-ISSUES.md`.
 2. Leave the sheet open 10 minutes idle → no growing memory, no repeating console output.
+
+### 1.15 Actions that must reach Yjs [B6, B2]
+
+Each case: do it, wait 2 s, reload → the result is still there. With a collaborator, the same result shows in C (see 2.11).
+
+1. Select a range, type a value, press Ctrl+Enter → every selected cell gets the value; reload keeps all of them.
+2. Select a range, Ctrl+Enter with a formula `=A1*2` → cells get the formula; reload keeps formulas and values.
+3. Right-click a range → Insert cells, shift right → cells move; reload keeps the new positions. Repeat with shift down.
+4. Right-click a range → Delete cells, shift left → cells move; reload keeps it. Repeat with shift up.
+5. Copy the text `=1+1` from a text editor and paste it into one cell → cell shows 2 with formula `=1+1`; reload keeps the formula (before this work it was lost).
+6. Paste a text formula that refers to another cell (`=A1+1`), then change A1 → the pasted cell updates.
+7. Drag-fill (autofill) a formula cell in each direction (down, up, right, left) → formulas fill; reload keeps all of them. [B2 `dropCell`]
+8. Type a value in A1, switch to another tab within 100 ms (before the commit timer fires), switch back → the value is on the **original** tab, not on the tab you switched to. [B2 sheetId argument]
+9. Type values in two cells in the same tick (Enter, Enter quickly) → both are saved after reload.
+10. Typed formula (`=A1+1`) → reload keeps the formula (not only its value).
+
+### 1.16 Formula dependency index and warm-up edge cases [C8, Task 16]
+
+Open each sheet fresh (reload), then edit a precedent within 1 s and again after 5 s. Expected: dependents update both times.
+
+1. `=SUM(A1, B1)` (space after the comma); edit B1 → sum updates. (Old normal pass missed this.)
+2. `=A1 + B1` (spaces around the operator); edit A1 and B1 → both update the result.
+3. Tab named `Q1-2026` (dash): `='Q1-2026'!A1` on another tab; edit `Q1-2026!A1` → dependent updates.
+4. `=INDEX(A1:A100,5)`; edit A5 and A50 → the result follows A5 only when it is the fifth row; no stale value.
+5. Chain with a very wide range: `B1 =SUM(A1:Z1000)`, `C1 =B1*2`; edit A5 → both B1 and C1 update. (Old code left C1 stale.)
+6. A named range used by `=SUM(Sales)`, then a second formula that uses that sum; edit a cell in `Sales` → both update.
+7. `=INDIRECT("A1")` and `=OFFSET(A1,1,0)` → show `#NAME?` as on `main`; editing A1 changes nothing and shows no new error. [K11]
+8. Time or network formulas (`=NOW()`, a price or data-block function): open the sheet → they do **not** re-run and write results on open (no doc growth, no network call from the warm-up). Check the document size or `ydoc` structs before and after open: flat.
+9. A sheet whose only formula is on a sparse tab (few cells far apart): edit its precedent → dependent updates (flag stays false, full pass runs; may be slower, never stale).
+10. After a **cut and paste** of formula cells: edit a precedent of a moved formula → the moved formula updates (flag turns false, full pass runs).
+11. After an **HTML-table paste** that contains formulas: edit a precedent → dependents update.
+12. After a **remote cell batch** (see 2.3.10): edit a precedent of a formula the peer entered → it updates locally.
+13. Copy-paste of formula cells (not cut) → pasted formulas evaluate and update when precedents change; editing an unrelated cell stays instant (flag stays true).
+14. A formula on tab B refers to `A!B5`, tab A not opened yet in this session (lazy): edit `A!B5` after visiting A → B's formula updates.
+
+### 1.17 Rows and columns on other tabs, parser edges [B5, Task 17]
+
+1. Insert a **column** on `A` → on `B`, `=A!B5` becomes `=A!C5`; `=B5` and `=C!B5` unchanged. Same checks for delete column (`#REF!` for a deleted precedent, others shift left).
+2. Absolute references `=A!$B$5` and ranges that span the insert (`=SUM(A!B2:B9)` with an insert at row 5) → absolute row moves, range end moves; same-tab `$B$5` still correct.
+3. **KNOWN (K6):** a tab whose data is not yet loaded (open the sheet, do not visit tab C), insert a row on `A`, then visit `C` → C's `=A!B5` should read `=A!B6`. Record what it shows.
+4. **KNOWN (K6):** a tab with no calcChain (formulas typed but never evaluated on it) pointing at `A`: insert a row on `A`; record whether it shifts.
+5. **KNOWN (K7):** `=SUM(A!B3,1)` on `B`, delete row 3 on `A` → text is `SUM(#REF!,1)`; record whether the cell shows an error.
+6. **KNOWN (K31):** `=SUM(B5,'oops)+B6` is an invalid formula; inserting a row must not crash.
+7. **KNOWN (K32):** `='A'!B5:'A'!B9` (prefix on both ends) is not shifted; record.
+8. A string containing an apostrophe: `="it's"&B5` → inserting a row shifts only B5; the string is unchanged. [K34]
+9. Tab name containing `!` or `,` if the app allows it → shift is correct or the rename is refused; no crash.
+10. Insert a row on `A`, undo, redo → formulas on `B` and `C` that pointed at `A` return to their previous text exactly each time.
+11. Two tabs with the same name differing only by case (`A` and `a`) if the app allows it → inserting on `A` shifts only references that use `A` exactly.
+12. Insert a row on a tab, then rename that tab, then insert again → still shifts correctly.
+
+### 1.18 Conditional formatting, borders, dropdowns: extra cases [C2, C6, C7, C1]
+
+1. CF rule of type **formula** (custom formula) → still renders (the audit found it crashes with `Cannot assign to read only property 'calculateSheetId'`; record the result on this branch and on `main`).
+2. CF formula rule that refers to another tab → change a cell on the other tab → colours update. [C2 key includes `luckysheetfile`]
+3. CF **date** rule (today, yesterday, next 7 days) → correct; leave the sheet open past midnight, or change the system date and reload → colours move with the date. [C2 key includes today]
+4. CF with live preview open (rule dialog, change the colour) → preview updates, closing without saving restores. [C2 draft state]
+5. Frozen rows and columns plus borders and CF → every pane (top-left, top, left, main) shows borders; scroll across panes → no missing lines. [C6 four panes]
+6. Hide a row inside a bordered or merged area, then show it → borders return. [C6 key includes `rowhidden`]
+7. Dropdown whose options come from a range on another tab → edit the source tab → options update. [C7 key includes source data]
+8. Dropdown cells with coloured pills (multi-select) → pill colours stay by position after choosing, removing and re-adding options.
+9. Vertical alignment top, middle and bottom with zoom 50 % and 150 % → text does not shift or clip (the text-measure key includes the baseline). [C1]
+10. Rich or wrapped text with a font change, then reload → widths and row heights are the same.
+
+### 1.19 Paste sizing and clipboard, extra cases [C5, K24, K27]
+
+1. Paste 10,000 single-line text cells and time it with the console (`performance.now()` around a real paste event) → record the full paste time (parse, write, render). K24: this was never measured.
+2. Paste text into cells whose font size is 20 pt → the row height fits the text (K27: single-line height uses `fs` as pixels; record the result).
+3. Paste a cell whose font is not loaded yet, then load it → widths correct after the font loads (K26).
+4. Paste wrapped cells (long text, wrap on) at zoom 150 % → row heights fit.
+5. Paste an HTML table that contains `<img src=x onerror=alert(1)>` → no alert and no image request (P3 is **not** done on this branch; expect this to fail and record the result; see `dsheet-stabilize-followups-spec.md`).
+6. Paste a text block whose URL contains `=` (`https://a.com/?x=1`) → pasted as text; nothing else in the sheet is re-evaluated or rewritten (P1 follow-up not done; record how long it takes on a sheet with 500 formulas).
+
+### 1.20 Format gate [F, Task 8]
+
+Use the demo console: `window.ydocRef` is the Y.Doc. A sheet's meta map is `ydocRef.getMap(sheetId + '/meta')`; set `format` to 2 to simulate an upgraded sheet. Use a fresh `?sheet=` name.
+
+1. Open a normal sheet (no meta map) → works as before; type, format, insert row; no lock message; no console error.
+2. Set `meta.format = 1` and a non-number (`'2'`, `null`) → no lock.
+3. Set `meta.format = 2` while the sheet is open → within about 1 s the message "This sheet was updated. Reload to continue." shows and the grid and toolbar turn read-only.
+4. After the lock, type in a cell, Enter → nothing is written (compare `ydocRef.store` struct count or `Y.encodeStateVector` before and after).
+5. After the lock, try each of: Delete, paste, Ctrl+Enter, drag-fill, insert/delete row, add and delete sheet, rename sheet, apply a template, import CSV, import XLSX, add comment, add a named range → none of them write to the doc and none crashes.
+6. Reload after the lock (the doc still has `format: 2` in IndexedDB) → the sheet opens locked at once, nothing is written during open (no merge, no migrate, no default-workbook seed).
+7. **KNOWN (K42):** the permission chip still shows the prop's state, and the comment toolbar item still shows while locked; a template apply that returns early leaves the template selected. Record what you see.
+8. Two sheets (`sheetA`, `sheetB`) in one doc: lock `sheetA` only → `sheetB` stays writable.
+9. Set `format` back to 1 after the lock → record whether the sheet unlocks (the code never unlocks; expected: stays locked until reload).
+10. Edits made before the lock are kept after reload (they were ordinary v1 writes).
+11. Open an already-upgraded body (a sheet whose IndexedDB already has `format: 2`) and a published-state merge runs → no merge write happens. [K44: writes made before the watch starts are not blocked except merge and migrate]
+12. Open time on a large sheet is not worse than before (gate cost is about 1 microsecond; check there is no visible delay).
+
+### 1.21 Content-change signal and fingerprint (host API) [A1, A2, fingerprint]
+
+Use the demo's `onContentChange` log or add a temporary `console.log` in the demo; `editorRef.getContentFingerprint()` if the demo exposes the handle. Mark with [Unverified] anything the demo does not expose.
+
+1. Open a new empty sheet → `hasContent` is false, `userEdited` is false; the default-workbook seed does not set `userEdited`.
+2. Type one value → within about 1 s one call with `hasContent` true and `userEdited` true; not one call per keystroke.
+3. Fingerprint changes after: a typed value, a delete (Delete key), removing a filter, removing a dropdown, removing a CF rule, deleting a named range, deleting a tab, undoing a typed value. Each must give a **different** fingerprint than before it.
+4. Fingerprint does **not** change after: a click, a selection change, scrolling, and a Delete on an already empty cell.
+5. `getContentFingerprint()` is `null` right after mount and becomes a string once IndexedDB has synced.
+6. Reload → the fingerprint equals the value before the reload.
+7. Two windows in one room that have converged → both show the same fingerprint.
+8. A remote edit (peer types) → `onContentChange` fires on the receiving side with `userEdited` still false on a window that never typed.
+9. A host that passes the legacy `onChange` → called about once per second while typing, and once on close; no whole-document encode per keystroke (devtools Performance: no 100 ms+ task per edit on the large sheet).
+10. Close the tab right after an edit (pagehide) → the final `onContentChange` is flushed (check with a persisted log, for example `localStorage`).
 
 ---
 
 ## 2. Owner ↔ Collaborator
 
-Notation: **O** = owner window, **C** = collaborator window. After each case wait 2 s, then compare both windows; where it matters, reload C and compare again.
+Notation: **Owner** = owner window, **Collaborator** = collaborator window. After each case wait 2 s, then compare both windows; where it matters, reload the collaborator and compare again.
 
 ### 2.1 Joining and presence
 
-1. O starts collaboration; C joins from the invite link → C sees O's content, both show each other in presence.
-2. O has 5,000 cells before C joins → C gets all of them, correct values and formats.
-3. C reloads → C rejoins and sees the current content.
-4. O reloads → O keeps the content; C's edits made meanwhile are present.
+1. Owner starts collaboration; the collaborator joins from the invite link → the collaborator sees the owner's content, both show each other in presence.
+2. Owner has 5,000 cells before the collaborator joins → the collaborator gets all of them, correct values and formats.
+3. Collaborator reloads → the collaborator rejoins and sees the current content.
+4. Owner reloads → the owner keeps the content; the collaborator's edits made meanwhile are present.
 5. Both close and reopen later → the content is the last state.
 
 ### 2.2 Values and formats syncing [A2, A5, A1]
 
-1. O types `hello` in A1 → C shows `hello` within about 2 s.
-2. C types in B1 → O shows it.
-3. O pastes 500 cells (more than the 50-cell surgical limit) → C gets all cells in one go and the grid does not flicker or reset the selection. [A5]
-4. O types in 10 different cells quickly → C ends with all 10.
-5. O clears a range (Delete) → C's range clears; reload C → still empty (delete sync + fingerprint).
-6. O applies bold, fill and borders to a range → C shows them.
-7. O changes a number format → C shows the new format.
+1. Owner types `hello` in A1 → the collaborator shows `hello` within about 2 s.
+2. Collaborator types in B1 → the owner shows it.
+3. Owner pastes 500 cells (more than the 50-cell surgical limit) → the collaborator gets all cells in one go and the grid does not flicker or reset the selection. [A5]
+4. Owner types in 10 different cells quickly → the collaborator ends with all 10.
+5. Owner clears a range (Delete) → the collaborator's range clears; reload the collaborator → still empty (delete sync + fingerprint).
+6. Owner applies bold, fill and borders to a range → the collaborator shows them.
+7. Owner changes a number format → the collaborator shows the new format.
 8. Both type in different cells at the same time → both values end up in both windows.
 9. Both type in the same cell at the same time → both windows converge to the same value (either one; they must agree).
-10. C selects a cell and scrolls while O edits elsewhere → C's selection and scroll position do not jump. [A4/A5 apply in place]
+10. Collaborator selects a cell and scrolls while the owner edits elsewhere → the collaborator's selection and scroll position do not jump. [A4/A5 apply in place]
 
 ### 2.3 Formulas syncing [A4, C8, C3]
 
-1. O enters `=A1*2` in B1 → C shows the formula and its value.
-2. C changes A1 → both windows show the new B1 value.
-3. O adds 20 formulas → C's grid does not rebuild (selection and scroll stay). [A4]
-4. O deletes a formula → C's cell clears.
-5. C edits a precedent of a long formula chain that O created → both windows converge on the same values.
-6. O edits a cell no formula uses → no change on C besides that cell.
-7. Cross-tab formula `=Sheet2!A1` created by O → C shows the formula and value; C edits `Sheet2!A1` → both update.
+1. Owner enters `=A1*2` in B1 → the collaborator shows the formula and its value.
+2. Collaborator changes A1 → both windows show the new B1 value.
+3. Owner adds 20 formulas → the collaborator's grid does not rebuild (selection and scroll stay). [A4]
+4. Owner deletes a formula → the collaborator's cell clears.
+5. Collaborator edits a precedent of a long formula chain that the owner created → both windows converge on the same values.
+6. Owner edits a cell no formula uses → no change on the collaborator besides that cell.
+7. Cross-tab formula `=Sheet2!A1` created by the owner → the collaborator shows the formula and value; the collaborator edits `Sheet2!A1` → both update.
 8. **KNOWN (K3):** a cross-tab formula whose precedent on another tab is set later may keep an old value; note the result.
-9. Dynamic array by O → C shows the spill; O edits the source → the spill updates on C.
+9. Dynamic array by the owner → the collaborator shows the spill; the owner edits the source → the spill updates on the collaborator.
+10. Owner enters `=A1*2` in B1 (a remote cell batch for the collaborator); the collaborator then edits A1 → B1 updates on the collaborator and on the owner. (C8: a remote batch turns the dependency flag off, so the collaborator takes the full pass.)
 
 ### 2.4 Rows and columns, structural changes [B1, B3, B5, A4]
 
-1. O inserts a row → C shows the inserted row and its data shifted; C's selection stays valid.
-2. O deletes a row → C shows the same.
-3. O inserts a column / deletes a column → same.
-4. O inserts a row while C is **editing a cell** (typed text, not committed) → C's editor keeps the typed text and does not close; after C presses Enter the inserted row appears on C and C's value is saved and visible on O. [B3]
-5. As 2.4.4, but C presses Escape → C's edit is cancelled, the inserted row still appears.
-6. As 2.4.4, but O inserts three rows in a row while C is editing → one refresh after the edit ends, all three rows present.
-7. O inserts a row while C does nothing, then C types immediately → no value lost, no value on the wrong row (watch for the K8 edge: a typed value lands at its old coordinates; record where it lands).
-8. Remote structural change while C has a dropdown open, a context menu open, or a comment open → no crash; the UI closes or stays sensibly.
-9. O inserts 50 rows quickly → C ends with exactly 50 more rows; reload C → same count (watch K2: row counts can differ).
-10. **KNOWN (K1):** after O inserts a row on tab A, C's formulas that referred to A's cells (`=B5`, `=A!B5`) may keep the old text while O's show the shifted text. Record what C shows for same-tab and cross-tab references, and whether values are right after a reload of C.
-11. O and C both insert a row at the same time → both windows end with both rows, in the same order.
-12. O deletes a row C is editing → C's edit is not written to a wrong row; no crash.
+1. Owner inserts a row → the collaborator shows the inserted row and its data shifted; the collaborator's selection stays valid.
+2. Owner deletes a row → the collaborator shows the same.
+3. Owner inserts a column / deletes a column → same.
+4. Owner inserts a row while the collaborator is **editing a cell** (typed text, not committed) → the collaborator's editor keeps the typed text and does not close; after the collaborator presses Enter the inserted row appears on the collaborator and the collaborator's value is saved and visible on the owner. [B3]
+5. As 2.4.4, but the collaborator presses Escape → the collaborator's edit is cancelled, the inserted row still appears.
+6. As 2.4.4, but the owner inserts three rows in a row while the collaborator is editing → one refresh after the edit ends, all three rows present.
+7. Owner inserts a row while the collaborator does nothing, then the collaborator types immediately → no value lost, no value on the wrong row (watch for the K8 edge: a typed value lands at its old coordinates; record where it lands).
+8. Remote structural change while the collaborator has a dropdown open, a context menu open, or a comment open → no crash; the UI closes or stays sensibly.
+9. Owner inserts 50 rows quickly → the collaborator ends with exactly 50 more rows; reload the collaborator → same count (watch K2: row counts can differ).
+10. **KNOWN (K1):** after the owner inserts a row on tab A, the collaborator's formulas that referred to A's cells (`=B5`, `=A!B5`) may keep the old text while the owner's show the shifted text. Record what the collaborator shows for same-tab and cross-tab references, and whether values are right after a reload of the collaborator.
+11. Owner and the collaborator both insert a row at the same time → both windows end with both rows, in the same order.
+12. Owner deletes a row the collaborator is editing → the collaborator's edit is not written to a wrong row; no crash.
 
 ### 2.5 Sheets (tabs) [A3]
 
-1. O adds a sheet → C shows the tab.
-2. O renames, reorders, hides and deletes a sheet → C follows each change.
-3. C switches tabs while O edits another tab → C stays on its tab; O's edit appears when C opens that tab.
-4. O deletes the tab C is viewing → C moves to another tab without an error.
+1. Owner adds a sheet → the collaborator shows the tab.
+2. Owner renames, reorders, hides and deletes a sheet → the collaborator follows each change.
+3. Collaborator switches tabs while the owner edits another tab → the collaborator stays on its tab; the owner's edit appears when the collaborator opens that tab.
+4. Owner deletes the tab the collaborator is viewing → the collaborator moves to another tab without an error.
 5. Both add a sheet at the same time → both sheets exist in both windows.
 
 ### 2.6 Data validation, conditional formatting, filters, named ranges, hyperlinks [A3]
 
-1. O adds a dropdown → C sees the arrow and can choose from it; C's choice reaches O.
-2. O removes the dropdown → C's cell loses the arrow; reload C → still gone.
-3. O adds a CF rule → C's cells colour; O edits the rule → C updates; O deletes the rule → C's colours go away.
-4. O filters a column → C sees the filter state (as before on `main`: filters are shared state; compare); O clears it → C clears it.
-5. O adds and deletes a named range → C's formulas that use it follow.
-6. O adds and removes a hyperlink → C follows.
-7. O freezes rows → C sees frozen rows.
-8. Run 2.6.1–2.6.7 with C making the changes and O observing → same results.
+1. Owner adds a dropdown → the collaborator sees the arrow and can choose from it; the collaborator's choice reaches the owner.
+2. Owner removes the dropdown → the collaborator's cell loses the arrow; reload the collaborator → still gone.
+3. Owner adds a CF rule → the collaborator's cells colour; the owner edits the rule → the collaborator updates; the owner deletes the rule → the collaborator's colours go away.
+4. Owner filters a column → the collaborator sees the filter state (as before on `main`: filters are shared state; compare); the owner clears it → the collaborator clears it.
+5. Owner adds and deletes a named range → the collaborator's formulas that use it follow.
+6. Owner adds and removes a hyperlink → the collaborator follows.
+7. Owner freezes rows → the collaborator sees frozen rows.
+8. Run 2.6.1–2.6.7 with the collaborator making the changes and the owner observing → same results.
 
 ### 2.7 Comments [B4]
 
-1. O adds a comment → C sees the marker; C opens and reads it.
-2. C replies/edits → O sees the update.
-3. O deletes a comment → the marker goes on C.
+1. Owner adds a comment → the collaborator sees the marker; the collaborator opens and reads it.
+2. Collaborator replies/edits → the owner sees the update.
+3. Owner deletes a comment → the marker goes on the collaborator.
 4. Open and close the sheet on both sides 5 times → the stored size does not grow; no stray markers on uncommented cells.
 
 ### 2.8 Undo and redo across users [A4]
 
-1. O types a value; C types a different value in another cell; O presses Ctrl+Z → only O's value is undone; C's value stays.
-2. C undoes its own change → O sees it undone; O's own values stay.
-3. O undoes a row insert while C has typed in the new row → no crash; compare with how `main` behaves.
-4. O redoes → O's change returns; C's changes unaffected.
+1. Owner types a value; the collaborator types a different value in another cell; the owner presses Ctrl+Z → only the owner's value is undone; the collaborator's value stays.
+2. Collaborator undoes its own change → the owner sees it undone; the owner's own values stay.
+3. Owner undoes a row insert while the collaborator has typed in the new row → no crash; compare with how `main` behaves.
+4. Owner redoes → the owner's change returns; the collaborator's changes unaffected.
 
 ### 2.9 Offline, reconnect and persistence [A1, A2, fingerprint]
 
-1. C goes offline (devtools → Network → Offline), edits 5 cells, goes online → O receives all 5 within a few seconds.
-2. O edits while C is offline, C reconnects → C receives O's edits.
-3. Both edit the same cell while C is offline, then C reconnects → both converge on one value.
-4. O closes the tab, C keeps editing, O reopens → O sees C's edits.
-5. A delete-only session (O clears a range and does nothing else), then reload O and C → both stay empty; the host sees a content change and publishes (check `onContentChange` fired; this is the fingerprint rule).
+1. Collaborator goes offline (devtools → Network → Offline), edits 5 cells, goes online → the owner receives all 5 within a few seconds.
+2. Owner edits while the collaborator is offline, the collaborator reconnects → the collaborator receives the owner's edits.
+3. Both edit the same cell while the collaborator is offline, then the collaborator reconnects → both converge on one value.
+4. Owner closes the tab, the collaborator keeps editing, the owner reopens → the owner sees the collaborator's edits.
+5. A delete-only session (the owner clears a range and does nothing else), then reload the owner and the collaborator → both stay empty; the host sees a content change and publishes (check `onContentChange` fired; this is the fingerprint rule).
 6. Reload both windows at the same time → content converges, no duplication, no empty sheet.
 7. Collaboration lasting 10+ minutes with edits every few seconds → memory and CPU stay flat; no repeated console errors.
 
 ### 2.10 Performance feel with two users [A2, A5, C8 warm-up]
 
-1. Large sheet; C types continuously for 30 s → O stays responsive; no whole-grid rebuild flashes on O.
-2. O pastes 10,000 cells → C updates once; C's UI is not frozen for more than a moment.
+1. Large sheet; the collaborator types continuously for 30 s → the owner stays responsive; no whole-grid rebuild flashes on the owner.
+2. Owner pastes 10,000 cells → the collaborator updates once; the collaborator's UI is not frozen for more than a moment.
 3. Both type formulas continuously → no runaway CPU after they stop (the warm-up re-run is bounded).
 4. Compare the same flow on `main` for any case that feels slower; report numbers, not impressions.
+
+### 2.11 B6 actions and B1 guard, with a the collaborator [B6, B1, B2]
+
+1. Owner presses Ctrl+Enter over a range → the collaborator shows the values; reload the collaborator → still there.
+2. Owner inserts cells with shift right, then deletes cells with shift up → the collaborator shows the same positions; reload the collaborator → same.
+3. Owner pastes the text `=1+1` into one cell → the collaborator shows 2 and the formula `=1+1`.
+4. Owner drag-fills a formula in each direction → the collaborator shows all filled cells.
+5. Owner inserts a row, and 20 ms later a second row (two structural events inside one 50 ms window on the collaborator), then **the collaborator** types a value and presses Enter → the collaborator's value is saved (reload the collaborator, and check the owner). [B1: the guard must not stay stuck]
+6. Repeat 2.11.5 with five inserts in a row, then the collaborator types 10 values → all 10 are saved on both sides, even after a reload.
+7. Owner undoes a Ctrl+Enter fill → the collaborator's cells clear too.
+
+### 2.12 Format gate with two clients [F, Task 8]
+
+1. Owner and the collaborator in one room; the collaborator sets `meta.format = 2` (console) → the owner shows the "Reload to continue" message within about 2 s and goes read-only.
+2. After 2.12.1, the owner types in a cell → nothing is written (state vector of the owner's doc unchanged); the collaborator does not receive it.
+3. After 2.12.1, the collaborator keeps editing (the collaborator is not locked by its own write only if it is the upgrader; record whether the collaborator locks itself) → record the result.
+4. Edits the owner made **before** the change reached it are ordinary v1 writes and are present on the collaborator after the sync.
+5. Owner reloads after being locked → opens locked at once.
+6. Collaborator joins the room after the format is already 2 → the collaborator opens locked.
+7. A sheet with a different id in the same doc is not locked on either side.
+8. Owner is mid-edit in a cell when the format flips → the typed value is not written; the editor does not crash; the message shows.
+9. Both clients locked, then the collaborator sets `format = 1` back → record whether they unlock (expected: stay locked until reload).
+10. **KNOWN (K42, K43):** permission chip and comment toolbar still show; second-tab check was not run on the branch before this list. Record the result.
+
+### 2.13 Undo, formulas and the local store [A4, A5, D3, D5]
+
+1. Owner commits a formula (`B1 =A1*2`); the collaborator commits another (`B2 =A2*2`); the owner presses Ctrl+Z → only the owner's formula is undone; the collaborator's formula `B2` stays on the owner and in Yjs (reload both: `B2` still has its formula). [A4 `calcChain` rule]
+2. Owner undoes and redoes a formula edit three times → the collaborator's calcChain entries are never removed.
+3. Rebuild the local store while collaborating: from the demo console call `rebuildLocalStore()` on the editor handle (**[Unverified]** the demo may not expose it; add a temporary button) → the sheet keeps all content including edits that were never persisted; reload → same content; no flicker on the collaborator.
+4. Call `rebuildLocalStore()` twice at once → one rebuild runs; both calls resolve; content intact.
+5. Call it while another tab of the same browser has the same sheet open (blocked delete) → it does not hang forever [K40: no timeout today; record the time to finish]; close the other tab → it completes.
+6. Call it right after mount (during bootstrap) and right before unmount → no console error, no stuck "syncing" status. [K40]
+7. Count rows of the `updates` store in IndexedDB after the call → 1.
+8. Read-only editor or sync off → `rebuildLocalStore()` does nothing and does not throw.
+9. `appendDsheetUpdate(dsheetId, delta)` from the console with a delta from a peer (`Y.diffUpdate(remoteBody, localStateVector)`) → reload shows the merged content; the `updates` store gains exactly one row; the live doc is untouched until reload. **[Unverified]** the demo does not expose `./persistence`; use the browser console with an import of the built module.
+10. `appendDsheetUpdate` on a sheet that has no database → creates the store; with IndexedDB disabled (private window) → rejects with an error; no crash.
 
 ---
 
@@ -281,4 +421,4 @@ Notation: **O** = owner window, **C** = collaborator window. After each case wai
 
 For each failure give: section and case number, what you did, what each window showed, console output, and whether it also fails on `main`. A case that fails on `main` too is not a regression of this work; add it to `docs/perf/KNOWN-ISSUES.md`.
 
-Cases that should currently fail (so they are not a surprise): 1.2.9 (possible), 1.3.9 (K4, Task 17), 1.9.5 (K25), 2.3.8 (K3, possible), 2.4.7 (K8), 2.4.9 and 2.4.10 (K1, K2).
+Cases that should currently fail (so they are not a surprise): 1.9.5 (K25), 2.3.8 (K3, possible; did not reproduce at engine level after Task 16), 2.4.7 (K8), 2.4.9 and 2.4.10 (K1, K2), 1.17.3 to 1.17.5 (K6, K7), 1.17.6 and 1.17.7 (K31, K32), 1.18.1 (CF formula rule crash, from the audit), 1.19.2 (K27), 1.19.5 and 1.19.6 (P3 and P1 follow-ups are not done), 1.20.7 (K42), 2.12.10 (K42, K43). 1.2.9 and 1.3.9 were on this list before Tasks 16 and 17; they must pass now.
