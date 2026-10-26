@@ -50,6 +50,52 @@
 - [ ] Tests pass; `npm run test:unit`; type check.
 - [ ] **After:** `-- after-c8`; write the C8 results section (formulas processed and time, before vs after).
 
+### Task 15: C8 warm-up, a dependency-only pass after open (added 2026-10-26 at the user's request)
+
+**Why:** C8 only skips when `depGraphComplete` is true, and today that flag is set only by forced full passes: `recalculateAllFormulas` after XLSX import, and row/column drag. Opening a sheet runs none, so in a normal session C8 rarely applies. The normal commit path can't fill the graph, because it evaluates only text-matched formulas.
+
+**Files:** create `src/sheet-engine/core/modules/formula-warmup.ts`; wire it in `src/sheet-engine/react/components/Workbook/index.tsx`. Test: `formula-warmup.test.ts`. Bench: S14 in `docs/perf/bench/stabilize-bench.ts`.
+
+**Interfaces:**
+- `warmFormulaDependencyGraph(ctx: Context, opts: { budgetMs: number; schedule: (cb: () => void) => void; isCancelled?: () => boolean }): Promise<'complete' | 'aborted'>`
+  - Walks the calc chain in chunks of at most `budgetMs` (default `8`) per scheduled slice.
+  - Evaluates each formula only so that `execfunction` records its dependencies (`depsByCell`, `revDepsByCell`, `formulasWithWideRangeDeps`, the unresolved-sheet flag), and discards the result.
+  - Captures `depGraphEpoch` at the start and calls the existing `finishFullFormulaPass(ctx, epoch)` at the end, so a graph cleared mid-warm-up never counts.
+- `scheduleFormulaWarmup(getCtx: () => Context): { trigger(): void; dispose(): void }`
+  - Runs after the workbook's data is ready on mount.
+  - Runs again, debounced `2000` ms, after each `markDepGraphIncomplete()`.
+  - Runs only while `document.visibilityState === 'visible'`.
+  - Uses `requestIdleCallback` with a `setTimeout` fallback.
+
+**Hard requirements (from the spec's non-goals):**
+- No Yjs writes and no `updateCellYdoc` / `groupValuesRefresh` pushes: computed values in Yjs don't change.
+- No `setContext` or Immer update, so no re-render per chunk and no undo entries.
+- Grid cell values are unchanged, including volatile formulas (`NOW`, `RAND`).
+- The A1 signal stays quiet: `userEdited` stays false and `onContentChange` doesn't fire because of the warm-up.
+- The calc chain isn't changed (no `insertUpdateFunctionGroup` side effects).
+- If `execfunction` writes scratch fields on the frozen context, run against a shallow mutable copy for those fields, as needed.
+- How the graph is built is unchanged: reuse `execfunction`'s existing recording.
+- The C8 guard that every tab holding formulas must be dense stays as it is. Sheets whose formulas sit on inactive (sparse) tabs keep the flag false, and this limitation is documented.
+
+- [ ] **Audit first:** list every side effect of `execfunction` and its callees when called for a chain entry (state writes, chain edits, error markers, hooks), and say in the report how warm-up suppresses each one.
+- [ ] **Before:** S14 on a 4000×25 sheet with 500 `SUM` row formulas:
+  - open the engine context (as S9 does) without a forced pass, commit to an unreferenced cell, and record formulas read (expected 500 today);
+  - repeat with 5,000 formulas;
+  - run `-- before-c8-warmup`.
+- [ ] **Failing tests:**
+  - after `warmFormulaDependencyGraph` the flag is `true` and an unreferenced commit reads 0 formulas;
+  - during warm-up: `updateCellYdoc` is never called, `luckysheetfile` keeps its identity, the undo list is unchanged, every cell `v`/`m` is unchanged (including a `NOW()` cell), and `calcChain` keeps its identity;
+  - `markDepGraphIncomplete()` mid-warm-up gives `'aborted'` (or the flag stays false) and a re-warm is scheduled;
+  - each slice respects `budgetMs` (stub clock);
+  - after warm-up, a commit to a referenced cell gives a grid equal to a forced full pass.
+- [ ] Implement and wire; `npm run test:unit`; type check.
+- [ ] **After:** S14 again:
+  - formulas read after warm-up (expected 0);
+  - total warm-up time and longest slice for 500 and 5,000 formulas;
+  - Yjs updates emitted during warm-up (expected 0).
+
+  Run `-- after-c8-warmup`. Then a browser check in the demo (dev build): open a sheet with formulas, confirm no Yjs `update` event and no `onContentChange` during warm-up, then that a commit to an unreferenced cell skips the pass. Add the results to the C8 section.
+
 ### Task 2: Crypto-banner scan on data change, idle (C4)
 
 **Files:**

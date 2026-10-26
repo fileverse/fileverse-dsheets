@@ -15,6 +15,9 @@
  *   S4 small 100-row sheet with 100 sessions of history
  *   S5 change-detection signal: state vector, Y.snapshot, A1 fingerprint
  *   S9 commit to a cell no formula refers to (C8)
+ *   S14 the same commit after open, with and without the C8 warm-up
+ *   S10 crypto-banner scan (C4)
+ *   S11 paste auto-fit layout reads (C5)
  *
  * Run only some scenarios (default: all):
  *   npx vite-node docs/perf/bench/stabilize-bench.ts -- <label> --only=S9
@@ -794,6 +797,250 @@ if (want('S9')) {
     formulasEvaluated: evaluated,
   });
   log('S9 commit to unreferenced cell (updateCell)', measure(commit, 50, 3));
+}
+
+// S14: C8 after open, with no forced pass. 4000x25 values; 500 (then 5,000)
+// =SUM(A{r}:T{r}) formulas, in column Y (rows 1-4000) and then column X. The
+// context is opened as S9 builds it, but nothing completes the graph: a
+// commit to an unreferenced cell (column V) takes the text-scan pass. With
+// the C8 warm-up present, the warm-up runs first, drained by a synchronous
+// scheduler that times each slice; Yjs writes are counted on the
+// updateCellYdoc hook, the engine's only cell-value path into Yjs.
+if (want('S14')) {
+  const { defaultContext } = await import('../../../src/sheet-engine/core/context');
+  const { loadLocale } = await import('../../../src/sheet-engine/core/locale');
+  await loadLocale('en');
+  const { updateCell } = await import('../../../src/sheet-engine/core/modules/cell');
+  const warmupMod: any = await import(
+    '../../../src/sheet-engine/core/modules/formula-warmup'
+  ).catch(() => null);
+  for (const FORMULAS of [500, 5000]) {
+    const rand = mulberry32(37);
+    const ROWS14 = 4000;
+    const COLS14 = 25;
+    const ctx: any = defaultContext({
+      globalCache: { undoList: [], redoList: [] },
+      cellInput: { current: null },
+      fxInput: { current: null },
+      canvas: { current: null },
+      cellArea: { current: null },
+      workbookContainer: { current: null },
+    } as any);
+    const data: any[][] = Array.from({ length: ROWS14 }, (_, r) =>
+      Array.from({ length: COLS14 }, (__, c) =>
+        c < 20
+          ? { v: r + c, m: String(r + c), ct: { fa: 'General', t: 'n' } }
+          : makeCell(r, c, rand).v,
+      ),
+    );
+    const read = new Set<string>();
+    const calcChain: any[] = [];
+    for (let i = 0; i < FORMULAS; i += 1) {
+      const r = i % ROWS14;
+      const c = i < ROWS14 ? 24 : 23; // Y, then X
+      const f = `=SUM(A${r + 1}:T${r + 1})`;
+      const cell: any = { v: 0, m: '0' };
+      Object.defineProperty(cell, 'f', {
+        enumerable: true,
+        configurable: true,
+        get: () => {
+          read.add(`${r}_${c}`);
+          return f;
+        },
+      });
+      data[r][c] = cell;
+      calcChain.push({ r, c, id: 's0' });
+    }
+    ctx.luckysheetfile = [
+      { id: 's0', name: 'Sheet1', order: 0, status: 1, data, config: {}, calcChain },
+    ];
+    ctx.currentSheetId = 's0';
+    ctx.config = ctx.luckysheetfile[0].config;
+    let ydocWrites = 0;
+    ctx.hooks = {
+      updateCellYdoc: () => {
+        ydocWrites += 1;
+      },
+    };
+    let evaluated = 0;
+    const { parser } = ctx.formulaCache;
+    const parse = parser.parse.bind(parser);
+    parser.parse = (...a: any[]) => {
+      evaluated += 1;
+      return parse(...a);
+    };
+    const tag = `S14 ${FORMULAS} formulas`;
+
+    if (warmupMod) {
+      const slices: number[] = [];
+      const queue: Array<() => void> = [];
+      const t0 = performance.now();
+      const done = warmupMod.warmFormulaDependencyGraph(ctx, {
+        budgetMs: 8,
+        schedule: (cb: () => void) => queue.push(cb),
+      });
+      while (queue.length) {
+        const cb = queue.shift()!;
+        const s0 = performance.now();
+        cb();
+        slices.push(performance.now() - s0);
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+      const status = await done;
+      const total = performance.now() - t0;
+      log(`${tag}: warm-up`, {
+        status,
+        formulasEvaluated: evaluated,
+        totalMs: +total.toFixed(2),
+        slices: slices.length,
+        longestSliceMs: +Math.max(...slices).toFixed(2),
+        ydocWrites,
+        depGraphComplete: ctx.formulaCache.depGraphComplete,
+      });
+    } else {
+      log(`${tag}: warm-up`, 'n/a (module absent)');
+    }
+
+    let k = 0;
+    const commit = () => {
+      k += 1;
+      updateCell(ctx, 1000 + (k % 2000), 21, null, `typed ${k}`);
+    };
+    read.clear();
+    evaluated = 0;
+    commit();
+    log(`${tag}: commit to unreferenced cell, formulas processed`, {
+      formulasRead: read.size,
+      formulasEvaluated: evaluated,
+      depGraphComplete: ctx.formulaCache.depGraphComplete,
+    });
+    log(`${tag}: commit to unreferenced cell (updateCell)`, measure(commit, 20, 2));
+  }
+}
+
+// S10: crypto-banner scan (C4). 9,900x60 grid of text/number cells, no
+// BTC/ETH/SOL anywhere (the worst case: the scan walks every cell). Before:
+// the effect ran dataToCelldata + some inside a setContext updater on every
+// luckysheet_select_save change. After: the effect depends on data identity
+// and schedules hasDenominatedCell in idle time, so a selection change does
+// 0 scans; one scan runs per data change. This is the Node cost of one scan.
+if (want('S10')) {
+  const { dataToCelldata } = await import('../../../src/sheet-engine/core/api/common');
+  const denomMod: any = await import(
+    '../../../src/sheet-engine/react/components/Workbook/denomination-scan'
+  ).catch(() => null);
+  const ROWS10 = 9900;
+  const COLS10 = 60;
+  const data10: any[][] = Array.from({ length: ROWS10 }, (_, r) =>
+    Array.from({ length: COLS10 }, (__, c) =>
+      c % 3 === 0
+        ? { v: `text ${r}-${c}`, m: `text ${r}-${c}` }
+        : { v: r * c, m: String(r * c), ct: { fa: 'General', t: 'n' } },
+    ),
+  );
+  const oldScan = () =>
+    (dataToCelldata(data10 as any) ?? []).some((cell: any) => {
+      const value = cell?.v?.m?.toString();
+      return (
+        value?.includes('BTC') || value?.includes('ETH') || value?.includes('SOL')
+      );
+    });
+  if (!denomMod) {
+    log('S10 scan per selection change (dataToCelldata + some)', measure(() => {
+      oldScan();
+    }, 15, 2));
+    log('S10 scans per selection change', 1);
+  } else {
+    log('S10 one idle scan per data change (hasDenominatedCell, no hit)', measure(() => {
+      denomMod.hasDenominatedCell(data10);
+    }, 15, 2));
+    const early = data10.map((r) => r.slice());
+    early[0][0] = { v: '1 BTC', m: '1 BTC' };
+    log('S10 idle scan, hit in first cell', measure(() => {
+      denomMod.hasDenominatedCell(early);
+    }, 15, 2));
+    log('S10 scans per selection change', 0);
+  }
+}
+
+// S11: paste auto-fit (C5). 10,000 single-line cells (2,000 rows x 5 cols,
+// 20% distinct texts) through calculateRangeCellSize with a stub DOM. The
+// stub counts scrollWidth/scrollHeight reads (each a forced layout in a real
+// browser) and canvas measureText calls. Times are Node time over the stub,
+// not browser layout cost; the count is the result.
+if (want('S11')) {
+  const { defaultContext } = await import('../../../src/sheet-engine/core/context');
+  const { loadLocale } = await import('../../../src/sheet-engine/core/locale');
+  await loadLocale('en');
+  const { calculateRangeCellSize } = await import(
+    '../../../src/sheet-engine/core/paste-helpers/calculate-range-cell-size'
+  );
+  const ROWS11 = 2000;
+  const COLS11 = 5;
+  const ctx: any = defaultContext({
+    globalCache: { undoList: [], redoList: [] },
+    cellInput: { current: null },
+    fxInput: { current: null },
+    canvas: { current: null },
+    cellArea: { current: null },
+    workbookContainer: { current: null },
+  } as any);
+  const data: any[][] = Array.from({ length: ROWS11 }, (_, r) =>
+    Array.from({ length: COLS11 }, (__, c) => {
+      const t = `item ${(r * COLS11 + c) % 2000} col ${c}`;
+      return { v: t, m: t, fs: 11 + (c % 2), ff: c % 3 === 0 ? 'Arial' : 0 };
+    }),
+  );
+  ctx.luckysheetfile = [
+    { id: 's1', name: 'Sheet1', order: 0, status: 1, data, config: {} },
+  ];
+  ctx.currentSheetId = 's1';
+  let layoutReads = 0;
+  let measureCalls = 0;
+  const mkEl = (): any => {
+    const el: any = {
+      style: {},
+      children: [] as any[],
+      _text: '',
+      appendChild(ch: any) { el.children.push(ch); return ch; },
+      remove() {},
+      get textContent() { return el._text; },
+      set textContent(v: string) { el._text = v; },
+      get scrollWidth() { layoutReads += 1; return el._text.length * 7; },
+      get scrollHeight() { layoutReads += 1; return 20; },
+    };
+    return el;
+  };
+  const measurer = mkEl();
+  const g: any = globalThis;
+  const prevDoc = g.document;
+  g.document = {
+    body: { appendChild() {} },
+    getElementById: () => measurer,
+    createElement: (tag: string) =>
+      tag === 'canvas'
+        ? {
+            getContext: () => ({
+              font: '',
+              measureText: (t: string) => {
+                measureCalls += 1;
+                return { width: t.length * 7 };
+              },
+            }),
+          }
+        : mkEl(),
+  };
+  const run = () => {
+    calculateRangeCellSize(ctx, 's1', 0, ROWS11 - 1, 0, COLS11 - 1);
+  };
+  layoutReads = 0;
+  measureCalls = 0;
+  run();
+  log('S11 forced layouts (scrollWidth/scrollHeight reads), 10,000 cells', layoutReads);
+  log('S11 canvas measureText calls, first paste', measureCalls);
+  log('S11 calculateRangeCellSize, 10,000 cells (stub DOM)', measure(run, 10, 1));
+  g.document = prevDoc;
 }
 
 // S6: how many whole-doc encodes the legacy onChange throttle runs for 4

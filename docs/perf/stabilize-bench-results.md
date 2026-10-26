@@ -387,3 +387,139 @@ Not covered:
 - Checked only by reading the code, not by tests: find and replace and autofill call `execfunction`; Ctrl+Enter fill goes through `updateCell`. Data-block results go through `api.setCellValue` with `f` and `v`, which removes the cell from the chain.
 - Sheet rename and delete do not clear the flag. Dependencies are keyed by sheet id, so a rename does not change resolved edges; formulas whose sheet name didn't resolve always run (above).
 - Not checked in the browser.
+
+### C8 warm-up: a dependency-only pass after open
+
+Addresses the first "Not covered" point above for workbooks whose formulas all sit on the active tab (or on tabs kept dense). In a workbook with formulas on more than one tab, inactive tabs are sparse, so the warm-up never completes and C8 stays off there (see "Not covered" below). Same Node harness, scenario S14, run alone (`before-c8-warmup.json` → `after-c8-warmup.json`, `--only=S14`). 4000×25 values; 500, then 5,000 `=SUM(A{r}:T{r})` formulas (column Y, then column X). The context is opened as S9 builds it, but with no forced pass. One typed commit to V1001…V3000 through `updateCell`. In the after run, the warm-up runs first with an 8 ms budget, drained by a synchronous scheduler that times each slice. Yjs writes are counted on the `updateCellYdoc` hook, the engine's only cell-value path into Yjs.
+
+| Commit to an unreferenced cell, after open | 500 before | 500 after | 5,000 before | 5,000 after |
+|---|---|---|---|---|
+| Formulas read by the commit | 500 | 0 | 5,000 | 0 |
+| Formulas evaluated by the commit | 0 | 0 | 0 | 0 |
+| `updateCell` median (p95), 20 runs | 5.30 ms (10.0 ms) | 0.138 ms (2.14 ms) | 37.5 ms (72.9 ms) | 0.125 ms (1.33 ms) |
+| `depGraphComplete` at the commit | false | true | false | true |
+
+| Warm-up (after run only) | 500 formulas | 5,000 formulas |
+|---|---|---|
+| Total time | 27.0 ms | 139.1 ms |
+| Slices | 4 | 18 |
+| Longest slice (includes the final merge) | 8.1 ms | 8.4 ms |
+| Formulas evaluated | 500 | 5,000 |
+| Yjs writes (`updateCellYdoc` calls) | 0 | 0 |
+
+The slice budget is checked before each formula, so a slice can run past 8 ms by one formula. Numbers are from the run after fix round 1 (shadow indexes). Before that round: 26.2 / 133.4 ms total, longest slice 10.7 / 8.9 ms. A first shadow version that merged edge by edge into empty indexes had a 33 ms final slice at 5,000 formulas; adopting the shadow when the real indexes are empty removed it.
+
+Re-warm (probe, not in S14): 5,000 formulas with the real graph already full, then `markDepGraphIncomplete()` and a second warm-up. The last slice, which includes the per-formula merge, took 8.5 ms, and the longest slice 8.8 ms.
+
+What changed:
+
+- New `core/modules/formula-warmup.ts`:
+  - `warmFormulaDependencyGraph(ctx | getCtx, { budgetMs, schedule, isCancelled })` walks the calc chain in budgeted slices. It runs each formula through `execfunction` (no refresh, no calc-chain insert) and discards the result.
+  - Dependencies are recorded into **shadow** indexes (`depsByCell`, `revDepsByCell` and the wide-range set, which also takes the unresolved-sheet and sparse-tab marks): the real ones are swapped out for each synchronous slice.
+  - At completion, under the epoch check, the shadow is merged into `formulaCache`, then `finishFullFormulaPass(startCtx, epoch)` runs. If the real indexes are empty, the shadow is adopted whole. An aborted or superseded warm-up drops its shadow, so the real indexes stay exactly as they were.
+  - Why shadow indexes: the commit-path narrowing in `execFunctionGroup` trusts any recorded edge, even while `depGraphComplete` is false. A partial graph published slice by slice made the formulas not yet recorded stale for a commit made during the warm-up (fix round 1).
+  - `scheduleFormulaWarmup(getCtx)` runs it on `trigger()` and 2000 ms (debounced) after each `markDepGraphIncomplete()`. Slices run in `requestIdleCallback` (1000 ms timeout), or `setTimeout` without it, and only while `document.visibilityState === 'visible'`.
+- `FormulaCache.onDepGraphIncomplete(listener)`: `markDepGraphIncomplete()` now notifies listeners.
+- Workbook: creates the scheduler on mount (reads `contextRef`, never calls `setContext`) and triggers it once the active sheet's data is ready.
+- Kept out of the warm-up:
+  - error markers: `execfunction` runs on a shallow copy of the context whose `currentSheetId` matches no sheet, so `setCellError` and `clearCellError` find no grid;
+  - pass caches and parser state (`execFunctionGlobalData`, range pass cache, `parser.context`, crypto denomination): saved and restored around each slice;
+  - network formulas (`async` formulajs functions such as ETHERSCAN, EOA): their arguments are evaluated and recorded, but the function is not called;
+  - sparse tabs: a read of one marks that formula always-run and fails, instead of hydrating the tab.
+- Stale-graph guards:
+  - a formula re-evaluated or removed since the warm-up started (a commit, a deferred pass) keeps its real entry: it is skipped while walking, and at merge if it changed after it was recorded;
+  - a cleared graph (epoch bump) stops the warm-up at the next slice;
+  - a tab holding formulas that is sparse keeps the flag false, as for a forced pass;
+  - sheet sizes come from the context the walk started on, so a grid that grew meanwhile trips the C8 size guard.
+
+Tests (`core/modules/formula-warmup.test.ts`, 18 tests):
+
+- A commit between two warm-up slices sees the real indexes unchanged and gives the forced-pass grid (before fix round 1: 190 instead of 1190).
+- An aborted warm-up leaves the real indexes byte-for-byte unchanged.
+- A commit made after the shadow recorded a formula keeps its own dependencies at merge.
+- `dispose()` cancels the pending idle callback (`cancelIdleCallback`), the `setTimeout` fallback and the debounce timer.
+
+- After the warm-up the flag is true and an unreferenced commit reads and evaluates 0 formulas.
+- On a deep-frozen sheet state, with `NOW()`, `RAND()`, `1/0`, a self-reference and a stale error marker: no hook is touched (including `updateCellYdoc`), `luckysheetfile`, the sheet and `calcChain` keep their identity, the undo list and every cell's `v`/`m` are unchanged, and the pass caches are restored.
+- `markDepGraphIncomplete()` mid-warm-up gives `'aborted'`, evaluates nothing more, and leaves the flag false. The scheduler re-warms 2000 ms later.
+- With a stub clock (3 ms per formula, 8 ms budget) every slice evaluates at most 3 formulas.
+- After the warm-up, commits to referenced cells give the grid a forced full pass gives.
+- A commit that rewrote a formula mid-warm-up keeps its dependencies even when the warm-up reads an older context.
+- A sparse tab read by a formula is not hydrated; the formula runs on every commit and gives the right value. A sparse tab holding formulas gives `'aborted'`.
+- `=FLVURL(V1)` records V1 without calling FLVURL.
+- Scheduler: idle callback with timeout; `setTimeout` fallback; waits while hidden; debounced re-warm; nothing after `dispose()`.
+
+Browser check (demo, dev build, built-in browser, 2026-10-26). A sheet with 22 formulas (`=A{n}*2`, `=SUM(A1:A20)`, `=NOW()`):
+
+- After a reload, the flag was true with no forced pass (epoch 0, 20 reverse-dependency entries).
+- Positive control: an edit through `setCellValue(..., true)` gave 1 Yjs `update` and 1 `onChange` save, so the counters were live.
+- Re-warm, triggered by calling `markDepGraphIncomplete()` from the console:
+  - the flag was true about 3.0 s later (2 s debounce, then idle slices);
+  - 22 formulas were evaluated;
+  - there were 0 Yjs `update` events and 0 `onChange` saves;
+  - the context object kept its identity, so there was no state update;
+  - the A1 content fingerprint and the `NOW()` value were unchanged.
+- `updateCell` commit to an unreferenced cell, run through the Workbook's `setContext`:
+  - with the warm graph: 0 formulas scanned and 0 evaluated, and the flag stayed true;
+  - control, right after a clear: all 22 formulas scanned.
+- Commit to A2: 2 formulas re-ran; B2 and C1 had the expected values.
+
+The demo has no `onContentChange` consumer, so the A1 signal was checked through its inputs: no Yjs update and an unchanged fingerprint.
+
+Not covered:
+
+- Workbooks whose formulas sit on inactive (sparse) tabs keep the flag false: the C8 dense-tab guard is unchanged, and the warm-up does not hydrate tabs. Switching tabs does not re-trigger the warm-up.
+- [Inference] Re-warm churn during active collaboration: each remote formula snapshot calls `markDepGraphIncomplete`, so every quiet 2 s re-walks the whole chain (about 140 ms of idle-time work for 5,000 formulas).
+- [Inference] The Workbook's `contextRef` can lag one update behind a state update that React has computed but not rendered. The re-evaluated-formula guard covers formula edits made in that window. A sheet deleted in that window could leave edges from an older context. That is the same class as "sheet delete does not clear the flag" above.
+
+## C4: crypto-banner scan on data change, in idle time
+
+Same Node harness (`before-c4.json` → `after-c4.json`, scenario S10, `--only=S10`). 9,900×60 grid, no BTC/ETH/SOL anywhere (the scan's worst case).
+
+| | Before | After |
+|---|---|---|
+| Scans per selection change | 1 (`dataToCelldata` + `some`, inside a `setContext` updater) | 0 |
+| Cost of one scan, median (p95), 15 runs | 36.0 ms (55.9 ms) | 18.3 ms (18.8 ms) |
+| Scan when the first cell is a hit | n/a (always builds the full cell list first) | 0 ms |
+| Scans per data change | 1 | 1, in `requestIdleCallback` |
+
+The "0 scans per selection change" row follows from the effect's dependency list; the harness runs in Node and does not mount React. The times are the cost of one scan.
+
+What changed:
+
+- New `Workbook/denomination-scan.ts`: `hasDenominatedCell(data)` walks the grid and returns at the first cell whose `m` contains BTC, ETH or SOL. No intermediate cell list.
+- `Workbook/index.tsx`: the banner effect depends on the flow data identity (and the current sheet id), and runs the scan and the DOM writes in `requestIdleCallback` (`setTimeout` fallback), cancelled on cleanup. The `afterSelectionChange` hook call moved to its own effect on selection changes. The DOM writes no longer run inside a `setContext` updater (the old updater returned the context unchanged).
+
+Tests (`Workbook/denomination-scan.test.ts`, 6 tests): true for each of BTC, ETH and SOL in `m`; false when none (including BTC in `v` only); null, empty and missing rows; stops at the first hit (a later row is a Proxy that throws on access). The failing run before the module existed was an import error ("no tests").
+
+Not covered:
+
+- [Inference] The effect relies on the flow data array changing identity on edits, which holds when the context is updated through Immer. A mutation in place that keeps the array identity would not rerun the scan until the next identity change or sheet switch.
+- The effect itself (idle scheduling, DOM writes) is not unit tested: vitest here runs in Node without a DOM. Not checked in the browser.
+
+## C5: paste auto-fit without per-cell layout
+
+Same Node harness (`before-c5.json` → `after-c5.json`, scenario S11, `--only=S11`). 2,000 rows × 5 columns of single-line text (2,000 distinct strings, mixed font sizes and families) through `calculateRangeCellSize`, with a stub DOM that counts `scrollWidth`/`scrollHeight` reads (each a forced layout in a browser) and canvas `measureText` calls.
+
+| | Before | After |
+|---|---|---|
+| Forced layouts (`scrollWidth`/`scrollHeight` reads) | 10,000 | 0 |
+| Canvas `measureText` calls | 0 | 2,000 (the other 8,000 hit the `(font, text)` cache) |
+| Node time over the stub, median (p95), 10 runs | 1.73 ms (2.63 ms) | 6.28 ms (9.55 ms) |
+
+The time row is not a browser number: the stub makes a layout read free, so it only shows the added JS cost (font string, cache lookup). The layout count is the result.
+
+What changed:
+
+- `measureSingleLine(font, text, ctx2d)`: canvas `measureText`, cached by `(font, text)` (cleared at 50,000 entries).
+- Single-line cells take their font from `getFontSet(cell, ctx.defaultFontSize, ctx)`, the function `canvas.ts` uses to draw. This fixes the old measurer, which used `ff` as a family name and `fs` as pixels. The font string is memoized per `ff|fs|bl|it` within a call.
+- Wrapped cells (`tb = 2`, inline strings, newlines) keep DOM measurement, in two batches (widths, then heights): one absolutely positioned element per cell, every write first, then every read. The wrapped DOM font also comes from `getFontSet`.
+- The single-line row height formula is unchanged (`fs * 1.3 + 6`).
+
+Tests (`calculate-range-cell-size.test.ts`, 4 tests, stub DOM): a repeat `measureSingleLine` does not call `measureText`, and a different text or font does; the font is set before measuring; for `ff: 1, fs: 12` the canvas font equals `getFontSet({ ff: 1, fs: 12 }, ...)` and there are 0 layout reads; for wrapped cells the event log is write batch, read batch, write batch, read batch. All four failed before the change.
+
+Not covered:
+
+- Browser 10k-cell paste time before and after was not done.
+- `getColumnAutoFitWidth` (double-click column border) still uses DOM measurement; it is outside this item.
+- Canvas widths can differ from DOM `scrollWidth` by a fraction of a pixel; widths are rounded up and padded by 12 as before.

@@ -1,0 +1,14 @@
+{
+  "label": "before-c5",
+  "date": "2026-10-26T11:09:54.664Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S11 forced layouts (scrollWidth/scrollHeight reads), 10,000 cells": 10000,
+  "S11 canvas measureText calls, first paste": 0,
+  "S11 calculateRangeCellSize, 10,000 cells (stub DOM)": {
+    "median": 1.733,
+    "p95": 2.625,
+    "min": 1.5894,
+    "runs": 10
+  }
+}
