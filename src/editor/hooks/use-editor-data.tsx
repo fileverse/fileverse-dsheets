@@ -23,6 +23,10 @@ import {
   scheduleStructuralRemount as scheduleGuardedStructuralRemount,
 } from '../utils/remote-apply-guard';
 import { shouldRenderBootstrappedWorkbook } from './collaboration-lifecycle';
+import {
+  patchPlainCelldata as patchSheetCelldata,
+  type PlainCelldataEntry,
+} from '../utils/patch-plain-celldata';
 
 /**
  * Hook for managing sheet data
@@ -1023,29 +1027,14 @@ export const useEditorData = (
                 ) as NonNullable<Sheet['celldata']>)
               : [];
           }
-          const celldata = sheet.celldata as NonNullable<Sheet['celldata']>;
-          changedKeys.forEach(({ action }, key) => {
-            const sep = key.lastIndexOf('_');
-            const r = parseInt(key.slice(0, sep), 10);
-            const c = parseInt(key.slice(sep + 1), 10);
-            const idx = celldata.findIndex(
-              (cell) => cell.r === r && cell.c === c,
-            );
-            if (action === 'delete') {
-              if (idx >= 0) celldata.splice(idx, 1);
-              return;
-            }
-            const cellObj = celldataMap.get(key);
-            const entry = {
-              r,
-              c,
-              v: (cellObj?.v ?? null) as NonNullable<
-                Sheet['celldata']
-              >[number]['v'],
-            };
-            if (idx >= 0) celldata[idx] = entry;
-            else celldata.push(entry);
-          });
+          patchSheetCelldata(
+            sheet.celldata as PlainCelldataEntry[],
+            Array.from(changedKeys, ([key, { action }]) => ({
+              key,
+              action: action === 'delete' ? 'delete' : 'update',
+              v: action === 'delete' ? undefined : celldataMap.get(key)?.v,
+            })),
+          );
         }
       };
 
@@ -1109,36 +1098,37 @@ export const useEditorData = (
           // one txn. Config-first rematerializes style into dense data, then the
           // null cell wipe leaves an unstyled empty until remount. Cells-first
           // then rematerialize restores format-only empties correctly.
+          // One quiet update per sheet batch (A5): a single Immer pass, and a
+          // collaborator's cells never land on the local undo stack.
           for (const { sheetId, celldataMap, changedKeys } of cellBatches) {
-            changedKeys.forEach(({ action }, key) => {
+            const cells = Array.from(changedKeys, ([key, { action }]) => {
               const sep = key.lastIndexOf('_');
-              const r = parseInt(key.slice(0, sep), 10);
-              const c = parseInt(key.slice(sep + 1), 10);
-
-              try {
-                if (action === 'delete') {
-                  sheetEditorRef.current?.applyRemoteCellValue(r, c, null, {
-                    id: sheetId,
-                  });
-                } else {
-                  const cellObj = celldataMap.get(key);
-                  const remoteCell = cellObj?.v ?? null;
-                  sheetEditorRef.current?.applyRemoteCellValue(
-                    r,
-                    c,
-                    remoteCell,
-                    {
-                      id: sheetId,
-                    },
-                  );
-                }
-              } catch (error) {
-                console.warn(
-                  '[DSheet] Skipped remote cell apply — workbook not ready',
-                  { sheetId, r, c, error },
-                );
-              }
+              return {
+                r: parseInt(key.slice(0, sep), 10),
+                c: parseInt(key.slice(sep + 1), 10),
+                v:
+                  action === 'delete'
+                    ? null
+                    : (celldataMap.get(key)?.v ?? null),
+              };
             });
+            try {
+              sheetEditorRef.current?.applyRemoteCells(
+                cells,
+                { id: sheetId },
+                ({ r, c }, error) => {
+                  console.warn(
+                    '[DSheet] Skipped remote cell apply — workbook not ready',
+                    { sheetId, r, c, error },
+                  );
+                },
+              );
+            } catch (error) {
+              console.warn(
+                '[DSheet] Skipped remote cell apply — workbook not ready',
+                { sheetId, error },
+              );
+            }
           }
 
           if (configUpdates.size > 0) {
