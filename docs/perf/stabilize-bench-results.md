@@ -523,3 +523,105 @@ Not covered:
 - Browser 10k-cell paste time before and after was not done.
 - `getColumnAutoFitWidth` (double-click column border) still uses DOM measurement; it is outside this item.
 - Canvas widths can differ from DOM `scrollWidth` by a fraction of a pixel; widths are rounded up and padded by 12 as before.
+
+
+### C5 browser timing (demo app, dev build, built-in browser, 2026-10-26)
+
+`calculateRangeCellSize` called directly on 2,000 rows x 5 columns of plain single-line text (10,000 cells), real browser layout, a copy of the context so the demo sheet was not touched. Old = the file at a324b38, new = current. Five runs each, interleaved.
+
+| Version | Runs (ms) | Median |
+|---|---|---|
+| Before (a324b38) | 11,817 / 11,298 / 1,816 / 1,827 / 1,834 | 1,827 |
+| After, cache cleared each run | 317 / 56 / 49 / 46 / 45 | 49 |
+| After, cache warm (repeat paste of same text) | 5.5 / 5.3 / 11.4 | 5.5 |
+
+The two slow first runs of the old path (about 11 s) were not explained (cold layout or font loading is a guess). Not measured: the full paste (clipboard parse, Yjs write, render); only the sizing function.
+
+## B3: a structural remote change during a cell edit is deferred, not dropped
+
+**Repro** (`src/editor/utils/remote-apply-guard.test.ts`, fake timers). `legacyScheduler` in the test file is a copy of the old scheduler plus the hook's in-callback skip (edit open at fire time: no render, pending flag cleared). The same scenario (edit open for 1,000 ms, then ends) runs against it and against the new scheduler, asserting one render:
+
+```
+ × legacy: the remount is dropped when the edit was open at fire time
+     → expected +0 to be 1 // Object.is equality
+```
+
+(In the committed test the legacy case asserts the buggy outcome, 0 renders and pending cleared, so the file stays green.) After: the new scheduler renders once, depth 0, pending cleared. 16 tests pass; full `npm run test:unit`: 38 files, 304 tests; `tsc --noEmit`: no errors in touched files.
+
+What changed:
+
+- `scheduleStructuralRemount(refs, run, delayMs, isEditing?)`: if `isEditing()` is true when the timer fires, it re-arms at 250 ms and keeps the pending flag; once the edit ends, `run` fires once. A throwing `isEditing` counts as not editing.
+- **The guard is not held while pending or deferred.** `remoteUpdateRef` makes `handleChange`, `guardRemoteEcho` and `afterUpdateCell` return early. Holding depth 1 across an edit (the first version of this fix) would drop the owner's commit when the edit ends, up to 250 ms before the retry tick, and the remount would then rebuild from Yjs without it. The guard is now begun once right before `run` and ended after paint: one begin per remount (B1 holds), depth 0 afterwards. Consequence for B1: the guard is also no longer held during the 50 ms debounce wait; surgical remote applies take their own `runUnderRemoteApply`.
+- `cancelStructuralRemount` only clears the timer and pending flag (nothing to release).
+- `use-editor-data.tsx`: the editing check moved from inside `run` to the scheduler; `run` always re-renders.
+
+New tests that failed against the first version (guard held while deferred): depth/flag 0 while editing (1 vs 0), commit not suppressed during deferral (true vs false), extra event adds no begin (1 vs 0), throwing `isEditing` (threw). Passing now: echo suppression is true inside `run` and until paint, then false.
+
+Behaviour to know about:
+
+- `needsStructuralRemount` includes the pending flag, so while a remount is deferred by a long edit, every remote surgical event on that tab is folded into the pending remount. The editing tab shows no remote changes until the edit ends, then one remount shows everything. Before, remote surgical events kept applying during the edit and the structural one was lost. Kept deliberately: a surgical apply on top of stale structure is what the remount replaces.
+- The `currentDataRef` refresh also waits for the edit to end.
+
+Not covered:
+
+- A guard window remains: a local commit made while the remount is deferred is written at the coordinates the tab had before the structural change (see the browser check: the edit stayed at D10 on both tabs).
+
+### B3 browser check (demo app, dev build, built-in browser, 2026-10-26)
+
+Two tabs in one room (tab A creates the room, tab B reloads and joins it from the stored config). Sheet `A`, 84 rows on tab B.
+
+1. Tab B: double-click D10, type `hello`, do not commit. Editor shows `hello`.
+2. Tab A: insert one row at index 2 on sheet `A`. Tab A now has 86 rows.
+3. Tab B, 1.5 s later, still editing: editor still shows `hello`, data still 84 rows (remount deferred, edit not interrupted).
+4. Tab B: press Enter. 2.5 s later: the inserted row has arrived (the value that was at B6 is at B7), and `hello` is saved at D10. Tab A also has `hello` at D10.
+
+Observations, not fixed here: tab B reached 84 rows against 86 on tab A (not investigated); the edit landed at D10 although the row inserted above it on tab A would put it at D11 in a coordinate-shifting model.
+
+
+## B5: row/column insert and delete shift only references to the edited tab
+
+**Before** (`src/sheet-engine/core/modules/formula.str-change.test.ts`, the new argument is ignored by the old code):
+
+```
+ Test Files  1 failed (1)
+      Tests  11 failed | 3 passed (14)
+ e.g. expected 'B4' to be 'B5'   (delete row on tab A, formula on tab B: `=B5` was shifted)
+      expected 'D5' to be 'C5'   (insert column on tab A, formula on tab B)
+      expected '4:6' to be '3:5'
+```
+
+Old behaviour: every reference was shifted whatever its prefix, so `=C!B5` on tab A and unprefixed refs in formulas on other tabs moved when a row was inserted or deleted on an unrelated tab.
+
+**After:** `Tests  14 passed (14)`. Full `npm run test:unit`: 39 files, 318 tests pass; `tsc --noEmit`: no errors.
+
+What changed:
+
+- `functionStrChange(..., tabs: { editedTab, formulaTab })` (tabs last). A reference moves only when its tab is the edited tab. The prefix is unquoted (outer `'` stripped, `''` collapsed) and compared case-insensitively; no prefix means `formulaTab`.
+- `rowcol.ts`: all call sites in `insertRowCol` / `deleteRowCol` pass `editedTab = file.name` (the tab the edit happens on) and `formulaTab = ctx.luckysheetfile[SheetIndex].name` (the tab being scanned). `rewriteFormulasByScanningSheet` takes `editedTab` and uses `sheet.name`. Formula cells on other tabs were already visited by the loops; they used to be shifted unconditionally.
+- The tokenizer now keeps a single-quoted tab name in one token, so `='A-B, 1'!B5` is not split at `-` or `,`. Prefix and range are split at the last `!`.
+
+Tests (14): the six brief cases, plus nested functions, quoted names containing an operator or comma, `$`-absolute refs, delete (shift and `#REF!`), columns, whole-row and whole-column ranges. Note: for the `'Q1 2026'!B2:B9` case the insert index is 1 (0-based) so both ends are at or after it; at index 2 only the end moves, and both are asserted.
+
+Not covered:
+
+- Formula text rewritten by an insert is not carried to a second client (see the browser check).
+- Defined names, structured/INDIRECT text refs, and formulas inside other features (conditional formatting, data validation) are not touched by this change.
+- Sheet renames do not rewrite formulas here; a formula pointing at an old name is not shifted.
+
+### B5 browser check (demo app, dev build, built-in browser, 2026-10-26)
+
+Three tabs `A`, `B`, `C`, each with B5 filled (5, 7, 9). Formulas: A1 `=B5`, A2 `=C!B5`; B1 `=A!B5`, B2 `=B5`, B3 `=C!B5`, B4 `='a'!B5`; C1 `=A!B5`. Insert one row at index 2 on `A` through `insertRowOrColumn('row', 2, 1)`.
+
+| Cell | Before | After | Expected |
+|---|---|---|---|
+| A!A1 | `=B5` | `=B6` | shifts (own tab) |
+| A!A2 | `=C!B5` | `=C!B5` | unchanged |
+| B!A1 | `=A!B5` | `=A!B6` | shifts |
+| B!A2 | `=B5` | `=B5` | unchanged |
+| B!A3 | `=C!B5` | `=C!B5` | unchanged |
+| B!A4 | `='a'!B5` | `='a'!B6` | shifts (case-insensitive) |
+| C!A1 | `=A!B5` | `=A!B6` | shifts |
+
+All seven match. The evaluator returned `#ERROR` for `='a'!B5` (lower-case tab name); the formula text shifted correctly, the value is a separate, existing evaluator behaviour.
+
+Not fixed here: on a second client in the same room, the inserted row arrives but the rewritten formula text does not (tab B kept `=B5` and `=A!B5` after tab A had `=B7` and `=A!B7`). Not checked whether this predates this change.
