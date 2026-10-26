@@ -19,6 +19,7 @@
  *   S15 commit to a referenced cell, flag never true vs flag true (Task 16)
  *   S10 crypto-banner scan (C4)
  *   S11 paste auto-fit layout reads (C5)
+ *   S12 merge a small remote change into the local store (D5, runs with S4)
  *
  * Run only some scenarios (default: all):
  *   npx vite-node docs/perf/bench/stabilize-bench.ts -- <label> --only=S9
@@ -549,6 +550,94 @@ if (want('S4', 'S5')) {
       cur = await rebuildIndexedDbStore(name, doc, cur);
     }, 10));
     await cur.destroy();
+  }
+
+  // S12 (D5 step 3): merging a small remote change into the local store of
+  // the S4 old sheet. fake-indexeddb in Node: relative cost and bytes only,
+  // not browser timing. Bytes are counted at IDBObjectStore.add/put.
+  {
+    const { mergeDsheetContent } = await import('../../../src/persistence');
+    const appendMod: any = await import('../../../src/persistence');
+    const append: ((id: string, u: Uint8Array) => Promise<void>) | undefined =
+      appendMod.appendDsheetUpdate;
+    const name = 'bench-d5';
+    let written = 0;
+    let rowsWritten = 0;
+    const proto = (globalThis as any).IDBObjectStore.prototype;
+    const origAdd = proto.add;
+    const origPut = proto.put;
+    const wrap = (orig: any) =>
+      function (this: any, value: unknown, ...rest: unknown[]) {
+        if (this.name === 'updates' && value instanceof Uint8Array) {
+          written += value.byteLength;
+          rowsWritten += 1;
+        }
+        return orig.call(this, value, ...rest);
+      };
+    proto.add = wrap(origAdd);
+    proto.put = wrap(origPut);
+
+    // Remote = the local history plus one small change by another client.
+    const remoteDoc = new Y.Doc();
+    Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+    const rrand = mulberry32(99);
+    updateYdocSheetData(remoteDoc, DSHEET_ID, [cellChange('s0', makeCell(5, 3, rrand, 'remote'))], noop);
+    const remoteBody = Y.encodeStateAsUpdate(remoteDoc);
+    const localBody = Y.encodeStateAsUpdate(doc);
+    const localSV = Y.encodeStateVector(doc);
+    const delta = Y.diffUpdate(remoteBody, localSV);
+
+    const seed = async () => {
+      await clearDocument(name);
+      const p = new IndexeddbPersistence(name, doc);
+      await p.whenSynced;
+      await p.destroy();
+    };
+    const runArm = async (fn: () => Promise<void>, runs: number) => {
+      const times: number[] = [];
+      let bytes = 0;
+      let rows = 0;
+      for (let i = 0; i < runs + 1; i += 1) {
+        await seed();
+        written = 0;
+        rowsWritten = 0;
+        const t0 = performance.now();
+        await fn();
+        const dt = performance.now() - t0;
+        if (i > 0) {
+          times.push(dt);
+          bytes = written;
+          rows = rowsWritten;
+        }
+      }
+      times.sort((a, b) => a - b);
+      return {
+        median: +times[Math.floor(times.length / 2)].toFixed(3),
+        p95: +times[Math.min(times.length - 1, Math.floor(0.95 * times.length))].toFixed(3),
+        min: +times[0].toFixed(4),
+        runs,
+        bytesWritten: bytes,
+        rowsWritten: rows,
+      };
+    };
+    log('S12 sizes', {
+      localBodyBytes: localBody.byteLength,
+      remoteBodyBytes: remoteBody.byteLength,
+      deltaBytes: delta.byteLength,
+    });
+    log('S12 before: mergeDsheetContent (remote body, full-copy row)', await runArm(async () => {
+      await mergeDsheetContent(name, fromUint8Array(remoteBody));
+    }, 12));
+    if (append) {
+      log('S12 after: appendDsheetUpdate(diffUpdate delta)', await runArm(async () => {
+        await append(name, delta);
+      }, 12));
+    } else {
+      log('S12 after: appendDsheetUpdate', 'skipped (function not present)');
+    }
+    proto.add = origAdd;
+    proto.put = origPut;
+    await clearDocument(name);
   }
 }
 

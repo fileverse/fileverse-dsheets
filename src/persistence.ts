@@ -218,3 +218,93 @@ export const deleteDsheetContent = async (dsheetId: string): Promise<void> => {
   pendingReads.delete(dsheetId);
   if (typeof indexedDB !== 'undefined') await clearDocument(dsheetId);
 };
+
+/**
+ * Append one Yjs update as a single row of the package-owned y-indexeddb
+ * `updates` store. Unlike mergeDsheetContent it never builds a Y.Doc and never
+ * writes a full copy of the document: the caller passes only what is missing
+ * (for example Y.diffUpdate(remote, localStateVector)).
+ *
+ * If the database does not exist yet it is created with the same schema
+ * y-indexeddb uses (`updates` autoIncrement, `custom`). Rejects with
+ * "IndexedDB is unavailable" when there is no indexedDB, and with the
+ * underlying error if the transaction fails or aborts.
+ */
+export const appendDsheetUpdate = async (
+  dsheetId: string,
+  update: Uint8Array,
+  options: DSheetContentReadOptions = {},
+): Promise<void> => {
+  if (!(update instanceof Uint8Array)) {
+    throw new TypeError('appendDsheetUpdate expects a Uint8Array update');
+  }
+  if (typeof indexedDB === 'undefined') {
+    throw new Error('IndexedDB is unavailable');
+  }
+
+  let database: IDBDatabase | null = null;
+  // Set when the timeout fires or the call settles: a late open must not write.
+  let abandoned = false;
+  const closeDatabase = () => {
+    try {
+      database?.close();
+    } catch {
+      // Already closed.
+    }
+  };
+  const write = new Promise<void>((resolve, reject) => {
+    let openRequest: IDBOpenDBRequest;
+    try {
+      openRequest = indexedDB.open(dsheetId);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    // Same schema as y-indexeddb's createStores.
+    openRequest.onupgradeneeded = () => {
+      const db = openRequest.result;
+      if (!db.objectStoreNames.contains('updates')) {
+        db.createObjectStore('updates', { autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('custom')) {
+        db.createObjectStore('custom');
+      }
+    };
+    openRequest.onerror = () => reject(openRequest.error);
+    // onblocked is not fatal: the open may still succeed; the timeout covers it.
+    openRequest.onsuccess = () => {
+      database = openRequest.result;
+      // Like y-indexeddb: never hold the database against a delete/upgrade.
+      database.onversionchange = () => closeDatabase();
+      if (abandoned) {
+        closeDatabase();
+        return;
+      }
+      try {
+        if (!database.objectStoreNames.contains('updates')) {
+          throw new Error('dSheet IndexedDB schema is invalid');
+        }
+        const transaction = database.transaction('updates', 'readwrite');
+        transaction.objectStore('updates').add(update);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () =>
+          reject(transaction.error ?? new Error('dSheet IndexedDB write aborted'));
+      } catch (error) {
+        reject(error);
+      }
+    };
+  });
+
+  // A timeout while the add is in flight can still commit the row. That is
+  // safe to retry: Yjs applies a duplicate update idempotently.
+  try {
+    await withDsheetPersistenceTimeout(
+      write,
+      options.timeoutMs ?? DEFAULT_DSHEET_PERSISTENCE_TIMEOUT_MS,
+    );
+  } finally {
+    abandoned = true;
+    closeDatabase();
+  }
+};
