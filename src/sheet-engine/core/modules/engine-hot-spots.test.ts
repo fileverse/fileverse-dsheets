@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { produce } from 'immer';
 import { defaultContext } from '../context';
 import { loadLocale } from '../locale';
 import { clearMeasureTextCache, getMeasureText } from './text';
+import { getComputeMap } from './ConditionFormat';
 import { delFunctionGroup } from './formula';
 
 const makeCtx = (rows = 20, cols = 8) => {
@@ -79,6 +81,60 @@ describe('C1 text-measure cache', () => {
     getMeasureText('hello', r, ctx);
     getMeasureText('hello', r, ctx, '20px Arial');
     expect(r.calls).toBe(4);
+  });
+});
+
+describe('C2 conditional-format compute cache', () => {
+  const withRule = () => {
+    const ctx = makeCtx();
+    ctx.luckysheetfile[0].luckysheet_conditionformat_save = [
+      {
+        type: 'default',
+        cellrange: [{ row: [0, 19], column: [0, 7] }],
+        format: { textColor: '#000', cellColor: '#ff0' },
+        conditionName: 'greaterThan',
+        conditionRange: [],
+        conditionValue: ['100'],
+      },
+    ];
+    return ctx;
+  };
+
+  it('returns the same map while nothing keyed changes', () => {
+    const ctx = withRule();
+    const first = getComputeMap(ctx);
+    expect(first && Object.keys(first).length).toBeGreaterThan(0);
+    ctx.scrollTop = 500;
+    expect(getComputeMap(ctx)).toBe(first);
+  });
+
+  it('recomputes when data, rules or the workbook change, with the right result', () => {
+    const ctx = withRule();
+    const first = getComputeMap(ctx) as any;
+    expect(first['0_0']).toBeUndefined();
+    const next = produce<any>(ctx, (d: any) => {
+      d.luckysheetfile[0].data[0][0] = { v: 999, m: '999' };
+    });
+    const second = getComputeMap(next) as any;
+    expect(second).not.toBe(first);
+    expect(second['0_0']).toBeTruthy();
+    const rulesChanged = produce<any>(next, (d: any) => {
+      d.luckysheetfile[0].luckysheet_conditionformat_save[0].conditionValue = [
+        '1000',
+      ];
+    });
+    expect((getComputeMap(rulesChanged) as any)['0_0']).toBeUndefined();
+  });
+
+  it('never caches inside an Immer draft', () => {
+    const ctx = withRule();
+    produce<any>(ctx, (d: any) => {
+      const a = getComputeMap(d) as any;
+      d.luckysheetfile[0].data[0][0] = { v: 999, m: '999' };
+      const b = getComputeMap(d) as any;
+      expect(a['0_0']).toBeUndefined();
+      expect(b['0_0']).toBeTruthy();
+    });
   });
 });
 
