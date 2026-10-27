@@ -852,3 +852,21 @@ Rulings: the spec says "the Yjs write helpers return without writing", so every 
 Tests: unit suite 44 files, 346 tests; `tsc` clean.
 
 Not covered: no mounted-React test of the editor-context wiring (vitest has no React renderer). The permission chip still shows the prop's state and the comment toolbar item still shows while locked (its anchor write is guarded). A template apply that returns early leaves `selectedTemplate` set. `watchFormatGate` creates the empty `meta` root type. Format 2 edits already merged before this client opened are not detected until the watch starts, except where the read-only pre-watch check is used (merge, migrate).
+
+
+## Audit fixes (2026-10-27, not committed)
+
+Found by comparing the branch with the spec (`docs/perf/stabilize-spec-audit.md`). Each has a test; the C8 walk test was run against the old behaviour first.
+
+| Item | Change | Test | Before | After |
+|---|---|---|---|---|
+| A1 / D5 step 4: `DSheetContentSnapshot.fingerprint` | `snapshotDsheetDocument` adds `fingerprint` from `fingerprintFromDocument(doc)` (state vector + one delete-set scan); `null` when unavailable. Reaches `readDsheetContent`, `mergeDsheetContent` and `getContentSnapshot`. | `persistence.fingerprint.test.ts` (3): null when unavailable; equals the live tracker and `fingerprintFromUpdate` after a reopen from a compacted body (GC structs); changes on a delete-only change. | field absent | present |
+| A4: undo/redo keep a collaborator's formulas | `planHistoryPatches` drops `calcChain` patches (index-addressed) and `reregisterRestoredFormulas` re-registers the restored cells from their `f`; patches that replace a whole sheet or grid are applied as before. `calcChainYdocUpdate` skips deleting a chain key whose cell still holds a formula. | `history-calc-chain.test.ts` (3), `calc-chain-ydoc-update.test.ts` (2). The first asserts that replaying the raw inverse patches drops the collaborator's entry and the planned history keeps it. | undo dropped the entry (asserted in the test) | kept |
+| C8: very-large-range / named-range seeds | `collectTransitiveFormulaDependents(origin, rev, extraSeeds)`; both call sites in `formula.ts` pass the always-run formulas as seeds of the one walk instead of adding them after it. | `formula.wide-seed.test.ts` (2): `B1=SUM(A1:A20000)`, `C1=B1*2`, edit A5. | C1 stayed 40,000 (failing run) | C1 = 40,198 |
+| C8: flag after HTML-table paste and cut-paste | `pasteHandler` and `pasteHandlerOfCutPaste` call `markDepGraphIncomplete()`. Copy-paste is unchanged. | `paste-dep-graph.test.ts` (2) | flag stayed true | false |
+| C2: new day misses | Cache key includes `getLocalTodaySerial()` for every sheet (simpler than detecting date rules; costs one date computation per draw). | `engine-hot-spots.test.ts`: same day hits, next day misses | stale after midnight | recomputed |
+| A1: legacy `onContentUpdate` | `flushPortalUpdate` flushes it per edit again. Only the whole-doc encode in `onChange` stays throttled. | none (no React renderer) | up to 1 s late | per edit |
+
+Unit suite: 49 files, 359 tests pass; `tsc` clean. No benchmark was run for these; none is a performance change except the C2 key (one date computation per draw, not measured).
+
+Not done from the audit: E1–E6, the browser measurements (section 6 of the spec) and the app side.

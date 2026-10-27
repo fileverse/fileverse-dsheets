@@ -2581,13 +2581,13 @@ export function execFunctionGroup(
     // Narrow only on a complete graph: a formula that was never evaluated has
     // no recorded edges, so a partial graph would leave it off the run list
     // and its value stale (Task 16). Otherwise run the full list.
-    const dependents = collectTransitiveFormulaDependents(
-      originKey,
-      ctx.formulaCache.revDepsByCell,
+    // Formulas that always run: very large ranges record no edges, and a
+    // formula naming a range that covers the edited cell has no cell edges.
+    // They seed the same walk as the edited cell, so a formula reading their
+    // result is reached too (C8).
+    const alwaysRun = new Set<string>(
+      ctx.formulaCache.formulasWithWideRangeDeps,
     );
-    ctx.formulaCache.formulasWithWideRangeDeps.forEach((formulaKey) => {
-      dependents.add(formulaKey);
-    });
     // Named-range-only formulas (no cell edges): if the edited cell sits inside
     // a defined name, include calc-chain formulas that mention that name.
     const coveringNames = (ctx.definedNames || []).filter(
@@ -2603,7 +2603,7 @@ export function execFunctionGroup(
       for (let i = 0; i < calcChains.length; i += 1) {
         const cell = calcChains[i];
         const formulaKey = `${cell.id}:${cell.r}:${cell.c}`;
-        if (dependents.has(formulaKey)) continue;
+        if (alwaysRun.has(formulaKey)) continue;
         const f = getcellFormula(ctx, cell.r, cell.c, cell.id);
         if (!f) continue;
         const upper = f.toUpperCase();
@@ -2615,12 +2615,17 @@ export function execFunctionGroup(
             'i',
           );
           if (re.test(upper)) {
-            dependents.add(formulaKey);
+            alwaysRun.add(formulaKey);
             break;
           }
         }
       }
     }
+    const dependents = collectTransitiveFormulaDependents(
+      originKey,
+      ctx.formulaCache.revDepsByCell,
+      alwaysRun,
+    );
     if (dependents.size > 0) {
       calcChainsToProcess = calcChains.filter((cell) =>
         dependents.has(`${cell.id}:${cell.r}:${cell.c}`),
@@ -2948,10 +2953,8 @@ export function execFunctionGroup(
     const depDependents = collectTransitiveFormulaDependents(
       originKey,
       ctx.formulaCache.revDepsByCell,
+      ctx.formulaCache.formulasWithWideRangeDeps,
     );
-    ctx.formulaCache.formulasWithWideRangeDeps.forEach((formulaKey) => {
-      depDependents.add(formulaKey);
-    });
     if (depDependents.size > 0) {
       const alreadyQueued = new Set(
         updateValueArray.map((fo: { key: string }) => fo.key),

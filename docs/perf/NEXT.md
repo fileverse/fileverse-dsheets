@@ -10,6 +10,8 @@ Done and committed: G5 = Task 6 (`4d181b5`, `rebuildLocalStore`, D3 package side
 
 Done and committed: G6 = Task 8 (`71d758d`, format gate F, S13); docs `4122b95`. Unit suite 44 files, 346 tests; `tsc` clean.
 
+Audit fixes (2026-10-27, in the working tree, not committed): snapshot `fingerprint`, A4 undo/redo calcChain guard, C8 wide-range seed walk, C8 paste/cut flag clears, C2 date key, `onContentUpdate` flush. Details: `docs/perf/stabilize-spec-audit.md`, results doc "Audit fixes". Unit suite 49 files, 359 tests; `tsc` clean.
+
 Not done: 6 tasks (9–14), then a final review.
 
 | Order | Group | Task | What | Reviewer |

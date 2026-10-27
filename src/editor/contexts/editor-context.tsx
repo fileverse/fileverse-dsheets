@@ -503,7 +503,10 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   // Local writes and remote applies share these throttles.
   const flushPortalUpdate = useCallback(() => {
     handleOnChange();
+    // Per-edit flush kept: it encodes nothing, and ddocs.new saves its draft
+    // row from it. Only the whole-doc encode in handleOnChange is throttled.
     handleContentUpdateNotification();
+    handleContentUpdateNotification.flush();
     contentChangeNotifier.notify();
   }, [handleOnChange, handleContentUpdateNotification, contentChangeNotifier]);
   onRemoteAppliedRef.current = flushPortalUpdate;

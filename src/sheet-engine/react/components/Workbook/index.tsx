@@ -88,6 +88,11 @@ import { ensureSheetFlowdata } from '@sheet-engine/core/api/sheet';
 import { setActiveDraftContext } from '@sheet-engine/core/utils/active-draft-context';
 import { clearRangeValuePassCache } from '@sheet-engine/core/modules/formula-range-cache';
 import { selectionCache } from '@sheet-engine/core/modules/selection';
+import {
+  planHistoryPatches,
+  reregisterRestoredFormulas,
+  type RestoredCell,
+} from '@sheet-engine/core/modules/history-calc-chain';
 import React, {
   useMemo,
   useState,
@@ -128,6 +133,26 @@ import {
 // import ConditionRules from "../ConditionFormat/ConditionRules";
 
 enablePatches();
+
+/**
+ * Apply undo/redo patches without restoring `calcChain` from them (A4): the
+ * restored cells are re-registered from their own formulas instead, so a
+ * collaborator's chain entries survive.
+ */
+function applyHistoryPatches(ctx: Context, patches: Patch[]): Context {
+  const plan = planHistoryPatches(patches);
+  const applied = applyPatches(ctx, plan.patches);
+  if (!plan.restored?.length) return applied;
+  const restored: RestoredCell[] = plan.restored;
+  return produce(applied, (draft: Context) => {
+    setActiveDraftContext(draft);
+    try {
+      reregisterRestoredFormulas(draft, restored);
+    } finally {
+      setActiveDraftContext(null);
+    }
+  });
+}
 
 export type WorkbookInstance = ReturnType<typeof generateAPIs>;
 
@@ -707,7 +732,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           });
           // Patches restore formulas without evaluating them (C8).
           ctx_.formulaCache.markDepGraphIncomplete();
-          let newContext = applyPatches(ctx_, history.inversePatches);
+          let newContext = applyHistoryPatches(ctx_, history.inversePatches);
           globalCache.current.redoList.push(history);
           const inversedOptions = inverseRowColOptions(history.options);
           if (inversedOptions?.insertRowColOp) {
@@ -780,7 +805,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           });
           // Patches restore formulas without evaluating them (C8).
           ctx_.formulaCache.markDepGraphIncomplete();
-          let newContext = applyPatches(ctx_, history.patches);
+          let newContext = applyHistoryPatches(ctx_, history.patches);
           const isBorderUndo = history.patches.some(
             (onePatch) =>
               Array.isArray(onePatch.value?.borderInfo) &&

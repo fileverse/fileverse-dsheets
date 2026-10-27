@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { produce } from 'immer';
 import { defaultContext } from '../context';
 import { loadLocale } from '../locale';
@@ -133,6 +133,21 @@ describe('C2 conditional-format compute cache', () => {
       ];
     });
     expect((getComputeMap(rulesChanged) as any)['0_0']).toBeUndefined();
+  });
+
+  it('misses on a new day, hits within the same day', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(2026, 9, 27, 9, 0, 0));
+      const ctx = withRule();
+      const first = getComputeMap(ctx);
+      vi.setSystemTime(new Date(2026, 9, 27, 23, 0, 0));
+      expect(getComputeMap(ctx)).toBe(first);
+      vi.setSystemTime(new Date(2026, 9, 28, 0, 5, 0));
+      expect(getComputeMap(ctx)).not.toBe(first);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('never caches inside an Immer draft', () => {

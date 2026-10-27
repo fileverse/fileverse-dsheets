@@ -1930,6 +1930,7 @@ type ComputeMapCacheEntry = {
   conditionRules: unknown;
   draftActive: boolean;
   selection: unknown;
+  today: number;
   result: ReturnType<typeof compute> | null;
 };
 
@@ -1961,6 +1962,8 @@ export function getComputeMap(ctx: Context) {
     conditionRules: sheet.conditionRules,
     draftActive,
     selection: draftActive ? ctx.luckysheet_select_save : null,
+    // Date rules compare with today: a new day must miss.
+    today: getLocalTodaySerial(),
   };
   const cached = computeMapCache.get(ctx.currentSheetId);
   if (
@@ -1969,7 +1972,8 @@ export function getComputeMap(ctx: Context) {
     cached.rules === key.rules &&
     cached.conditionRules === key.conditionRules &&
     cached.draftActive === key.draftActive &&
-    cached.selection === key.selection
+    cached.selection === key.selection &&
+    cached.today === key.today
   ) {
     return cached.result;
   }

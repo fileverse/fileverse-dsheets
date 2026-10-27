@@ -28,6 +28,8 @@ type SyncContext = {
   oldSheet: Record<string, any>;
   /** The engine's current value of `field` for the active sheet. */
   newValue: any;
+  /** The engine's active sheet, for checks against its cells. */
+  engineSheet: Record<string, any> | undefined;
   ydoc: Y.Doc;
 };
 
@@ -66,6 +68,7 @@ export const getSheetYdocSyncContext = ({
       ),
     },
     newValue: engineSheet?.[field],
+    engineSheet,
     ydoc: ydocRef.current,
   };
 };
