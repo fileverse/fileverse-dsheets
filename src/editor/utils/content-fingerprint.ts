@@ -90,10 +90,21 @@ export function attachContentFingerprint(
   };
 }
 
-/** Same value as a live tracker, for a stored full-state body. */
+/**
+ * Same value as a live tracker, for a stored body or a merge of raw rows.
+ * Builds a temporary document and scans its delete set, as getDsheetStateVector
+ * builds one. Reading the delete ranges from the encoded update instead
+ * (Y.decodeUpdate) misses GC structs that arrive without a delete range, e.g.
+ * a row written when the document received a compacted body.
+ */
 export function fingerprintFromUpdate(update: Uint8Array): string {
-  const stateVector = Y.encodeStateVectorFromUpdate(update);
-  return `${fromUint8Array(stateVector)}:${sumDeleteSet(Y.decodeUpdate(update).ds)}`;
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, update);
+    return fingerprintFromDocument(doc);
+  } finally {
+    doc.destroy();
+  }
 }
 
 /**

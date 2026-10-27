@@ -226,6 +226,7 @@ fake-indexeddb). Port them to `content-fingerprint.test.ts`.
 | T7 | `Y.UndoManager` undo of a typed value | Fingerprint changed |
 | T8 | Reopen from `encodeStateAsUpdate` | Same fingerprint as before reload |
 | T9 | `fingerprintFromUpdate(Y.mergeUpdates(rows))` for: one row per update; legacy full-copy rows overlapping incremental rows plus exact duplicates; rows from two peers with concurrent deletes of the same key; `gc: false`; full-state encode after 200 sessions | Equals the live-doc fingerprint |
+| T9b | Source replaces a 20-cell map; receiver applies the compacted body; merge the receiver's raw `update` rows; `gc` on and off | `fingerprintFromUpdate(merge)` equals the receiver's live fingerprint (the `Y.decodeUpdate` version gave `:2` against `:22`) |
 | T10 | Tracker attached at doc creation, then real `IndexeddbPersistence` replay (fake-indexeddb): (a) 5 reloads, no trim (461 rows); (b) 4 reloads with >500 updates per session, so y-indexeddb trims the store to 1 full-state row | After each replay and after edits: count equals a full scan; fingerprint unchanged across reload; `fingerprintFromUpdate` of the stored rows equals the last live fingerprint |
 
 Not covered: the package's own `compactDsheetPersistence` pass

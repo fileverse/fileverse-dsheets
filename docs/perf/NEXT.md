@@ -12,6 +12,8 @@ Done and committed: G6 = Task 8 (`71d758d`, format gate F, S13); docs `4122b95`.
 
 Audit fixes (2026-10-27, in the working tree, not committed): snapshot `fingerprint`, A4 undo/redo calcChain guard, C8 wide-range seed walk, C8 paste/cut flag clears, C2 date key, `onContentUpdate` flush. Details: `docs/perf/stabilize-spec-audit.md`, results doc "Audit fixes". Unit suite 49 files, 359 tests; `tsc` clean.
 
+`fingerprintFromUpdate` fix (2026-10-27, uncommitted): builds a temporary document like the spec; test T9b; 360 tests, `tsc` clean. Remaining audit deviations are listed in `stabilize-spec-audit.md` section 2 (C8 warm-up evaluates formulas, pre-warm commit path, B3 guard, B2 `cloneDeep`).
+
 Not done: 6 tasks (9–14), then a final review.
 
 | Order | Group | Task | What | Reviewer |

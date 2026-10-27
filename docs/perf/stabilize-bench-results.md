@@ -74,7 +74,7 @@ The teardown case is extra to the ticket. The observer effect re-subscribes when
 | One cell write without tracker | 0.021 ms | 0.045 ms |
 | Open (apply body) with tracker | 64.6 ms | 261 ms (one outlier) |
 | Open (apply body) without tracker | 61.8 ms | 64.4 ms |
-| `fingerprintFromUpdate(body)` | **34.9 ms** | 40.4 ms |
+| `fingerprintFromUpdate(body)` (`Y.decodeUpdate` version, replaced 2026-10-27; now 60.8 ms) | **34.9 ms** | 40.4 ms |
 
 Budgets in the fingerprint spec:
 
@@ -83,7 +83,7 @@ Budgets in the fingerprint spec:
 
 Open costs about 3 ms more on a 114k-struct body.
 
-**Finding for D5 (superseded 2026-10-26: the ticket now builds `fingerprintFromUpdate` from a temporary document plus a delete-set scan, and the dirty check uses the body read's fingerprint; re-measure the new implementation, this number is for the `Y.decodeUpdate` version).** `fingerprintFromUpdate` decodes every struct (`Y.decodeUpdate`), which takes 35 ms on this body. Running it every 20 s cycle for background sheets is not cheap. A reader that skips struct contents and reads only the delete set is a candidate before D5 adopts it.
+**Finding for D5 (superseded 2026-10-26, re-measured 2026-10-27 at 60.8 ms for the temporary-document version, see the end of this file: the ticket now builds `fingerprintFromUpdate` from a temporary document plus a delete-set scan, and the dirty check uses the body read's fingerprint; re-measure the new implementation, this number is for the `Y.decodeUpdate` version).** `fingerprintFromUpdate` decodes every struct (`Y.decodeUpdate`), which takes 35 ms on this body. Running it every 20 s cycle for background sheets is not cheap. A reader that skips struct contents and reads only the delete set is a candidate before D5 adopts it.
 
 S1–S4 are unchanged in `after.json`. Nothing that removes them (A1's `onContentChange` prop and throttle, A2, A3) has landed yet.
 
@@ -870,3 +870,26 @@ Found by comparing the branch with the spec (`docs/perf/stabilize-spec-audit.md`
 Unit suite: 49 files, 359 tests pass; `tsc` clean. No benchmark was run for these; none is a performance change except the C2 key (one date computation per draw, not measured).
 
 Not done from the audit: E1–E6, the browser measurements (section 6 of the spec) and the app side.
+
+
+## `fingerprintFromUpdate` builds a temporary document (2026-10-27, not committed)
+
+The spec (A1) rejects reading the delete ranges from the update with `Y.decodeUpdate`: a raw IndexedDB row written when the document received a compacted body carries that body's GC structs with no delete range. Audit item "implemented differently" 3 found the branch still used that approach.
+
+**Correctness.** New test T9b (`content-fingerprint.test.ts`): a source doc replaces a 20-cell `celldata` map, the receiver applies the compacted body, then the raw `update` rows are merged with `Y.mergeUpdates`, gc on and off.
+
+| Implementation | T9b |
+|---|---|
+| `Y.encodeStateVectorFromUpdate` + `Y.decodeUpdate(update).ds` | **failed**: `:2` against `:22` |
+| temporary `Y.Doc`, `Y.applyUpdate`, `fingerprintFromDocument` (state vector + one delete-set scan) | passes |
+
+**Cost** (`after-fp-doc.json`, S5 `fingerprintFromUpdate(body)`, old 100-row sheet, same harness as `after.json`):
+
+| Implementation | Median | p95 |
+|---|---|---|
+| decode version (`after.json`, earlier run) | 34.9 ms | 40.4 ms |
+| temporary document (`after-fp-doc.json`) | **60.8 ms** | 131 ms |
+
+The two figures come from different runs, not interleaved; the same harness's "open (apply body) without tracker" read 61.8 ms then and 58.7 ms now, so the machine state looks comparable [Inference]. The spec's own figure for this sheet is about 90 ms. The extra cost is one `applyUpdate`, which the body read pays today. The dirty check uses the body read's fingerprint (`snap.fingerprint`), not this function; this function is for the open-time load, the legacy fallback, the backfill and the post-merge publish.
+
+Unit suite: 49 files, 360 tests pass; `tsc` clean.

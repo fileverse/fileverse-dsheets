@@ -214,6 +214,33 @@ describe('content fingerprint (A1)', () => {
     }
   });
 
+  it('T9b: fingerprintFromUpdate of raw rows, one written on receiving a compacted body, equals the live fingerprint', () => {
+    for (const gc of [true, false]) {
+      const source = tracked({ gc });
+      const sheet = seedSheet(source.doc, 20);
+      // Replace celldata whole: its 20 children become GC structs once compacted.
+      sheet.set('celldata', new Y.Map());
+      const body = Y.encodeStateAsUpdate(source.doc);
+
+      const receiver = tracked({ gc });
+      const rows: Uint8Array[] = [];
+      receiver.doc.on('update', (u: Uint8Array) => rows.push(u));
+      Y.applyUpdate(receiver.doc, body);
+      receiver.doc
+        .getArray<Y.Map<any>>(ROOT)
+        .get(0)
+        .get('config')
+        .set('merge', { '0_0': {} });
+
+      expect(fingerprintFromUpdate(Y.mergeUpdates(rows))).toBe(
+        receiver.tracker.getFingerprint(),
+      );
+      expect(receiver.tracker.getFingerprint()).toBe(
+        expectedFingerprint(receiver.doc),
+      );
+    }
+  });
+
   it('GC structs from a loaded body are counted (deleted map with 20 cells)', () => {
     const { doc, tracker } = tracked();
     const sheet = seedSheet(doc, 20);

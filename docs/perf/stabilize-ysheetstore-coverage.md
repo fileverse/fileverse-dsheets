@@ -79,7 +79,7 @@ Line numbers come from our docs (`main` @ `aa87284`) unless the ticket gives its
 - **Not covered:**
   - **D6 upgrade (revised 2026-10-26):** a bare stored vector is compared with the body's vector, as today, until the open-time load replaces it with the on-chain fingerprint. A delete-only change made before the upgrade stays unpublished until the sheet is opened once; the first-draft rule that marked it clean was rejected.
   - **D6 write ordering** assumes IndexedDB is on. With `enableIndexeddbSync` false, or after an IndexedDB init failure, the body read may not hold what the fingerprint covers.
-  - **Background-sheet fingerprint (revised 2026-10-26):** the dirty check uses the body read's fingerprint (under 1.5 ms on top of a read that already builds a document), not `fingerprintFromUpdate`. The 35 ms measured in `stabilize-bench-results.md` was for the `Y.decodeUpdate` version the ticket no longer uses.
+  - **Background-sheet fingerprint (revised 2026-10-26):** the dirty check uses the body read's fingerprint (under 1.5 ms on top of a read that already builds a document), not `fingerprintFromUpdate`. The 35 ms measured in `stabilize-bench-results.md` was for the `Y.decodeUpdate` version the ticket no longer uses; the temporary-document version measures 60.8 ms on the same sheet.
   - **[Inference] Diverged replicas:** two copies could have the same vector and count with different deletes. It's not a content hash; D5's hash check stays.
 
 ### 1.6 Conditional formatting recomputed over its full range on every draw

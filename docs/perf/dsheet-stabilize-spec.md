@@ -23,6 +23,7 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | F | done, committed `71d758d` (Task 8) | | `format-gate.ts`; S13: gate costs 0.9 microseconds per open, paired medians within 1 ms; results doc "F". Every writer reachable without the toolbar is guarded. |
 | E1–E6 | not started | | Plan Tasks 9–14. |
 | Audit fixes (2026-10-27, uncommitted) | done | | `DSheetContentSnapshot.fingerprint` (A1/D5); A4 undo/redo keeps a collaborator's calcChain entries and the calcChain hook never deletes a key whose cell still holds a formula; C8 walk seeded with the very-large-range and named-range formulas; C8 flag turned off by HTML-table paste and cut-paste; C2 cache key includes today; legacy `onContentUpdate` per-edit flush restored. See `docs/perf/stabilize-spec-audit.md`. |
+| `fingerprintFromUpdate` (2026-10-27 fix) | done, uncommitted | | Now builds a temporary document and scans its delete set, as A1 says; the `Y.decodeUpdate` version undercounted GC structs in raw rows (test T9b: 2 against 22). S5: 34.9 ms to 60.8 ms. See results doc. |
 | D0–D2, D4, D6 (app side, dsheets.new) | not in this repo | | See NEXT.md. |
 
 Open finding, not yet an item: formula text rewritten by a row insert is not carried to a second client in the same room (observed in the demo with two tabs; not checked on `main`). It bears on B5 and on part 2's removal of the rewrite. Details in `docs/perf/NEXT.md`.
