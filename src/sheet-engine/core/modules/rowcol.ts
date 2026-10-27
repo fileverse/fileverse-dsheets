@@ -21,8 +21,10 @@ import {
 import {
   emitCelldataDeletesBeyondGrid,
   emitCelldataRangeDiffToYdoc,
+  emitRewrittenFormulasToYdoc,
   getDeleteRowColSnapshotBounds,
   getInsertRowColSnapshotBounds,
+  snapshotFormulaTexts,
   snapshotPersistedCelldataInRange,
 } from '../utils/ydoc-celldata-changes';
 import {
@@ -204,6 +206,25 @@ const emitCellFormatRangesToYdoc = (
   ]);
 };
 
+// Grid size rides with the structural edit so a peer never sees the moved
+// cells with the old row/column count (K2).
+const emitGridSizeToYdoc = (ctx: Context, sheetId: string, file: Sheet) => {
+  if (!ctx?.hooks?.updateCellYdoc) return;
+  const changes: any[] = [];
+  if (file.row != null) {
+    changes.push({ sheetId, path: ['row'], value: file.row, type: 'update' });
+  }
+  if (file.column != null) {
+    changes.push({
+      sheetId,
+      path: ['column'],
+      value: file.column,
+      type: 'update',
+    });
+  }
+  if (changes.length > 0) ctx.hooks.updateCellYdoc(changes);
+};
+
 const markCellRefError = (cell: Cell) => {
   cell.v = '#REF!';
   cell.m = '#REF!';
@@ -379,6 +400,7 @@ export function insertRowCol(
     insertSnapBounds.c2,
     file.celldata,
   );
+  const formulaTextsBefore = snapshotFormulaTexts(ctx);
 
   const snapRowDv =
     usePerRowTemplates && file.dataVerification != null
@@ -1674,6 +1696,27 @@ export function insertRowCol(
       ydocBeforePersisted,
     );
   }
+  // Formulas rewritten outside the range above (other tabs, rows above the
+  // insert) never reach a peer unless written here (K1).
+  emitRewrittenFormulasToYdoc(
+    ctx,
+    formulaTextsBefore,
+    id,
+    type === 'row'
+      ? Math.min(
+          direction === 'lefttop' ? index : index + 1,
+          mergeBounds?.minR ?? Infinity,
+        )
+      : Infinity,
+    type === 'column'
+      ? Math.min(
+          direction === 'lefttop' ? index : index + 1,
+          mergeBounds?.minC ?? Infinity,
+        )
+      : Infinity,
+  );
+
+  emitGridSizeToYdoc(ctx, id, file);
 
   notifyCommentAnchorMove(ctx, {
     type: 'insert',
@@ -1864,6 +1907,7 @@ export function deleteRowCol(
     deleteSnapBounds.c2,
     file.celldata,
   );
+  const formulaTextsBefore = snapshotFormulaTexts(ctx);
 
   // 合并单元格配置变动
   if (cfg.merge == null) {
@@ -2752,6 +2796,17 @@ export function deleteRowCol(
       ydocBeforePersisted,
     );
   }
+  emitRewrittenFormulasToYdoc(
+    ctx,
+    formulaTextsBefore,
+    id,
+    type === 'row'
+      ? Math.min(start, mergeBounds?.minR ?? Infinity)
+      : Infinity,
+    type === 'column'
+      ? Math.min(start, mergeBounds?.minC ?? Infinity)
+      : Infinity,
+  );
   // Range diffs never visit coords past the new grid — delete those ghosts.
   emitCelldataDeletesBeyondGrid(
     ctx,
@@ -2760,6 +2815,8 @@ export function deleteRowCol(
     d.length,
     d[0]?.length ?? 0,
   );
+
+  emitGridSizeToYdoc(ctx, id, file);
 
   notifyCommentAnchorMove(ctx, {
     type: 'delete',

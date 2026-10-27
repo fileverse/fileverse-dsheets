@@ -893,3 +893,44 @@ The spec (A1) rejects reading the delete ranges from the update with `Y.decodeUp
 The two figures come from different runs, not interleaved; the same harness's "open (apply body) without tracker" read 61.8 ms then and 58.7 ms now, so the machine state looks comparable [Inference]. The spec's own figure for this sheet is about 90 ms. The extra cost is one `applyUpdate`, which the body read pays today. The dirty check uses the body read's fingerprint (`snap.fingerprint`), not this function; this function is for the open-time load, the legacy fallback, the backfill and the post-merge publish.
 
 Unit suite: 49 files, 360 tests pass; `tsc` clean.
+
+
+## K1 and K2: structural edits reach a second client (2026-10-27, not committed)
+
+**Cause (K1).** `insertRowCol` and `deleteRowCol` rewrite formula text on every tab in memory, but write to Yjs only the edited tab's rows from the edit point down (`emitCellRangeToYdoc`). A formula above the edit point, or on any other tab (`=A!B5`), changed on the editing client only, and every peer kept the old text. Reproduced earlier at the Yjs level on this branch and on `main` (`.superpowers/.../k3-k1-report.md`); not a regression from this branch.
+
+**Change.** `snapshotFormulaTexts` (before the rewrite) and `emitRewrittenFormulasToYdoc` (after) in `ydoc-celldata-changes.ts`: cells whose formula text changed are written to Yjs, on all hydrated tabs, skipping the range the existing diff already writes. `emitGridSizeToYdoc` in `rowcol.ts` writes the new `row` and `column` count in the same call path as the cells. Used by `insertRowCol` and `deleteRowCol`. No Yjs schema change.
+
+**Cause (K2), [Inference].** The row count reached Yjs only from the `afterColRowChanges` effect, after the cells, and the peer does not read `row` on a live update (`use-editor-data.tsx` reads only `calcChain` per field). A peer that remounted between the two writes kept the old size: 84 on the peer against 86 on the editor is the pre-insert size. Not confirmed in a browser. The fix puts the size in the same synchronous path as the cells, so the window is gone, but whether this was the whole of K2 is [Unverified] until the two-tab check below is repeated.
+
+**Tests.** `structural-edit-formula-sync.test.ts` (8): two Y.Docs, the second fed from the first's `update` events, engine with tabs A and B; a formula above the edit point and one on tab B; row insert, column insert, row delete, column delete.
+
+| Test | Before | After |
+|---|---|---|
+| K1 row insert / column insert / row delete / column delete (peer formulas equal the editing client's) | 4 failed (peer kept `=B5` and `=A!B5`) | 4 pass |
+| K2 row insert / column insert / row delete / column delete (peer `row` / `column` equals the editor's) | 4 failed (field not written) | 4 pass |
+
+Unit suite: 50 files, 368 tests pass; `tsc` clean. No benchmark was run. Cost added per structural edit: one scan of every hydrated tab's grid before the rewrite (the rewrite already scans each tab once) and a write per changed formula cell; not measured.
+
+**Not covered.**
+- Values of rewritten formulas: only the formula text and the cell object are written; whether a peer recalculates them was not checked.
+- Tabs that are not hydrated (K6) are skipped, so their formulas stay stale on peers as before.
+
+### K1 and K2 browser check (demo app, dev build, built-in browser, 2026-10-27)
+
+**Rig change.** The dev collaboration server (`wss://dev-collaboration-server-ff60826701cd.herokuapp.com`) was unreachable from the browser: a `WebSocket` to it errored and a plain `fetch` to its HTTPS address failed. The two tabs therefore did not share a room. Instead, both tabs ran the same dev build, and I relayed Yjs updates between them through a `BroadcastChannel` (`window.ydocRef` is the app's `Y.Doc`; `Y.applyUpdate` from the app's own Vite `yjs` module). This tests what reaches the Yjs doc and what the peer does with it. It does not test the collaboration server or the provider. The collaboration config key was removed from `localStorage` afterwards.
+
+Setup: tab `A` with `A!B5 = 7`, `A!A1 = =B5`, `A!A10 = =B5`; tab `B` with `B!A1 = =A!B5`. Tab 1 inserted rows on `A` with `insertRowOrColumn('row', 1, n, 'lefttop')` while `A` was the active tab. Peer values are read from the peer's workbook context and from its Yjs doc.
+
+| Check | Before insert (peer) | After insert 1: 2 rows (peer) | After insert 2: 1 row (peer) |
+|---|---|---|---|
+| `A!A1` formula, row above the insert point | `=B5` | `=B7` | `=B8` |
+| `A!A10`, row below | `=B5` | `=B7` at row 12 | `=B8` at row 13 |
+| `A` row count, peer workbook and Yjs `row` | 84 | **86** | **87** |
+| `B!A1`, other tab | `=A!B5` | `=A!B5` (**not rewritten**) | `=A!B5` (**not rewritten**) |
+
+So the same-tab part of K1 (the row above the insert point) and K2 (row count) are confirmed on a second client. Not confirmed: the cross-tab formula. I did not run this against the old code in the browser, so there is no browser "before" for the same-tab rows; the unit tests carry the before and after.
+
+**Why the cross-tab formula did not move.** In the inserting tab, tab `B` had no `data` grid: its entry in the workbook context held `celldata` and `calcChain` only (`hasData: false`). It had a grid (`hasData: true`, `=A!B5` readable) only while it was the active tab, and lost it again after switching back to `A`. `rowcol.ts` skips a tab with no `data` when it rewrites cross-tab formulas (`if (!sheetData) return`), so nothing was rewritten, in memory or in Yjs. That is K6, and in this app it covers every inactive tab, not only unusual cases [Inference from one run: only tabs `A` and `B` were tried]. My `snapshotFormulaTexts` also skips tabs without `data`. The unit test for the cross-tab case passes because its tab `B` has a `data` grid.
+
+Not checked: whether values on the peer were recalculated; the same insert with `B` active; delete and column cases; different users in the two tabs.

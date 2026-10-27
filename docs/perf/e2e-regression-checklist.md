@@ -324,8 +324,8 @@ Notation: **Owner** = owner window, **Collaborator** = collaborator window. Afte
 6. As 2.4.4, but the owner inserts three rows in a row while the collaborator is editing → one refresh after the edit ends, all three rows present.
 7. Owner inserts a row while the collaborator does nothing, then the collaborator types immediately → no value lost, no value on the wrong row (watch for the K8 edge: a typed value lands at its old coordinates; record where it lands).
 8. Remote structural change while the collaborator has a dropdown open, a context menu open, or a comment open → no crash; the UI closes or stays sensibly.
-9. Owner inserts 50 rows quickly → the collaborator ends with exactly 50 more rows; reload the collaborator → same count (watch K2: row counts can differ).
-10. **KNOWN (K1):** after the owner inserts a row on tab A, the collaborator's formulas that referred to A's cells (`=B5`, `=A!B5`) may keep the old text while the owner's show the shifted text. Record what the collaborator shows for same-tab and cross-tab references, and whether values are right after a reload of the collaborator.
+9. Owner inserts 50 rows quickly → the collaborator ends with exactly 50 more rows; reload the collaborator → same count (K2 was fixed 2026-10-27 and browser-checked once with a relay rig: record both counts).
+10. [K1, fixed 2026-10-27 for the same tab; the cross-tab case on an inactive tab is K6 and is expected to stay stale] After the owner inserts a row on tab A, the collaborator's formulas that referred to A's cells (`=B5` above the insert row, `=A!B5` on another tab) show the shifted text, same as the owner. Record the text for same-tab and cross-tab references, and whether values are right after a reload of the collaborator.
 11. Owner and the collaborator both insert a row at the same time → both windows end with both rows, in the same order.
 12. Owner deletes a row the collaborator is editing → the collaborator's edit is not written to a wrong row; no crash.
 
@@ -421,4 +421,4 @@ Notation: **Owner** = owner window, **Collaborator** = collaborator window. Afte
 
 For each failure give: section and case number, what you did, what each window showed, console output, and whether it also fails on `main`. A case that fails on `main` too is not a regression of this work; add it to `docs/perf/KNOWN-ISSUES.md`.
 
-Cases that should currently fail (so they are not a surprise): 1.9.5 (K25), 2.3.8 (K3, possible; did not reproduce at engine level after Task 16), 2.4.7 (K8), 2.4.9 and 2.4.10 (K1, K2), 1.17.3 to 1.17.5 (K6, K7), 1.17.6 and 1.17.7 (K31, K32), 1.18.1 (CF formula rule crash, from the audit), 1.19.2 (K27), 1.19.5 and 1.19.6 (P3 and P1 follow-ups are not done), 1.20.7 (K42), 2.12.10 (K42, K43). 1.2.9 and 1.3.9 were on this list before Tasks 16 and 17; they must pass now.
+Cases that should currently fail (so they are not a surprise): 1.9.5 (K25), 2.3.8 (K3, possible; did not reproduce at engine level after Task 16), 2.4.7 (K8), 1.17.3 to 1.17.5 (K6, K7), 1.17.6 and 1.17.7 (K31, K32), 1.18.1 (CF formula rule crash, from the audit), 1.19.2 (K27), 1.19.5 and 1.19.6 (P3 and P1 follow-ups are not done), 1.20.7 (K42), 2.12.10 (K42, K43). 1.2.9 and 1.3.9 were on this list before Tasks 16 and 17; they must pass now.

@@ -199,6 +199,74 @@ export function emitCelldataRangeDiffToYdoc(
   }
 }
 
+/** Formula text per tab and cell key, taken before a structural edit rewrites it. */
+export type FormulaTextSnapshot = Map<string, Map<string, string>>;
+
+/**
+ * Snapshot formula text on every hydrated tab. A row/column insert or delete
+ * rewrites formulas on all tabs, but only the edited tab's shifted range is
+ * diffed to Yjs, so the rest has to be found by comparing against this.
+ */
+export function snapshotFormulaTexts(ctx: Context): FormulaTextSnapshot {
+  const out: FormulaTextSnapshot = new Map();
+  (ctx.luckysheetfile ?? []).forEach((sheet: any) => {
+    const { data } = sheet;
+    if (!data || sheet.id == null) return;
+    const texts = new Map<string, string>();
+    for (let r = 0; r < data.length; r += 1) {
+      const row = data[r];
+      if (!row) continue;
+      for (let c = 0; c < row.length; c += 1) {
+        const f = row[c]?.f;
+        if (f) texts.set(`${r}_${c}`, f);
+      }
+    }
+    if (texts.size > 0) out.set(String(sheet.id), texts);
+  });
+  return out;
+}
+
+/**
+ * Emit cells whose formula text changed since `before`, so peers see the
+ * rewrite. On the edited tab, cells at or past (`editedFromR`, `editedFromC`)
+ * are skipped: the range diff already writes them. `before` keys are
+ * pre-edit coordinates, which equal post-edit ones for every cell outside
+ * that range.
+ */
+export function emitRewrittenFormulasToYdoc(
+  ctx: Context,
+  before: FormulaTextSnapshot,
+  editedSheetId: string,
+  editedFromR: number,
+  editedFromC: number,
+): void {
+  if (!ctx?.hooks?.updateCellYdoc || before.size === 0) return;
+  const changes: CelldataYdocChange[] = [];
+  (ctx.luckysheetfile ?? []).forEach((sheet: any) => {
+    const texts = before.get(String(sheet.id));
+    if (!texts || !sheet.data) return;
+    const isEdited = String(sheet.id) === String(editedSheetId);
+    texts.forEach((oldF, key) => {
+      const sep = key.indexOf('_');
+      const r = Number(key.slice(0, sep));
+      const c = Number(key.slice(sep + 1));
+      if (isEdited && (r >= editedFromR || c >= editedFromC)) return;
+      const cell = sheet.data[r]?.[c];
+      if (!cell?.f || cell.f === oldF) return;
+      changes.push({
+        sheetId: String(sheet.id),
+        path: ['celldata'],
+        value: { r, c, v: cell },
+        key,
+        type: 'update',
+      });
+    });
+  });
+  if (changes.length > 0) {
+    ctx.hooks.updateCellYdoc(changes);
+  }
+}
+
 /**
  * After delete row/col, emit deletes for persisted keys that now sit past the
  * shrunken grid. Range diffs only visit coordinates still inside `data`, so

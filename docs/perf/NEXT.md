@@ -14,6 +14,8 @@ Audit fixes (2026-10-27, in the working tree, not committed): snapshot `fingerpr
 
 `fingerprintFromUpdate` fix (2026-10-27, uncommitted): builds a temporary document like the spec; test T9b; 360 tests, `tsc` clean. Remaining audit deviations are listed in `stabilize-spec-audit.md` section 2 (C8 warm-up evaluates formulas, pre-warm commit path, B3 guard, B2 `cloneDeep`).
 
+K1 and K2 fix (2026-10-27, uncommitted): formula text and grid size now reach a second client after a row or column insert or delete; test `structural-edit-formula-sync.test.ts` (8, failed before). 368 tests, `tsc` clean. Browser check done 2026-10-27 with a BroadcastChannel relay (collaboration server unreachable): same-tab formulas and row count reach the peer; cross-tab formula on an inactive tab does not (K6).
+
 Not done: 6 tasks (9–14), then a final review.
 
 | Order | Group | Task | What | Reviewer |
@@ -57,8 +59,7 @@ The ledger `.superpowers/sdd/2026-10-26-p1-stabilise-remaining/progress.md` is g
 
 The complete list, 39 items with evidence labels, locations and next steps, is `docs/perf/KNOWN-ISSUES.md`. The summary below is the short version.
 
-1. **Formula text from a row insert does not reach a second client.** Observed with two demo tabs in one room: the inserting tab had `=B7` and `=A!B7`, the peer kept `=B5` and `=A!B5`. The row and cell values did arrive. [Unverified whether this also happens on `main`.] First step: a failing test that applies an insert to a Yjs doc and checks the formula text a second doc sees. Candidate follow-up item F5 in `dsheet-stabilize-followups-spec.md`. Likely the biggest correctness gap left, and it affects part 2's plan to remove the rewrite.
-2. The same check left the peer with 84 rows against 86. Not investigated.
+1. **K1 and K2 fixed in the working tree (2026-10-27)**; see the results doc. Browser-checked 2026-10-27 (relay rig): same-tab formulas and row count (86, 87) reach the peer. The cross-tab formula on an inactive tab does not: that tab has no `data` grid and the rewrite skips it (K6). Values of rewritten formulas on the peer were not checked.
 3. Paste: `docs/paste-sizing-issues.md` and `docs/copy-mechanism-findings.md` (named in the user's notes) are not in this repository tree, so they were not updated. C5 changed paste auto-fit sizing (fonts via the grid's font builder, cached text measurement, batched layout for wrapped cells); the 10k-cell figure and its limits are in the results doc. Whether C5 closes sizing Issues 2 and 3 there has not been verified, and the row-height-from-`fs` minor below suggests part of Issue 3 remains. Not measured: a full paste event (clipboard parse, Yjs write, render).
 4. Deferred minors (final review to triage):
    - Banner shows the previous sheet's cached result for up to about 1 s after a sheet switch, and a cache hit can be served while fonts are loading.

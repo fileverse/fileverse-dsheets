@@ -40,7 +40,7 @@ A1 hasContent / userEdited / fingerprint tracker (GC-struct counting, attached a
 
 ## 4. Open correctness issues the docs already record (not spec items, but they affect it)
 
-- **K1/K2**: after a row insert, rewritten formula text does not reach a second client; peer row count differed (84 vs 86). Reproduced at Yjs level on `main` too. Biggest correctness gap still open.
+- **K1/K2** (fixed 2026-10-27, uncommitted; browser-checked for the same tab; cross-tab on inactive tabs blocked by K6): after a row insert, rewritten formula text did not reach a second client; peer row count differed (84 vs 86). Reproduced at Yjs level on `main` too. See the results doc.
 - A4 browser check found: after a reconnect the editing tab shows a stale grid and a calcChain entry was not written (not traced).
 - K3 cross-tab stale value (not reproduced after Task 16), K6, K7, K10–K12 (see `KNOWN-ISSUES.md`).
 
