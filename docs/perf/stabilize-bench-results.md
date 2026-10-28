@@ -1158,3 +1158,37 @@ Each new handle is a ref-callback call on the host (`setSheetEditorRef`, which a
 
 **Not covered.** A remount while collaborating with a peer; the host in dsheets.new and ddocs.new (they pass their own `hooks` and may pass `afterActivateSheet`, which would replace the keeper's trigger: this repo's `editor-workbook.tsx` does not merge host hooks, not checked for the packaged component); a Workbook whose `currentSheetId` is set before its sheets exist (the keeper would not be re-triggered); the time cost of rebuilding the api per render; hosts that hold a method from the handle across a remount (they now get a method that keeps working on the old handle until the host re-reads the ref).
 
+## E2: heavy UI no longer renders on scroll (Task 10, 2026-10-28, not committed)
+
+**What changed.**
+- `react/context/workbook-store.ts` (pure): `createWorkbookStore` (one value, `getState`, `setState`, `subscribe`), `createSelection(store, selector, isEqual)` (the snapshot logic: returns the last handed-out value while `isEqual` says the new one is the same), `onlyIgnoredKeysChanged(keys)`, and `contextEqualIgnoringScroll`, which ignores `scrollLeft`, `scrollTop`, `visibledatarow` and `visibledatacolumn`.
+- `react/context/use-workbook-store.ts`: `useWorkbookSelector(selector, isEqual)` on `useSyncExternalStore`, and `useWorkbookContextIgnoringScroll()`, a drop-in for `useContext(WorkbookContext)` that returns the same shape (`context`, `setContext`, `settings`, `refs`, `handleUndo`, `handleRedo`), but with the latest context from the store, and re-renders the component only when a key outside the ignored four changed.
+- `react/context/index.ts`: new `WorkbookStableContext` (store, `setContext`, `settings`, `refs`, undo and redo), whose value only changes when those change.
+- `Workbook/index.tsx`: creates the store once, sets it to the latest `context` in a layout effect after each commit, and provides `WorkbookStableContext`.
+- Converted to `useWorkbookContextIgnoringScroll`: `Toolbar` (both consumers), `CustomBorder`, `FunctionListButton`, `SheetTab`, `SheetItem`, `ContextMenu`, `FilterMenu`, `SheetTabContextMenu`, and `useRemoveDuplicatesDialog` (a hook the Toolbar calls; it kept the Toolbar subscribed to the full context until it was converted). `React.memo` on `Toolbar`, `SheetTab`, `ContextMenu`, `FilterMenu`, `SheetTabContextMenu` and `SVGDefines`.
+
+**Deviation from the spec.** The spec has each component list the fields it reads. Reading is not enough for a 2,352-line Toolbar that also passes `context` to helpers, so this uses an ignore list instead: a component renders on any change except the four keys below. The default is therefore "render", and a missed read cannot leave a stale toolbar. The four keys were chosen from measurement: comparing the top-level context keys before and after each interaction in the demo, a scroll tick changes only `scrollTop`; a cross-cell mouse move changes none; ArrowDown changes only `luckysheet_select_save`; an Enter commit changes `luckysheetfile`, `visibledatarow`, `visibledatacolumn`, `luckysheet_select_save`, `luckysheet_selection_range`, `formulaRangeHighlight` and `luckysheetCellUpdate`. `grep` found no read of those four keys in `Toolbar`, `SheetTab` or `ContextMenu` (including the filter and sheet-tab menus), and the helpers called with the context (`updateCellsDecimalFormat`, `convertCellsToCrypto`, `isHyperlinkCreationBlocked`, `captureLinkEditorOpenSnapshot`) read only `luckysheet_select_save`, `luckysheetCellUpdate` and `currentSheetId`. Not every function reachable from those components was read.
+
+**Tests** (`workbook-store.test.ts`, 14; the module did not exist for the red run, and the `contextEqualIgnoringScroll` tests failed with "not a function" before it was added): store notifies on change, not on the same state, not after unsubscribe; the selection keeps its snapshot while the selected value is equal, changes when it changes, runs the selector once per state, compares against the last handed-out snapshot; `onlyIgnoredKeysChanged` cases; scroll position and rebuilt offsets are no change, selection and sheet changes are. The hooks, the layout effect and the component conversions have no unit test (no React renderer in vitest). Full suite: 60 files, 490 tests pass; `tsc --noEmit` clean.
+
+**Before and after, same method** (reference sheet, demo dev build, render counter; "After" run with all of the above in place):
+
+| Interaction | Before: commits / renders | After: commits / renders |
+|---|---|---|
+| 1 scroll tick | 2 / 798 | 2 / **54** |
+| 10 scroll ticks | 20 / 7,980 | 20 / **540** |
+| ArrowDown | 3 / 824 | 4 / 834 |
+| Enter commit of a typed value | 6 / 1,625 | 7 / 1,658 |
+
+Per scroll tick, `Toolbar`, `SheetTab`, `SheetItem`, `ContextMenu`, `FilterMenu`, `SheetTabContextMenu` and `SVGDefines` went from 1 render each to 0; what still renders is `Sheet`, `SheetOverlay`, `NotationBoxes`, `FxEditor`, `InputBox` and `ScrollBar`. Mouse moves cost 0 renders in the Toolbar family before and after.
+
+**Costs and what is not met.**
+- Selection changes and commits cost one more root commit (3 to 4 and 6 to 7) and about 10 to 33 more renders: the converted components now update in a second pass, from the store notification after the Workbook's commit, instead of in the same pass.
+- The spec's "a commit outside the selection does not render these" is not met: a commit changes `luckysheetfile`, which the Toolbar reads through the selected cell's format, so it still renders. Only scroll, hover and offset rebuilds are skipped.
+- The `FunctionList`, `FxEditor`, `InputBox`, `SheetOverlay` and the other 40-odd `useContext(WorkbookContext)` consumers are unchanged.
+- A first attempt only converted the Toolbar's two direct consumers and did not reduce Toolbar renders: `useRemoveDuplicatesDialog` still read the full context. Found by reading the Toolbar fiber's context dependencies in the browser.
+
+**Browser checks.** Selecting a bold cell turns the Toolbar's bold button yellow (computed `background-color` `rgb(255, 223, 10)`) and selecting a non-bold cell clears it, so the Toolbar still follows the selection; the selection stat shows `Sum: 51` for B2:B4 (51 expected); adding a sheet shows the new tab and activates it; right-click opens the cell context menu. Not checked: the filter menu, the sheet-tab context menu, the function list, the border popover, undo and redo from the toolbar, popovers opened while scrolling, formula editing with the Toolbar, and a second client.
+
+**Known gaps.** Indentation of the Workbook JSX inside the new `WorkbookStableContext.Provider` was not re-formatted (it would re-indent about 280 lines); `eslint` reports it as prettier errors in that file, like the other pre-existing ones.
+

@@ -1,7 +1,6 @@
 import { Popover, PopoverContent, PopoverTrigger } from '@fileverse/ui';
 import {
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -9,7 +8,7 @@ import {
 } from 'react';
 import { LucideIcon } from '@fileverse/ui';
 import { HoverMenuItem } from './HoverMenuItem';
-import WorkbookContext from '../../../context';
+import { useWorkbookContextIgnoringScroll } from '../../../context/use-workbook-store';
 import {
   api,
   escapeHTMLTag,
@@ -178,7 +177,7 @@ function FunctionListSubmenuScrollArea({
 }
 
 export const FunctionList = () => {
-  const { context, setContext, refs } = useContext(WorkbookContext);
+  const { context, setContext, refs } = useWorkbookContextIgnoringScroll();
   const [isFunctionOpen, setIsFunctionOpen] = useState<boolean>(false);
   const [openSampleCategory, setOpenSampleCategory] = useState<string | null>(
     null,

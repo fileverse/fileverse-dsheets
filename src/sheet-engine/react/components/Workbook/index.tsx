@@ -113,7 +113,15 @@ import produce, {
 import _ from 'lodash';
 import { getCryptoPrice } from '../../utils/cryptoApi';
 import Sheet from '../Sheet';
-import WorkbookContext, { RefValues, SetContextOptions } from '../../context';
+import WorkbookContext, {
+  RefValues,
+  SetContextOptions,
+  WorkbookStableContext,
+} from '../../context';
+import {
+  createWorkbookStore,
+  WorkbookStore,
+} from '../../context/workbook-store';
 import Toolbar from '../Toolbar';
 import FxEditor from '../FxEditor';
 import QuickSearchBar from '../QuickSearch';
@@ -931,6 +939,28 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
         refs,
         setContextWithProduce,
       ],
+    );
+
+    // E2: components that must not render on every context update read the
+    // latest context from this store and the rarely changing parts from the
+    // stable value. The store is updated after each commit.
+    const workbookStore = useRef<WorkbookStore<Context> | null>(null);
+    if (workbookStore.current === null) {
+      workbookStore.current = createWorkbookStore(context);
+    }
+    useLayoutEffect(() => {
+      workbookStore.current!.setState(context);
+    }, [context]);
+    const stableValue = useMemo(
+      () => ({
+        store: workbookStore.current!,
+        setContext: setContextWithProduce,
+        settings: mergedSettings,
+        handleUndo,
+        handleRedo,
+        refs,
+      }),
+      [handleRedo, handleUndo, mergedSettings, refs, setContextWithProduce],
     );
 
     useEffect(() => {
@@ -2071,6 +2101,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
 
     return (
       <WorkbookContext.Provider value={providerValue}>
+        <WorkbookStableContext.Provider value={stableValue}>
         {/* <button onClick={()=>{
           setShow(!show)
           id="placeholder-data-verification placeholder-conditional-format"
@@ -2268,6 +2299,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
             )}
           </div>
         </ModalProvider>
+        </WorkbookStableContext.Provider>
       </WorkbookContext.Provider>
     );
   },

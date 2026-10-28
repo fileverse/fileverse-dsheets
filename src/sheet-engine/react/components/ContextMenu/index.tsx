@@ -31,7 +31,6 @@ import {
 } from '@sheet-engine/core';
 import _ from 'lodash';
 import React, {
-  useContext,
   useRef,
   useCallback,
   useLayoutEffect,
@@ -45,6 +44,7 @@ import { ResetColumnWidth } from '../ResetColumnWidth';
 import { ResetRowHeight } from '../ResetRowHeight';
 // import DataVerification from "../DataVerification";
 import WorkbookContext, { SetContextOptions } from '../../context';
+import { useWorkbookContextIgnoringScroll } from '../../context/use-workbook-store';
 import { useAlert } from '../../hooks/useAlert';
 import { useDialog } from '../../hooks/useDialog';
 import Divider from './Divider';
@@ -59,7 +59,8 @@ import { LucideIcon as LocalLucidIcon } from '../SheetOverlay/LucideIcon';
 const ContextMenu: React.FC = () => {
   const { showDialog } = useDialog();
   const containerRef = useRef<HTMLDivElement>(null);
-  const { context, setContext, settings, refs } = useContext(WorkbookContext);
+  const { context, setContext, settings, refs } =
+    useWorkbookContextIgnoringScroll();
   const { contextMenu } = context;
   const { showAlert } = useAlert();
   const { rightclick, drag, generalDialog, info, splitText } = locale(context);
@@ -1698,4 +1699,4 @@ const ContextMenu: React.FC = () => {
   );
 };
 
-export default ContextMenu;
+export default React.memo(ContextMenu);
