@@ -428,6 +428,18 @@ Notation: **Owner** = owner window, **Collaborator** = collaborator window. Afte
 9. In that state call `rebuildLocalStore()` → it settles within about 3 s plus the rebuild; the editor shows the published content merged with the local content; the status is "synced". [#4]
 10. Open the sheet and change `isReadOnly` or the published content right after mount, then call `rebuildLocalStore()` → it settles (resolves or rejects) and the status never stays "syncing". [#4]
 
+### 2.15 PR 466 review fixes, second round [review #7 to #14]
+
+1. Tab A and tab B; on B enter `=A!B5` and `=2*A!B5`; on A insert a row above row 5 → on B the formulas become `=A!B6` and `=2*A!B6`, on the owner and the collaborator, and after a reload. [#7]
+2. A 4 x 4 sheet with formulas in B2 and D4; insert a row at the top, press Ctrl+Z → the collaborator's calcChain (or a recalculation of D4 after changing its input) shows no entry outside the 4 x 4 grid; repeat with a column insert. [#8]
+3. Insert 2 rows, then Ctrl+Z → the collaborator's row count goes back at once (not only after switching tabs); Ctrl+Shift+Z → it grows again. Do it on a tab that is not the current one for the collaborator. [#9]
+4. Collaborator edits an input of a formula the owner also holds, several times → the owner's formulas still recalculate fast on every commit (no growing lag with 2,000 formulas). [#10]
+5. `A1=5`, `B1 =A1*2`; cut B1, paste into D4, set A1 to 7 → D4 shows 14 on both windows. [#11]
+6. Fill a formula down 50 rows; look at the Yjs update count (or the network panel) → one write per cell, not two. [#12]
+7. Define a name `lim` on A3 (value 5) and a conditional format with the formula `=lim>7`; move the name to A2 (value 10) → the highlight appears without another edit. [#13]
+8. Open and close several sheets in a long session → memory does not grow with every sheet opened (heap snapshot; **[Unverified]** the size of the effect). [#13]
+9. Collaborator upgrades the sheet to a newer format while the owner is typing in a cell → the owner's grid turns read-only at once; a cell committed right after is not shown as saved and is not silently lost on reload (it is rejected). [#14]
+
 ---
 
 ## 3. What to report

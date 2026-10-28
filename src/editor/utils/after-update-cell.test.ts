@@ -178,3 +178,42 @@ describe('afterUpdateCell during a pending structural remount', () => {
     expect(chainOf(doc, 'A')).toEqual({});
   });
 });
+
+// PR 466 review (#12): paste and fill write the final cell in their own batch;
+// afterUpdateCell must not write the pre-format cell first.
+describe('afterUpdateCell with skipPersist', () => {
+  const gate = {
+    collabEnabled: true,
+    collabIsOwner: false,
+    localUserEditRef: { current: false },
+  };
+
+  it('does not write the cell or a chain entry', async () => {
+    const doc = seed();
+    await afterUpdateCell(
+      base(doc, {
+        ...gate,
+        skipPersist: true,
+        structuralRemountPendingRef: { current: true },
+        row: 1,
+        column: 1,
+        newValue: { v: 3, m: '3', f: '=1+2' },
+      }),
+    );
+    expect(cellsOf(doc, 'A')).toEqual({});
+    expect(chainOf(doc, 'A')).toEqual({});
+  });
+
+  it('writes as before when the flag is not set', async () => {
+    const doc = seed();
+    await afterUpdateCell(
+      base(doc, {
+        ...gate,
+        row: 1,
+        column: 1,
+        newValue: { v: 3, m: '3', f: '=1+2' },
+      }),
+    );
+    expect(cellsOf(doc, 'A')['1_1']?.v?.f).toBe('=1+2');
+  });
+});

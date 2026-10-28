@@ -43,6 +43,39 @@ export function isFormatLocked(
  * `onLocked` runs once per watcher with that value, even if the sheet was
  * already locked by an earlier watcher. Returns an unsubscribe function.
  */
+type WorkbookSetContext = (
+  recipe: (draft: { isFlvReadOnly?: boolean }) => void,
+  options?: { noHistory?: boolean },
+) => void;
+
+/**
+ * Make the grid read-only in the same tick the lock is seen. The Yjs writers
+ * stop at once (isFormatLocked), but the grid became read-only only after the
+ * workbook data changed identity and the Workbook init effect ran: a commit in
+ * between showed in the grid, never reached Yjs, and was gone on reload.
+ * The Workbook init effect sets the same flag from the prop afterwards.
+ */
+export function lockWorkbookReadOnly(
+  workbook: { getWorkbookSetContext?: () => unknown } | null | undefined,
+): boolean {
+  const setContext = workbook?.getWorkbookSetContext?.() as
+    | WorkbookSetContext
+    | undefined;
+  if (!setContext) return false;
+  try {
+    setContext(
+      (draft) => {
+        draft.isFlvReadOnly = true;
+      },
+      { noHistory: true },
+    );
+    return true;
+  } catch {
+    // The workbook is not ready; the prop path still locks it on remount.
+    return false;
+  }
+}
+
 export function watchFormatGate(
   doc: Y.Doc,
   dsheetId: string,

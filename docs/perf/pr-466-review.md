@@ -18,7 +18,7 @@ Evidence labels used below:
 - **Not checked**: not verified in this session.
 - **Reviewer figure**: a number taken from the review comment, not re-measured here.
 
-Sections 1 to 8 describe the review as validated on 2026-10-28 before any fix. The six must-fix items were fixed afterwards in the working tree (not committed); see section 9. Fix designs in the sections above are the proposals that were made; they are labeled [Inference] where they rest on reasoning rather than a run.
+Sections 1 to 8 describe the review as validated on 2026-10-28 before any fix. The six must-fix items and comments #7 to #14 were fixed afterwards (the must-fix ones are committed as the first round; #7 to #14 are in the working tree); see sections 9 and 10. Fix designs in the sections above are the proposals that were made; they are labeled [Inference] where they rest on reasoning rather than a run.
 
 ## 2. Verdict summary
 
@@ -320,3 +320,26 @@ Side effects to know about:
 - #6: formula cells in the snapshot are copied; the cost on a very large sheet was not measured.
 
 Not fixed (listed in `KNOWN-ISSUES.md` as K45 to K55): #7 to #18. #8 (stale chain entry after undoing an insert) shares `history-calc-chain.ts` with #2 and is the natural next fix.
+
+## 10. Fix status, second round: #7 to #14 (2026-10-28, working tree, not committed)
+
+Unit suite after this round: 54 files, 429 tests pass (52 and 397 before); `tsc --noEmit` clean. No browser check was run.
+
+| # | Status | Change | Tests |
+|---|---|---|---|
+| 7 | Fixed | `FORMULA_SHEET_REF_RE`: an unquoted sheet name stops at `= * / < > ^ % ; :` and cannot start with `-`. `collectSheetIdsFromFormulaText` is exported for the test. | `sheet-flowdata-lifecycle.test.ts`, 13 cases (`=A!B5`, `=2*A!B5`, `=-A!B5`, quoted names, `Q1-2026!A1`, ranges). Not run against the old regex; the old capture (`=A`, `=2*A`) was seen in the earlier regex run. |
+| 8 | Fixed | After re-registering, `reregisterRestoredFormulas` drops chain entries that lie outside the shrunk grid (rows past the last row, columns past the first row's width), through the same batch delete. Entries inside the grid without `f` are left alone (a collaborator's entry can arrive before its cell). | 2 tests in `history-calc-chain.test.ts`: row and column insert then undo leave `1_0, 3_3`. The row case failed before (seen in the earlier run: `4_3` stayed). |
+| 9 | Fixed | `gridSizeChangesFromPatches` (`history-grid-size.ts`) turns `row` / `column` patches into Yjs changes; `emitYjsFromPatches` upserts them. | `history-grid-size.test.ts`, 4 tests, built from real `insertRowCol` patches (undo gives 12, redo gives 14, column gives 6). |
+| 10 | Fixed | `applyRemoteCellValue` keeps `depGraphComplete` when the cell already held the same formula text and was already in the chain. A new or changed formula, or the same formula missing from the chain, still clears it. | 4 tests in `remote-apply.test.ts`. The reviewer's commit-time figures were not re-measured. |
+| 11 | Fixed | `moveCalcChainForCutPaste` removes the chain entries of the cleared source cells (same sheet) and registers the pasted formulas, through one set and one batch delete. | 2 tests in `paste-dep-graph.test.ts` (cut B1 to D4: chain is `3_3`; paste onto itself: `0_1` once). The reviewer's full repro (set A1=7, D4 recalculates) was not run. |
+| 12 | Fixed | The hook `afterUpdateCell` takes `options.skipPersist`. The four fill sites in `dropCell.ts` and the formula-object paste in `paste-internals.ts` pass it, because they write the final cell in their own batch. The Yjs write and the chain write in `afterUpdateCell` are skipped when it is set; data-block work is unchanged. | 2 tests in `after-update-cell.test.ts`. The call sites are not tested (they need a full workbook); the double write itself was not counted in a run. |
+| 13 | Fixed | The CF compute-map cache and the border cache are `WeakMap`s (keyed by the sheet object and by the config object), so a sheet no longer stays in memory after its editor goes. The CF key includes `ctx.definedNames`. | 1 new test in `engine-hot-spots.test.ts` (a changed defined name misses; `luckysheetfile` identity unchanged). No test shows the memory being freed (needs a GC run). The optional re-keying on `sheet.data` was not done. |
+| 14 | Fixed | `lockWorkbookReadOnly` sets `isFlvReadOnly` on the engine context (no history) inside the format-gate watcher, before `setFormatLocked(true)`. | 4 tests in `format-gate.test.ts`. Not run in a browser; only `isFlvReadOnly` is set, so any check of `allowEdit` alone is not covered. |
+
+Side effects to know about:
+
+- #12: a host whose `afterUpdateCell` wrapper does not pass `options` through would still persist twice. The package wrapper in `editor-workbook.tsx` passes it.
+- #13: the border cache is keyed by the config object, so a config change (for example a column width) now misses where it hit before when only `borderInfo` and `merge` mattered.
+- #10: the check for "already in the chain" scans the chain once more per remote formula cell, as `insertUpdateFunctionGroup` already does.
+
+Still open: #15 to #18 (K52 to K55 in `KNOWN-ISSUES.md`).

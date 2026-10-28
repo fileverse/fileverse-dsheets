@@ -93,6 +93,7 @@ import {
   reregisterRestoredFormulas,
   type RestoredCell,
 } from '@sheet-engine/core/modules/history-calc-chain';
+import { gridSizeChangesFromPatches } from '@sheet-engine/core/modules/history-grid-size';
 import React, {
   useMemo,
   useState,
@@ -545,6 +546,8 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
             }
           }
         });
+
+        gridSizeChangesFromPatches(ctxAfter, patches).forEach(upsert);
 
         const changes = Array.from(changeMap.values());
         if (changes.length > 0) updateCellYdoc(changes);

@@ -16,6 +16,7 @@ import { Cell, CellStyle, SingleRange, Sheet } from '../types';
 import { CommonOptions, getSheet } from './common';
 import { SHEET_NOT_FOUND } from './errors';
 import { shouldPersistCelldataCell } from '../utils/cell-persist-utils';
+import { getSheetIndex } from '../utils';
 // @ts-ignore
 import SSF from '../modules/ssf';
 
@@ -246,19 +247,53 @@ function patchSparseCelldata(
   }
 }
 
+/** The formula text a cell holds before a remote value replaces it. */
+function formulaBeforeRemote(
+  sheet: Sheet,
+  row: number,
+  column: number,
+): string | null {
+  const cell = sheet.data
+    ? sheet.data[row]?.[column]
+    : sheet.celldata?.find((c) => c.r === row && c.c === column)?.v;
+  return cell != null && typeof cell === 'object' && cell.f != null
+    ? String(cell.f)
+    : null;
+}
+
+/** The formula text of a remote value, if it is a formula. */
+function remoteFormulaText(value: any): string | null {
+  if (value instanceof Object) return value.f != null ? String(value.f) : null;
+  if (value == null) return null;
+  const str = value.toString();
+  return str.substr(0, 1) === '=' || str.substr(0, 5) === '<span' ? str : null;
+}
+
 /**
  * Keep a remote formula in the calc chain without running it. Its recorded
  * dependencies (if any) may be for another formula, so the graph is no longer
- * complete (C8).
+ * complete (C8). Not when the cell already held the same formula and was
+ * already in the chain: a peer's recomputed value for it changes nothing the
+ * graph records. (A peer recomputing a formula we also hold is common in
+ * collaboration; clearing the flag each time kept commits on the full pass.)
  */
 function registerUnevaluatedFormula(
   ctx: Context,
   row: number,
   column: number,
   sheetId: string,
+  previousFormula: string | null,
+  newFormula: string | null,
 ) {
+  const file = ctx.luckysheetfile[getSheetIndex(ctx, sheetId) as number];
+  const alreadyRegistered =
+    previousFormula != null &&
+    previousFormula === newFormula &&
+    (file?.calcChain ?? []).some(
+      (calc) => calc?.r === row && calc.c === column && calc.id === sheetId,
+    );
   insertUpdateFunctionGroup(ctx, row, column, sheetId);
-  ctx.formulaCache.markDepGraphIncomplete();
+  if (!alreadyRegistered) ctx.formulaCache.markDepGraphIncomplete();
 }
 
 export function applyRemoteCellValue(
@@ -275,6 +310,17 @@ export function applyRemoteCellValue(
   const sheet = getSheet(ctx, options);
   const sheetId = (options.id ?? sheet.id ?? ctx.currentSheetId) as string;
   const { data } = sheet;
+  const previousFormula = formulaBeforeRemote(sheet, row, column);
+  const newFormula = remoteFormulaText(value);
+  const register = () =>
+    registerUnevaluatedFormula(
+      ctx,
+      row,
+      column,
+      sheetId,
+      previousFormula,
+      newFormula,
+    );
 
   if (!data) {
     patchSparseCelldata(sheet, row, column, value);
@@ -282,14 +328,14 @@ export function applyRemoteCellValue(
       delFunctionGroup(ctx, row, column, sheetId);
     } else if (value instanceof Object) {
       if ((value as Cell).f != null) {
-        registerUnevaluatedFormula(ctx, row, column, sheetId);
+        register();
       } else {
         delFunctionGroup(ctx, row, column, sheetId);
       }
     } else {
       const str = value.toString();
       if (str.substr(0, 1) === '=' || str.substr(0, 5) === '<span') {
-        registerUnevaluatedFormula(ctx, row, column, sheetId);
+        register();
       } else {
         delFunctionGroup(ctx, row, column, sheetId);
       }
@@ -322,7 +368,7 @@ export function applyRemoteCellValue(
       // Keep the formula registered so it stays reactive to future local edits.
       // We intentionally do NOT execute it here — the peer's computed v/m is
       // applied as-is.
-      registerUnevaluatedFormula(ctx, row, column, sheetId);
+      register();
     } else {
       // No formula (value cleared or replaced) — drop any stale calc-chain /
       // dependency registration for this cell.
@@ -337,7 +383,7 @@ export function applyRemoteCellValue(
     // Bare formula string with no precomputed value (rare for remote celldata,
     // which normally sync as objects). Register it without executing.
     setCellValueInternal(ctx, row, column, data, { f: str } as Cell);
-    registerUnevaluatedFormula(ctx, row, column, sheetId);
+    register();
   } else {
     delFunctionGroup(ctx, row, column, sheetId);
     setCellValueInternal(ctx, row, column, data, value);

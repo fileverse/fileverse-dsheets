@@ -104,3 +104,46 @@ describe('setSheetCalcChain (A4)', () => {
     expect(next.luckysheetfile[0].calcChain).toEqual([]);
   });
 });
+
+// PR 466 review (#10): a peer's recomputed value for a formula we already hold
+// must not clear depGraphComplete; a new or changed formula must.
+describe('remote formula cells and depGraphComplete (C8)', () => {
+  const withFormula = () => {
+    const ctx = makeCtx();
+    ctx.luckysheetfile[0].data[2][2] = { f: '=1+1', v: 2, m: '2' };
+    ctx.luckysheetfile[0].calcChain = [{ r: 2, c: 2, id: 's1' }];
+    ctx.formulaCache.depGraphComplete = true;
+    return ctx;
+  };
+  const apply = (ctx: any, v: any) =>
+    produce<any>(ctx, (d: any) => {
+      applyRemoteCellValue(d, 2, 2, v, { id: 's1' });
+    });
+
+  it('keeps the flag when only the value of the same formula changes', () => {
+    const next = apply(withFormula(), { f: '=1+1', v: 3, m: '3' });
+    expect(next.luckysheetfile[0].data[2][2].v).toBe(3);
+    expect(next.formulaCache.depGraphComplete).toBe(true);
+  });
+
+  it('clears the flag when the formula text changes', () => {
+    const next = apply(withFormula(), { f: '=2+2', v: 4, m: '4' });
+    expect(next.formulaCache.depGraphComplete).toBe(false);
+  });
+
+  it('clears the flag for a formula the cell did not hold', () => {
+    const ctx = withFormula();
+    const next = produce<any>(ctx, (d: any) => {
+      applyRemoteCellValue(d, 3, 3, { f: '=5', v: 5, m: '5' }, { id: 's1' });
+    });
+    expect(next.formulaCache.depGraphComplete).toBe(false);
+  });
+
+  it('clears the flag when the same formula was not in the chain', () => {
+    const ctx = withFormula();
+    ctx.luckysheetfile[0].calcChain = [];
+    const next = apply(ctx, { f: '=1+1', v: 3, m: '3' });
+    expect(next.formulaCache.depGraphComplete).toBe(false);
+    expect(next.luckysheetfile[0].calcChain).toHaveLength(1);
+  });
+});

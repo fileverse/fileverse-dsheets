@@ -100,6 +100,16 @@ export function reregisterRestoredFormulas(
         }
       });
     });
+    // The grid shrank (undo of an insert): an entry that shifted into a removed
+    // row or column is outside it, and no restored cell names it.
+    const rows = sheet.data.length;
+    const columns = sheet.data[0]?.length ?? 0;
+    (sheet.calcChain ?? []).forEach((calc) => {
+      if (calc.id !== id) return;
+      if (calc.r >= rows || calc.c >= columns) {
+        toDelete.push({ r: calc.r, c: calc.c });
+      }
+    });
     delFunctionGroupBatch(ctx, id, toDelete);
   });
 }

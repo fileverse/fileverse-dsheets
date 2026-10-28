@@ -1926,6 +1926,7 @@ function buildLivePreviewConditionValue(cr: any): any[] {
 
 type ComputeMapCacheEntry = {
   luckysheetfile: unknown;
+  definedNames: unknown;
   rules: unknown;
   conditionRules: unknown;
   draftActive: boolean;
@@ -1940,10 +1941,16 @@ type ComputeMapCacheEntry = {
  * range. Keyed by identity: Immer gives luckysheetfile (and so the sheet's
  * data, rules and conditionRules) a new identity on any change, so a hit is
  * exact. luckysheetfile rather than data alone, because formula rules can
- * read other sheets. The draft selection counts only while a live preview
- * is active. Callers only read the map. Frozen (committed) state only.
+ * read other sheets, and definedNames because a rule such as `=lim>7` reads a
+ * name that lives outside luckysheetfile. The draft selection counts only
+ * while a live preview is active. Callers only read the map. Frozen
+ * (committed) state only.
+ *
+ * Held per sheet object in a WeakMap: an entry holds the whole luckysheetfile,
+ * and a Map keyed by sheet id kept every sheet opened in a session alive after
+ * its editor unmounted.
  */
-const computeMapCache = new Map<string, ComputeMapCacheEntry>();
+const computeMapCache = new WeakMap<object, ComputeMapCacheEntry>();
 
 export function getComputeMap(ctx: Context) {
   const sheetIndex = getSheetIndex(ctx, ctx.currentSheetId);
@@ -1958,6 +1965,7 @@ export function getComputeMap(ctx: Context) {
   );
   const key = {
     luckysheetfile: ctx.luckysheetfile,
+    definedNames: ctx.definedNames,
     rules: sheet.luckysheet_conditionformat_save,
     conditionRules: sheet.conditionRules,
     draftActive,
@@ -1965,10 +1973,11 @@ export function getComputeMap(ctx: Context) {
     // Date rules compare with today: a new day must miss.
     today: getLocalTodaySerial(),
   };
-  const cached = computeMapCache.get(ctx.currentSheetId);
+  const cached = computeMapCache.get(sheet);
   if (
     cached &&
     cached.luckysheetfile === key.luckysheetfile &&
+    cached.definedNames === key.definedNames &&
     cached.rules === key.rules &&
     cached.conditionRules === key.conditionRules &&
     cached.draftActive === key.draftActive &&
@@ -1978,7 +1987,7 @@ export function getComputeMap(ctx: Context) {
     return cached.result;
   }
   const result = computeMapUncached(ctx);
-  computeMapCache.set(ctx.currentSheetId, { ...key, result });
+  computeMapCache.set(sheet, { ...key, result });
   return result;
 }
 

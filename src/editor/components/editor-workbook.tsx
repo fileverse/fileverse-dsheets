@@ -543,10 +543,12 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
             _oldValue: Cell,
             newValue: Cell,
             sheetId?: string,
+            options?: { skipPersist?: boolean },
           ): void => {
             const refObj = { current: sheetEditorRef.current };
             afterUpdateCell({
               sheetId,
+              skipPersist: options?.skipPersist,
               handleContentPortal: handleOnChangePortalUpdate,
               dsheetId,
               ydocRef,

@@ -1557,7 +1557,9 @@ type BorderComputeCacheEntry = {
 
 /** Up to one entry per frozen pane: each is drawn with its own bounds. */
 const BORDER_CACHE_PER_SHEET = 4;
-const borderComputeCache = new Map<string, BorderComputeCacheEntry[]>();
+// Per config object, so the entries go when the sheet's editor is gone; a Map
+// keyed by sheet id kept every sheet opened in a session.
+const borderComputeCache = new WeakMap<object, BorderComputeCacheEntry[]>();
 
 /**
  * getBorderInfoComputeRange for the current sheet's canvas draw, cached (C6).
@@ -1594,7 +1596,7 @@ export function getBorderInfoComputeRangeCached(
     cols: data[0]?.length ?? 0,
     bounds: `${dataset_row_st}_${dataset_row_ed}_${dataset_col_st}_${dataset_col_ed}`,
   };
-  const entries = borderComputeCache.get(ctx.currentSheetId) ?? [];
+  const entries = borderComputeCache.get(cfg) ?? [];
   const hit = entries.find(
     (e) =>
       e.borderInfo === key.borderInfo &&
@@ -1624,10 +1626,7 @@ export function getBorderInfoComputeRangeCached(
       e.cols === key.cols,
   );
   fresh.push({ ...key, result });
-  borderComputeCache.set(
-    ctx.currentSheetId,
-    fresh.slice(-BORDER_CACHE_PER_SHEET),
-  );
+  borderComputeCache.set(cfg, fresh.slice(-BORDER_CACHE_PER_SHEET));
   return result;
 }
 

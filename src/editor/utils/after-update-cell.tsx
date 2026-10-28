@@ -95,6 +95,8 @@ interface AfterUpdateCellParams {
   localUserEditRef?: React.MutableRefObject<boolean>;
   /** Sheet that held the cell at commit time; falls back to the current sheet. */
   sheetId?: string;
+  /** The caller writes the cell to Yjs itself (paste and fill batch writes). */
+  skipPersist?: boolean;
 }
 
 /** True when data-block formulas (API / smart contract) should run for this edit. */
@@ -528,47 +530,49 @@ export const afterUpdateCell = async (
     (params.sheetEditorRef.current?.getWorkbookContext()
       ?.currentSheetId as string);
   const key = params.row + '_' + params.column;
-  updateYdocSheetData(
-    // @ts-ignore
-    params.ydocRef.current,
-    // @ts-ignore
-    params.dsheetId,
-    [
-      {
-        sheetId: currentSheetId,
-        path: ['celldata'],
-        value: {
-          r: params.row,
-          c: params.column,
-          v: params.newValue,
+  if (!params.skipPersist) {
+    updateYdocSheetData(
+      // @ts-ignore
+      params.ydocRef.current,
+      // @ts-ignore
+      params.dsheetId,
+      [
+        {
+          sheetId: currentSheetId,
+          path: ['celldata'],
+          value: {
+            r: params.row,
+            c: params.column,
+            v: params.newValue,
+          },
+          key,
+          type: 'update',
         },
-        key,
-        type: 'update',
-      },
-      // The calcChain echo hook is held back while a structural remount is
-      // pending (the engine grid is stale), so the chain entry for a formula
-      // committed in that window is written here, at the coordinates the cell
-      // is written at. The remount rebuilds the engine chain from Yjs.
-      ...(params.structuralRemountPendingRef?.current &&
-      params.newValue?.f != null
-        ? [
-            {
-              sheetId: currentSheetId,
-              path: ['calcChain'],
-              value: {
-                r: params.row,
-                c: params.column,
-                v: { r: params.row, c: params.column, id: currentSheetId },
+        // The calcChain echo hook is held back while a structural remount is
+        // pending (the engine grid is stale), so the chain entry for a formula
+        // committed in that window is written here, at the coordinates the cell
+        // is written at. The remount rebuilds the engine chain from Yjs.
+        ...(params.structuralRemountPendingRef?.current &&
+        params.newValue?.f != null
+          ? [
+              {
+                sheetId: currentSheetId,
+                path: ['calcChain'],
+                value: {
+                  r: params.row,
+                  c: params.column,
+                  v: { r: params.row, c: params.column, id: currentSheetId },
+                },
+                key,
+                type: 'update' as const,
               },
-              key,
-              type: 'update' as const,
-            },
-          ]
-        : []),
-    ],
-    // @ts-ignore
-    params.handleContentPortal,
-  );
+            ]
+          : []),
+      ],
+      // @ts-ignore
+      params.handleContentPortal,
+    );
+  }
 
   // During RTC remote apply (e.g. owner XLSX import), skip local data-block work.
   // Owner local edits and joiner local formula entry clear the lock via onLocalCellEdit.

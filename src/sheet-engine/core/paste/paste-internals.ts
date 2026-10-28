@@ -1,6 +1,10 @@
 import _, { isObject } from 'lodash';
 import { Context, getFlowdata } from '../context';
-import { execfunction } from '../modules/formula';
+import {
+  delFunctionGroupBatch,
+  execfunction,
+  insertUpdateFunctionGroup,
+} from '../modules/formula';
 import { getdatabyselection } from '../modules/cell';
 import { update, genarate } from '../modules/format';
 import { normalizeSelection } from '../modules/selection';
@@ -969,6 +973,53 @@ function setCellHyperlink(
   ctx.luckysheetfile[index]!.hyperlink![`${r}_${c}`] = link;
 }
 
+/**
+ * A cut moves the cell, so its calc chain entry moves with it. The paste wrote
+ * the cells without touching the chain: the formula at the new place was not
+ * in it (a later edit of its input did not recalculate it, even after a full
+ * pass) and the old place kept an entry for an empty cell. Source entries go
+ * only when the source is on this sheet (the only case the cut clears it).
+ */
+function moveCalcChainForCutPaste(
+  ctx: Context,
+  d: CellMatrix,
+  copySheetId: string,
+  source: { row: [number, number]; column: [number, number] },
+  target: { row: [number, number]; column: [number, number] },
+) {
+  const sheetId = ctx.currentSheetId;
+  if (sheetId === copySheetId) {
+    const cleared: { r: number; c: number }[] = [];
+    for (let r = source.row[0]; r <= source.row[1]; r += 1) {
+      for (let c = source.column[0]; c <= source.column[1]; c += 1) {
+        cleared.push({ r, c });
+      }
+    }
+    delFunctionGroupBatch(ctx, copySheetId, cleared);
+  }
+
+  const file = ctx.luckysheetfile[getSheetIndex(ctx, sheetId) as number];
+  const inChain = new Set<string>();
+  (file?.calcChain ?? []).forEach((calc) => {
+    if (calc?.id === sheetId) inChain.add(`${calc.r}_${calc.c}_${sheetId}`);
+  });
+  const notFormulas: { r: number; c: number }[] = [];
+  for (let r = target.row[0]; r <= target.row[1]; r += 1) {
+    for (let c = target.column[0]; c <= target.column[1]; c += 1) {
+      if (d[r]?.[c]?.f != null) {
+        const key = `${r}_${c}_${sheetId}`;
+        if (!inChain.has(key)) {
+          insertUpdateFunctionGroup(ctx, r, c, sheetId, inChain);
+          inChain.add(key);
+        }
+      } else if (inChain.has(`${r}_${c}_${sheetId}`)) {
+        notFormulas.push({ r, c });
+      }
+    }
+  }
+  delFunctionGroupBatch(ctx, sheetId, notFormulas);
+}
+
 export function pasteHandlerOfCutPaste(
   ctx: Context,
   copyRange: Context['luckysheet_copy_save'],
@@ -1256,6 +1307,14 @@ export function pasteHandlerOfCutPaste(
 
     d[h] = x;
   }
+
+  moveCalcChainForCutPaste(
+    ctx,
+    d,
+    copySheetId,
+    { row: [c_r1, c_r2], column: [c_c1, c_c2] },
+    { row: [minh, maxh], column: [minc, maxc] },
+  );
 
   last.row = [minh, maxh];
   last.column = [minc, maxc];
@@ -1912,7 +1971,7 @@ export function pasteHandlerOfCopyPaste(
                   v: arr.length === 1 ? funcV[1] : value.v, // To check with mritunjay for the "arr.length === 1" cond
                   m:
                     funcV[1] instanceof Promise ? '[object Promise]' : funcV[1],
-                });
+                }, undefined, { skipPersist: true });
               }
             }
 

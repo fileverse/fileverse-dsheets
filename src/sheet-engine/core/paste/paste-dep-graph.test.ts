@@ -62,3 +62,45 @@ describe('C8 flag after pastes that skip the calc chain', () => {
     expect(ctx.formulaCache.depGraphComplete).toBe(false);
   });
 });
+
+// PR 466 review (#11): a cut formula keeps its place in the calc chain.
+describe('cut-paste moves the calc chain entry', () => {
+  const cutPaste = (from: [number, number], to: [number, number]) => {
+    const ctx = makeCtx();
+    const data = ctx.luckysheetfile[0].data;
+    data[0][0] = { v: 5, m: '5' };
+    data[from[0]][from[1]] = { v: 10, m: '10', f: '=A1*2' };
+    ctx.luckysheetfile[0].calcChain = [{ r: from[0], c: from[1], id: 's1' }];
+    ctx.luckysheet_select_save = [
+      {
+        row: [to[0], to[0]],
+        column: [to[1], to[1]],
+        row_focus: to[0],
+        column_focus: to[1],
+      },
+    ];
+    pasteHandlerOfCutPaste(ctx, {
+      copyRange: [{ row: [from[0], from[0]], column: [from[1], from[1]] }],
+      dataSheetId: 's1',
+      HasMC: false,
+      RowlChange: false,
+    } as any);
+    return ctx;
+  };
+  const chainKeys = (ctx: any) =>
+    ctx.luckysheetfile[0].calcChain.map((c: any) => `${c.r}_${c.c}`);
+
+  beforeAll(() => loadLocale('en'));
+
+  it('the old place leaves the chain and the new place joins it', () => {
+    const ctx = cutPaste([0, 1], [3, 3]);
+    expect(ctx.luckysheetfile[0].data[3][3]?.f).toBe('=A1*2');
+    expect(ctx.luckysheetfile[0].data[0][1]).toBeNull();
+    expect(chainKeys(ctx)).toEqual(['3_3']);
+  });
+
+  it('a paste onto the cut cell itself keeps its entry once', () => {
+    const ctx = cutPaste([0, 1], [0, 1]);
+    expect(chainKeys(ctx)).toEqual(['0_1']);
+  });
+});

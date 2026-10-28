@@ -16,7 +16,7 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { fromUint8Array } from 'js-base64';
 
 import { ySheetArrayToPlain } from '../utils/update-ydoc';
-import { watchFormatGate } from '../utils/format-gate';
+import { lockWorkbookReadOnly, watchFormatGate } from '../utils/format-gate';
 import { useEditorSync } from '../hooks/use-editor-sync';
 import {
   getWorkbookHydrationReason,
@@ -369,9 +369,10 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   useEffect(() => {
     const ydoc = ydocRef.current;
     if (!isContentBootstrapReady || !ydoc) return undefined;
-    const unwatch = watchFormatGate(ydoc, dsheetId, () =>
-      setFormatLocked(true),
-    );
+    const unwatch = watchFormatGate(ydoc, dsheetId, () => {
+      lockWorkbookReadOnly(sheetEditorRef.current);
+      setFormatLocked(true);
+    });
     return () => {
       unwatch();
       setFormatLocked(false);

@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import {
   SUPPORTED_FORMAT,
   isFormatLocked,
+  lockWorkbookReadOnly,
   readFormatVersion,
   watchFormatGate,
 } from './format-gate';
@@ -174,5 +175,58 @@ describe('format gate', () => {
     expect(second).toHaveBeenCalledTimes(1);
     expect(first).toHaveBeenCalledTimes(1);
     expect(isFormatLocked(doc, ID)).toBe(true);
+  });
+});
+
+// PR 466 review (#14): the grid must turn read-only in the same tick the lock
+// is seen, not after the workbook data changes identity.
+describe('lockWorkbookReadOnly', () => {
+  it('sets isFlvReadOnly on the engine context, without history', () => {
+    const ctx: any = { isFlvReadOnly: false };
+    const setContext = vi.fn((recipe: (d: any) => void, _options?: any) =>
+      recipe(ctx),
+    );
+    expect(lockWorkbookReadOnly({ getWorkbookSetContext: () => setContext })).toBe(
+      true,
+    );
+    expect(ctx.isFlvReadOnly).toBe(true);
+    expect(setContext.mock.calls[0][1]).toEqual({ noHistory: true });
+  });
+
+  it('does nothing when there is no workbook yet', () => {
+    expect(lockWorkbookReadOnly(null)).toBe(false);
+    expect(lockWorkbookReadOnly({})).toBe(false);
+  });
+
+  it('survives a workbook that is not ready', () => {
+    expect(
+      lockWorkbookReadOnly({
+        getWorkbookSetContext: () => () => {
+          throw new Error('not ready');
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('runs inside the watcher callback, before the state update', () => {
+    const doc = seed();
+    const order: string[] = [];
+    const ctx: any = {};
+    const workbook = {
+      getWorkbookSetContext: () => (recipe: (d: any) => void) => {
+        recipe(ctx);
+        order.push('read-only');
+      },
+    };
+    const unwatch = watchFormatGate(doc, ID, () => {
+      lockWorkbookReadOnly(workbook);
+      order.push('state');
+    });
+    doc.transact(() => {
+      doc.getMap(`${ID}/meta`).set('format', 2);
+    });
+    unwatch();
+    expect(order).toEqual(['read-only', 'state']);
+    expect(ctx.isFlvReadOnly).toBe(true);
   });
 });

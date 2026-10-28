@@ -2382,7 +2382,7 @@ export function updateDropCell(ctx: Context) {
                 ...cell,
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : v[1],
-              });
+              }, undefined, { skipPersist: true });
             }
 
             if (cell.spl != null) {
@@ -2507,7 +2507,7 @@ export function updateDropCell(ctx: Context) {
                 ...cell,
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : v[1],
-              });
+              }, undefined, { skipPersist: true });
             }
 
             if (cell.spl != null) {
@@ -2628,7 +2628,7 @@ export function updateDropCell(ctx: Context) {
                 ...cell,
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : v[1],
-              });
+              }, undefined, { skipPersist: true });
             }
 
             if (cell.spl != null) {
@@ -2739,7 +2739,7 @@ export function updateDropCell(ctx: Context) {
                 ...cell,
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : v[1],
-              });
+              }, undefined, { skipPersist: true });
             }
 
             if (cell.spl != null) {

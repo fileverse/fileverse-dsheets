@@ -955,3 +955,24 @@ Six must-fix comments from the review of PR 466 (`docs/perf/pr-466-review.md`). 
 - The end-to-end repro of #3 (deferred remount, then a local formula commit), and the hook wiring of #3, #4 and #5: vitest has no React renderer.
 - #5 has no failing run against the old throttle (the test file is new). #4's two new rebuild tests were not run against the old unbounded wait.
 - Behaviour changes: a first IndexedDB read slower than 15 s now continues without IndexedDB and calls `onIndexedDbError`; metadata echoes are not written during a pending remount; a restored non-formula cell that is not in the chain no longer has its dependency edges dropped.
+
+## PR 466 review fixes, second round: #7 to #14 (2026-10-28, not committed)
+
+Unit suite: 54 files, 429 tests pass (52 and 397 before); `tsc` clean. Nothing was run in a browser and no benchmark was run for this round.
+
+| # | Item | Test | Before | After |
+|---|---|---|---|---|
+| 7 | Unquoted sheet name stops at operators | `sheet-flowdata-lifecycle.test.ts`, 13 cases | `=A!B5` read as sheet `=A`, `=2*A!B5` as `2*A` (regex run, earlier) | `A` |
+| 8 | Chain entries outside the shrunk grid are dropped on undo | `history-calc-chain.test.ts`, 2 | row insert then undo left `4_3, 1_0, 3_3` (earlier run) | `1_0, 3_3` for row and column |
+| 9 | Undo/redo writes `row` / `column` | `history-grid-size.test.ts`, 4 | peer kept the grown count (review: 14 vs 12) | patches give the restored count |
+| 10 | Remote formula with the same text keeps `depGraphComplete` | `remote-apply.test.ts`, 4 | flag cleared on every remote formula cell | kept; cleared for a new or changed formula |
+| 11 | Cut-paste moves the chain entry | `paste-dep-graph.test.ts`, 2 | chain kept `0_1`, new place absent (review repro) | chain is `3_3` |
+| 12 | Paste and fill do not persist the pre-format cell | `after-update-cell.test.ts`, 2 | two Yjs writes per formula cell (reading) | batch write only |
+| 13 | WeakMap caches; `definedNames` in the CF key | `engine-hot-spots.test.ts`, 1 | cache hit after only a defined name changed (reading) | miss |
+| 14 | Grid read-only in the tick the lock is seen | `format-gate.test.ts`, 4 | read-only only after the workbook data changed identity (reading) | set in the watcher callback |
+
+**Not measured / not covered.**
+- #10 timings (the reviewer's 500 / 2,000 / 5,000-formula table) were not re-measured.
+- #12: the call sites in `dropCell.ts` and `paste-internals.ts` are not tested; the double write was not counted.
+- #13: no GC-based test of the memory release.
+- #14: the browser behaviour of a commit between the lock and the remount was not run.

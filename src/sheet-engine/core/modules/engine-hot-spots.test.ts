@@ -150,6 +150,18 @@ describe('C2 conditional-format compute cache', () => {
     }
   });
 
+  // PR 466 review (#13): a defined name lives on ctx, outside luckysheetfile.
+  it('misses when a defined name changes', () => {
+    const ctx = withRule();
+    ctx.definedNames = [{ name: 'lim', formula: '=A3' }];
+    const first = getComputeMap(ctx);
+    const next = produce<any>(ctx, (d: any) => {
+      d.definedNames = [{ name: 'lim', formula: '=A2' }];
+    });
+    expect(next.luckysheetfile).toBe(ctx.luckysheetfile);
+    expect(getComputeMap(next)).not.toBe(first);
+  });
+
   it('never caches inside an Immer draft', () => {
     const ctx = withRule();
     produce<any>(ctx, (d: any) => {

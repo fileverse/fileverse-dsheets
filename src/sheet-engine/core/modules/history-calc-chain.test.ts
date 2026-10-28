@@ -192,3 +192,45 @@ describe('undo of a row insert re-registers in one pass', () => {
     expect(ms).toBeLessThan(1500);
   }, 30000);
 });
+
+// PR 466 review (#8): a formula that shifted into the removed last row (or
+// column) kept its chain entry after the undo, and the entry reached Yjs.
+describe('undo of an insert drops chain entries outside the shrunk grid', () => {
+  const undo = (type: 'row' | 'column') => {
+    const base = makeCtx();
+    const sheet = base.luckysheetfile[0];
+    sheet.data = Array.from({ length: 4 }, () => Array(4).fill(null));
+    sheet.row = 4;
+    sheet.column = 4;
+    [
+      [1, 0],
+      [3, 3],
+    ].forEach(([r, c]) => {
+      sheet.data[r][c] = { v: 1, f: '=1' };
+      sheet.calcChain.push({ r, c, id: 's1' });
+    });
+    const [after, , inverse] = produceP(base, (d: any) => {
+      insertRowCol(
+        d,
+        { type, index: 0, count: 1, direction: 'lefttop', id: 's1' },
+        false,
+      );
+    });
+    const plan = planHistoryPatches(inverse);
+    let restored: any = applyPatches(after, plan.patches);
+    restored = produceP(restored, (d: any) => {
+      reregisterRestoredFormulas(d, plan.restored!);
+    })[0];
+    return restored.luckysheetfile[0].calcChain
+      .map((c: any) => `${c.r}_${c.c}`)
+      .sort();
+  };
+
+  it('row insert then undo leaves exactly the original chain', () => {
+    expect(undo('row')).toEqual(['1_0', '3_3']);
+  });
+
+  it('column insert then undo leaves exactly the original chain', () => {
+    expect(undo('column')).toEqual(['1_0', '3_3']);
+  });
+});
