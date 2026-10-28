@@ -1,5 +1,6 @@
 import type * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
+import { waitForPersistenceSynced } from './wait-for-sync';
 
 /**
  * Delete an IndexedDB database. Resolves when deleted, and also when the
@@ -27,12 +28,17 @@ const deleteDatabase = (name: string): Promise<void> =>
  * fresh row. `onCreated` runs right after the new provider is constructed,
  * before it has synced, so the caller can track it and attach listeners. The Y.Doc is never replaced or cleared. Unlike delete-and-reopen
  * (heal), edits that exist only in the live doc are kept.
+ *
+ * The wait for the new provider is bounded: `whenSynced` never rejects, and a
+ * provider destroyed before its first read (a bootstrap restarting meanwhile)
+ * never syncs. It rejects on `timeoutMs` or once `isCurrent()` is false.
  */
 export async function rebuildIndexedDbStore(
   dsheetId: string,
   doc: Y.Doc,
   current: IndexeddbPersistence | null,
   onCreated?: (provider: IndexeddbPersistence) => void,
+  syncOptions?: { timeoutMs?: number; isCurrent?: () => boolean },
 ): Promise<IndexeddbPersistence> {
   if (current) {
     try {
@@ -45,7 +51,7 @@ export async function rebuildIndexedDbStore(
   const next = new IndexeddbPersistence(dsheetId, doc);
   onCreated?.(next);
   try {
-    await next.whenSynced;
+    await waitForPersistenceSynced(next, syncOptions);
   } catch (error) {
     await next.destroy().catch(() => {});
     throw error;

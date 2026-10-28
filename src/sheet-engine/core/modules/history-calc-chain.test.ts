@@ -5,6 +5,7 @@ import { defaultContext } from '../context';
 import { loadLocale } from '../locale';
 import { setSheetCalcChain } from '../api/cell';
 import { insertUpdateFunctionGroup } from './formula';
+import { insertRowCol } from './rowcol';
 import {
   planHistoryPatches,
   reregisterRestoredFormulas,
@@ -99,4 +100,95 @@ describe('undo keeps a collaborator formula (A4)', () => {
     ];
     expect(planHistoryPatches(patches).patches).toBe(patches);
   });
+});
+
+// PR 466 review (#2): undoing a row insert lists every cell of every row below
+// the edit point. Re-registering each one scanned the whole chain.
+describe('undo of a row insert re-registers in one pass', () => {
+  const grid = (rows: number, cols: number, formulaRows: number) => {
+    const base = makeCtx();
+    const sheet = base.luckysheetfile[0];
+    sheet.data = Array.from({ length: rows }, () => Array(cols).fill(null));
+    sheet.row = rows;
+    sheet.column = cols;
+    for (let r = 0; r < formulaRows; r += 1) {
+      sheet.data[r][0] = { v: 1, f: '=1' };
+      sheet.calcChain.push({ r, c: 0, id: 's1' });
+    }
+    return base;
+  };
+
+  const undoInsertAtTop = (base: any) => {
+    const [after, , inverse] = produceP(base, (d: any) => {
+      insertRowCol(
+        d,
+        { type: 'row', index: 0, count: 1, direction: 'lefttop', id: 's1' },
+        false,
+      );
+    });
+    const plan = planHistoryPatches(inverse);
+    let restored: any = applyPatches(after, plan.patches);
+    restored = produceP(restored, (d: any) => {
+      reregisterRestoredFormulas(d, plan.restored!);
+    })[0];
+    return { plan, restored };
+  };
+
+  it('puts the chain back where the formulas are', () => {
+    const { restored } = undoInsertAtTop(grid(12, 4, 3));
+    const keys = restored.luckysheetfile[0].calcChain
+      .map((c: any) => `${c.r}_${c.c}`)
+      .sort();
+    // Rows 0-2 hold the formulas again. The shifted entry for the removed
+    // last row is a separate gap (row-count patch), not covered here.
+    expect(keys).toEqual(expect.arrayContaining(['0_0', '1_0', '2_0']));
+    expect(
+      restored.luckysheetfile[0].data.map((row: any[]) => row[0]?.f ?? null),
+    ).toEqual([
+      '=1',
+      '=1',
+      '=1',
+      ...Array(9).fill(null),
+    ]);
+  });
+
+  it('removes only the entries whose cell lost its formula, with their edges', () => {
+    const base = grid(6, 3, 0);
+    base.luckysheetfile[0].data[2][1] = { v: 5, f: '=5' };
+    insertUpdateFunctionGroup(base, 2, 1, 's1');
+    base.formulaCache.depsByCell.set('s1:2:1', new Set(['s1:0:0']));
+    base.formulaCache.revDepsByCell.set('s1:0:0', new Set(['s1:2:1']));
+    // A patch lists row 2 again, but its formula is gone.
+    base.luckysheetfile[0].data[2][1] = { v: 5 };
+    const draft = produceP(base, (d: any) => {
+      reregisterRestoredFormulas(d, [{ sheetIndex: 0, r: 2, c: null }]);
+    })[0];
+    expect(draft.luckysheetfile[0].calcChain).toEqual([]);
+    expect(draft.formulaCache.depsByCell.has('s1:2:1')).toBe(false);
+    expect(draft.formulaCache.revDepsByCell.has('s1:0:0')).toBe(false);
+  });
+
+  it('does not add a formula twice when a row and a cell are both listed', () => {
+    const base = grid(4, 3, 2);
+    base.luckysheetfile[0].calcChain = [];
+    const draft = produceP(base, (d: any) => {
+      reregisterRestoredFormulas(d, [
+        { sheetIndex: 0, r: 1, c: null },
+        { sheetIndex: 0, r: 1, c: 0 },
+      ]);
+    })[0];
+    expect(
+      draft.luckysheetfile[0].calcChain.filter(
+        (c: any) => c.r === 1 && c.c === 0,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('1,000 formulas on 1,000 rows undo well under the old 6.3 s', () => {
+    const start = performance.now();
+    const { plan } = undoInsertAtTop(grid(1000, 26, 1000));
+    const ms = performance.now() - start;
+    expect(plan.restored!.length).toBeGreaterThan(900);
+    expect(ms).toBeLessThan(1500);
+  }, 30000);
 });

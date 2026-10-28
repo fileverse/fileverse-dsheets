@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import * as Y from 'yjs';
-import { fromUint8Array } from 'js-base64';
 import { Workbook } from '@sheet-engine/react';
 import type {
   SidebarPortalRegistryHandle,
@@ -17,6 +15,7 @@ import {
 import { useEditor } from '../contexts/editor-context';
 import { useCollabAwareness } from '../hooks/use-collab-awareness';
 import { afterUpdateCell } from '../utils/after-update-cell';
+import { shouldSkipEchoWrite } from '../utils/remote-apply-guard';
 import { dataVerificationYdocUpdate } from '../utils/data-verification-ydoc-update';
 import { liveQueryListYdocUpdate } from '../utils/live-query-list-ydoc-update';
 import { calcChainYdocUpdate } from '../utils/calc-chain-ydoc-update';
@@ -163,6 +162,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     collabIsOwner,
     setSheetEditorRef,
     remoteUpdateRef,
+    structuralRemountPendingRef,
     apiKeyStorage,
     openApiKeyModal,
     onDataBlockEvent,
@@ -268,14 +268,17 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     };
   }, [hasComments, sheetEditorRef, removeCommentFromCell, closeCommentPopup]);
 
-  // Block metadata → ydoc echoes only while a remote apply is in flight
-  // (remoteApplyDepth > 0). User-initiated edits run when depth is zero.
+  // Block metadata → ydoc echoes while a remote apply is in flight
+  // (remoteApplyDepth > 0) and while a peer's structural edit waits to remount
+  // the grid: the engine still has the old grid, so an echo would write its
+  // old coordinates over the peer's. User-initiated edits run otherwise.
   const guardRemoteEcho = useCallback(
     (fn: () => void) => () => {
-      if (remoteUpdateRef.current) return;
+      if (shouldSkipEchoWrite({ remoteUpdateRef, structuralRemountPendingRef }))
+        return;
       fn();
     },
-    [remoteUpdateRef],
+    [remoteUpdateRef, structuralRemountPendingRef],
   );
 
   const applyDefinedNamesFromYdoc = useCallback(() => {
@@ -373,30 +376,6 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
       delete window.setForceRenderEditor;
     };
   }, [isReadOnly]);
-
-  // DEBUG (remove): logs whether each Yjs transaction advances the state
-  // vector, to check if delete-only edits leave the fingerprint unchanged.
-  useEffect(() => {
-    const ydoc = ydocRef.current;
-    if (!ydoc) return;
-    const onTx = (tr: Y.Transaction) => {
-      const svAdvanced = [...tr.afterState].some(
-        ([client, clock]) => tr.beforeState.get(client) !== clock,
-      );
-      const changedKeys = [...tr.changed.values()].flatMap((keys) =>
-        [...keys].map((k) => k ?? '(array)'),
-      );
-      console.log('[sv]', {
-        origin: tr.origin,
-        sv: fromUint8Array(Y.encodeStateVector(tr.doc)),
-        svAdvanced,
-        hasDeletes: tr.deleteSet.clients.size > 0,
-        changedKeys,
-      });
-    };
-    ydoc.on('afterTransaction', onTx);
-    return () => ydoc.off('afterTransaction', onTx);
-  }, [ydocRef]);
 
   // Initialize XLSX / ODS import functionality
   const { handleXLSXUpload, handleODSUpload } = useXLSXImport({
@@ -591,6 +570,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
               collabEnabled,
               collabIsOwner,
               remoteUpdateRef,
+              structuralRemountPendingRef,
               localUserEditRef,
             });
             localUserEditRef.current = false;

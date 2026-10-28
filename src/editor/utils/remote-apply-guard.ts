@@ -12,6 +12,24 @@ export type RemoteApplyGuardRefs = {
   remoteUpdateRef: MutableRefObject<boolean>;
 };
 
+/**
+ * True when an engine → Yjs echo hook (calcChain, conditional formats, ...)
+ * must stay quiet: a remote apply is running, or a structural remount is
+ * pending. While one is pending the engine still has the grid from before the
+ * peer's insert or delete, so a diff of its metadata against Yjs would write
+ * the old coordinates over the peer's (and delete the peer's calcChain
+ * entries). Cell commits are not echo hooks and are not held back by this.
+ */
+export function shouldSkipEchoWrite(refs: {
+  remoteUpdateRef: MutableRefObject<boolean>;
+  structuralRemountPendingRef?: MutableRefObject<boolean>;
+}): boolean {
+  return (
+    refs.remoteUpdateRef.current ||
+    refs.structuralRemountPendingRef?.current === true
+  );
+}
+
 export function syncRemoteUpdateFlag(refs: RemoteApplyGuardRefs) {
   refs.remoteUpdateRef.current = refs.remoteApplyDepthRef.current > 0;
 }
@@ -52,9 +70,12 @@ export type StructuralRemountRefs = RemoteApplyGuardRefs & {
  * The guard is begun once, right before `run`, and ended after paint, so each
  * remount owns exactly one begin and one end. It is NOT held while the timer
  * is merely pending or deferred by a cell edit: `remoteUpdateRef` makes
- * handleChange, guardRemoteEcho and afterUpdateCell drop local writes, so
- * holding it across an edit would drop the user's commit. Events that land
- * while one is pending only re-arm its timer.
+ * handleChange and the data-block work in afterUpdateCell drop local work, so
+ * holding it across an edit would drop the user's typed edit. (The cell write
+ * in afterUpdateCell and the commit-time write do not check it.) What must not
+ * run while a remount is pending is the engine → Yjs echo hooks, which diff
+ * the old grid against Yjs: they check `shouldSkipEchoWrite`. Events that
+ * land while one is pending only re-arm its timer.
  *
  * While `isEditing()` is true at fire time the timer re-arms (250 ms) and the
  * pending flag is kept; the remount runs once the edit ends.

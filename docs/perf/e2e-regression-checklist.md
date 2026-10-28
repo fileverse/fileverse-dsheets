@@ -408,12 +408,25 @@ Notation: **Owner** = owner window, **Collaborator** = collaborator window. Afte
 2. Owner undoes and redoes a formula edit three times → the collaborator's calcChain entries are never removed.
 3. Rebuild the local store while collaborating: from the demo console call `rebuildLocalStore()` on the editor handle (**[Unverified]** the demo may not expose it; add a temporary button) → the sheet keeps all content including edits that were never persisted; reload → same content; no flicker on the collaborator.
 4. Call `rebuildLocalStore()` twice at once → one rebuild runs; both calls resolve; content intact.
-5. Call it while another tab of the same browser has the same sheet open (blocked delete) → it does not hang forever [K40: no timeout today; record the time to finish]; close the other tab → it completes.
+5. Call it while another tab of the same browser has the same sheet open (blocked delete) → it does not hang forever [K40: the wait for the new provider is now bounded at 15 s; record the time to finish]; close the other tab → it completes.
 6. Call it right after mount (during bootstrap) and right before unmount → no console error, no stuck "syncing" status. [K40]
 7. Count rows of the `updates` store in IndexedDB after the call → 1.
 8. Read-only editor or sync off → `rebuildLocalStore()` does nothing and does not throw.
 9. `appendDsheetUpdate(dsheetId, delta)` from the console with a delta from a peer (`Y.diffUpdate(remoteBody, localStateVector)`) → reload shows the merged content; the `updates` store gains exactly one row; the live doc is untouched until reload. **[Unverified]** the demo does not expose `./persistence`; use the browser console with an import of the built module.
 10. `appendDsheetUpdate` on a sheet that has no database → creates the store; with IndexedDB disabled (private window) → rejects with an error; no crash.
+
+### 2.14 PR 466 review fixes [review #1 to #6]
+
+1. Open the console in either window while editing → no `[sv]` log lines on any edit. [#1]
+2. Merge A1:D1; type `A2 =B5` and `C2 =SUM(B1:B10)`; owner inserts a row at 3 → the collaborator shows `=B6` and `=SUM(B1:B11)`; reload the collaborator: still the same. Repeat with a row delete at 3 → `=B4`. [#6]
+3. In A11:A16 enter `=$B$5` in each; owner inserts a row at 4 → the collaborator shows `=$B$6` in all six cells. [#6]
+4. Owner inserts 1 row at the top of a sheet with about 1,000 formulas, then presses Ctrl+Z → undo finishes with no visible pause (engine measurement: 24 ms); Ctrl+Shift+Z likewise; the collaborator's formulas recalculate afterwards. [#2]
+5. Owner types in a cell and, before pressing Enter, the collaborator inserts a row above a formula at B4 (so it moves to B5); owner commits a formula in another cell, then the remount runs → after it, the collaborator's formula at B5 still recalculates when its inputs change (it kept its calcChain entry), and the owner's new formula also recalculates. Both windows reloaded show the same. [#3] **[Unverified]** that this reproduces the review's sequence in the browser; the unit tests cover the pieces.
+6. During step 5, change nothing else; then, still mid-edit, hide a column on the owner → the hide may not reach the collaborator while the remount is pending (known trade-off). Repeat after the edit ends → it reaches the collaborator. [#3]
+7. Host app with an inline `onChange` that changes identity on every render: edit a cell, then within 1 s open a panel or add a comment → the host's `onChange` still fires once, about 1 s after the edit. [#5]
+8. Make the local store unreadable (for example corrupt a row in the `updates` object store, or use a browser where the first read fails) and open the sheet → within about 15 s the editor leaves "syncing" and works without IndexedDB; `onIndexedDbError` fires. [#4]
+9. In that state call `rebuildLocalStore()` → it settles within about 3 s plus the rebuild; the editor shows the published content merged with the local content; the status is "synced". [#4]
+10. Open the sheet and change `isReadOnly` or the published content right after mount, then call `rebuildLocalStore()` → it settles (resolves or rejects) and the status never stays "syncing". [#4]
 
 ---
 

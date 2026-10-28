@@ -22,6 +22,7 @@ const mkSheet = (
   name: string,
   order: number,
   cells: Record<string, any>,
+  config: Record<string, any> = {},
 ) => {
   const data: any[][] = Array.from({ length: ROWS }, () =>
     Array(COLS).fill(null),
@@ -38,7 +39,7 @@ const mkSheet = (
     order,
     status: order === 0 ? 1 : 0,
     data,
-    config: {},
+    config,
     calcChain,
     row: ROWS,
     column: COLS,
@@ -56,12 +57,12 @@ const cellsB = {
   '0_0': { v: 7, m: '7', f: '=A!B5' }, // other tab
 };
 
-const seedDoc = () => {
+const seedDoc = (cellsOnA: Record<string, any> = cellsA) => {
   const doc = new Y.Doc();
   doc.transact(() => {
     const arr = doc.getArray<any>(ID);
     [
-      ['a', cellsA],
+      ['a', cellsOnA],
       ['b', cellsB],
     ].forEach(([id, cells]: any) => {
       const m = new Y.Map<any>();
@@ -102,8 +103,11 @@ const formulasInEngine = (ctx: any, idx: number) => {
   return out;
 };
 
-const setup = () => {
-  const doc1 = seedDoc();
+const setup = (
+  cellsOnA: Record<string, any> = cellsA,
+  configOnA: Record<string, any> = {},
+) => {
+  const doc1 = seedDoc(cellsOnA);
   const doc2 = new Y.Doc();
   Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
   doc1.on('update', (u: Uint8Array) => Y.applyUpdate(doc2, u));
@@ -116,7 +120,7 @@ const setup = () => {
     workbookContainer: { current: null },
   } as any);
   ctx.luckysheetfile = [
-    mkSheet('a', 'A', 0, cellsA),
+    mkSheet('a', 'A', 0, cellsOnA, configOnA),
     mkSheet('b', 'B', 1, cellsB),
   ];
   ctx.currentSheetId = 'a';
@@ -214,5 +218,65 @@ describe('K2: structural edits write the new row/column count to Yjs', () => {
     const { ctx, doc2 } = setup();
     deleteRowCol(ctx, { type: 'column', start: 1, end: 1, id: 'a' });
     expect(sizeInDoc(doc2, 'a').column).toBe(COLS - 1);
+  });
+});
+
+// Review of PR 466 (#6): the range diff compares against a snapshot taken
+// before the rewrite. If the snapshot holds the live cell objects, the rewrite
+// changes them too and the diff finds nothing to write.
+describe('K1: formulas the range diff would miss still reach the peer', () => {
+  it('a merged cell above the edit point (row insert)', () => {
+    const { ctx, doc2 } = setup(
+      {
+        '4_1': { v: 7, m: '7' },
+        '1_0': { v: 7, m: '7', f: '=B5' },
+        '1_2': { v: 7, m: '7', f: '=SUM(B1:B10)' },
+      },
+      { merge: { '0_0': { r: 0, c: 0, rs: 1, cs: 4 } } },
+    );
+    insertRowCol(
+      ctx,
+      { type: 'row', index: 2, count: 1, direction: 'lefttop', id: 'a' },
+      false,
+    );
+    expect(formulasInEngine(ctx, 0)['1_0']).toBe('=B6');
+    expectPeerMatchesEngine(ctx, doc2);
+  });
+
+  it('a merged cell above the edit point (row delete)', () => {
+    const { ctx, doc2 } = setup(
+      {
+        '4_1': { v: 7, m: '7' },
+        '1_0': { v: 7, m: '7', f: '=B5' },
+      },
+      { merge: { '0_0': { r: 0, c: 0, rs: 1, cs: 4 } } },
+    );
+    deleteRowCol(ctx, { type: 'row', start: 2, end: 2, id: 'a' });
+    expect(formulasInEngine(ctx, 0)['1_0']).toBe('=B4');
+    expectPeerMatchesEngine(ctx, doc2);
+  });
+
+  it('neighbouring cells with the same formula text (row insert)', () => {
+    const cells: Record<string, any> = {};
+    for (let r = 8; r <= 11; r += 1) cells[`${r}_0`] = { v: 1, f: '=$B$5' };
+    const { ctx, doc2 } = setup(cells);
+    insertRowCol(
+      ctx,
+      { type: 'row', index: 3, count: 1, direction: 'lefttop', id: 'a' },
+      false,
+    );
+    expect(formulasInEngine(ctx, 0)['9_0']).toBe('=$B$6');
+    expectPeerMatchesEngine(ctx, doc2);
+  });
+
+  it('neighbouring cells with the same formula text (column delete)', () => {
+    const { ctx, doc2 } = setup({
+      '1_1': { v: 1, m: '1' },
+      '0_4': { v: 1, f: '=B2' },
+      '1_4': { v: 1, f: '=B2' },
+      '2_4': { v: 1, f: '=B2' },
+    });
+    deleteRowCol(ctx, { type: 'column', start: 1, end: 1, id: 'a' });
+    expectPeerMatchesEngine(ctx, doc2);
   });
 });

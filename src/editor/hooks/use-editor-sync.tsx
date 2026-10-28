@@ -11,6 +11,11 @@ import {
 } from '../../persistence-utils';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
 import { isFormatLocked } from '../utils/format-gate';
+import {
+  PersistenceSupersededError,
+  waitForBootstrapOrAbandon,
+  waitForPersistenceSynced,
+} from '../utils/wait-for-sync';
 import { rebuildIndexedDbStore } from '../utils/rebuild-indexeddb-store';
 import { compactDsheetPersistence } from '../../persistence-compaction';
 import { attachContentFingerprint } from '../utils/content-fingerprint';
@@ -107,6 +112,30 @@ export const useEditorSync = (
   // must not create a provider on a doc whose lifecycle has ended.
   const unmountedRef = useRef(false);
 
+  // Last part of a bootstrap: merge the host's published state into the doc,
+  // migrate a legacy sheet array, and let the editor and SyncManager go.
+  const completeBootstrapContent = useCallback(
+    (generation: number) => {
+      // dDoc parity: host/published state is present in the one Y.Doc before
+      // SyncManager is allowed to connect.
+      if (!isFormatLocked(ydoc, dsheetId)) {
+        mergePublishedContentIntoYdoc(ydoc, portalContent);
+      }
+
+      // IndexedDB may contain a legacy plain-object sheet array. Persist its
+      // migration before connection so local-only diff seeding sends the same
+      // structure Fortune will render.
+      if (!isFormatLocked(ydoc, dsheetId)) {
+        migrateSheetArrayIfNeeded(ydoc, ydoc.getArray(dsheetId));
+      }
+
+      if (generation !== bootstrapGenerationRef.current) return;
+      setSyncStatus('synced');
+      setIsContentBootstrapReady(true);
+    },
+    [dsheetId, portalContent, ydoc],
+  );
+
   const bootstrapEditorIndexedDB = useCallback(async () => {
     const generation = ++bootstrapGenerationRef.current;
     indexeddbSyncedRef.current = false;
@@ -143,8 +172,11 @@ export const useEditorSync = (
       // every open. Merging afterwards stores only the parts IndexedDB did not
       // already have. Yjs merges commute, so the resulting doc is the same.
       if (!isReadOnly && enableIndexeddbSync && dsheetId) {
+        // Held outside the try: a rebuild may have replaced persistenceRef by
+        // the time this run fails, and the catch must only touch its own.
+        let persistence: IndexeddbPersistence | null = null;
         try {
-          const persistence = new IndexeddbPersistence(dsheetId, ydoc);
+          persistence = new IndexeddbPersistence(dsheetId, ydoc);
           // Capture before replay so SyncManager can identify this origin.
           persistenceRef.current = persistence;
           persistence.on('error', (error: unknown) => {
@@ -156,7 +188,11 @@ export const useEditorSync = (
             );
             onIndexedDbErrorRef.current?.(indexedDbError);
           });
-          await persistence.whenSynced;
+          // whenSynced never rejects, and a provider whose first read fails or
+          // that is destroyed meanwhile never syncs: bound the wait.
+          await waitForPersistenceSynced(persistence, {
+            isCurrent: () => generation === bootstrapGenerationRef.current,
+          });
           if (generation !== bootstrapGenerationRef.current) return;
           indexeddbSyncedRef.current = true;
           // Collapse rows that were already replayed into the doc (legacy full
@@ -167,13 +203,17 @@ export const useEditorSync = (
         } catch (error) {
           const indexedDbError =
             error instanceof Error ? error : new Error(String(error));
-          console.error(
-            '[DSheet] IndexedDB initialization failed:',
-            indexedDbError,
-          );
-          const failedPersistence = persistenceRef.current;
-          persistenceRef.current = null;
-          indexeddbSyncedRef.current = false;
+          if (!(error instanceof PersistenceSupersededError)) {
+            console.error(
+              '[DSheet] IndexedDB initialization failed:',
+              indexedDbError,
+            );
+          }
+          const failedPersistence = persistence;
+          if (persistenceRef.current === persistence) {
+            persistenceRef.current = null;
+            indexeddbSyncedRef.current = false;
+          }
           if (failedPersistence) {
             try {
               await failedPersistence.destroy();
@@ -187,22 +227,7 @@ export const useEditorSync = (
         }
       }
 
-      // dDoc parity: host/published state is present in the one Y.Doc before
-      // SyncManager is allowed to connect.
-      if (!isFormatLocked(ydoc, dsheetId)) {
-        mergePublishedContentIntoYdoc(ydoc, portalContent);
-      }
-
-      // IndexedDB may contain a legacy plain-object sheet array. Persist its
-      // migration before connection so local-only diff seeding sends the same
-      // structure Fortune will render.
-      if (!isFormatLocked(ydoc, dsheetId)) {
-        migrateSheetArrayIfNeeded(ydoc, ydoc.getArray(dsheetId));
-      }
-
-      if (generation !== bootstrapGenerationRef.current) return;
-      setSyncStatus('synced');
-      setIsContentBootstrapReady(true);
+      completeBootstrapContent(generation);
     } catch (error) {
       if (generation !== bootstrapGenerationRef.current) return;
       console.error('[DSheet] Error bootstrapping editor content:', error);
@@ -211,7 +236,13 @@ export const useEditorSync = (
       // fallback, but do not connect a room from an incomplete bootstrap.
       setIsContentBootstrapReady(true);
     }
-  }, [dsheetId, enableIndexeddbSync, isReadOnly, portalContent, ydoc]);
+  }, [
+    completeBootstrapContent,
+    dsheetId,
+    enableIndexeddbSync,
+    isReadOnly,
+    ydoc,
+  ]);
 
   const initialiseEditorIndexedDB = useCallback((): Promise<void> => {
     const run = bootstrapEditorIndexedDB();
@@ -222,10 +253,11 @@ export const useEditorSync = (
   /**
    * D3: delete the IndexedDB database and rewrite it from the live Y.Doc.
    * Resolves as a no-op when read-only, sync is disabled or there is no id.
-   * Concurrent calls share the in-flight promise. Never bumps the bootstrap
-   * generation: it waits for any running bootstrap first. If a bootstrap is
-   * requested or the hook unmounts during the rebuild, the new provider is
-   * destroyed and the call rejects.
+   * Concurrent calls share the in-flight promise. It waits for a running
+   * bootstrap, but only for a few seconds: a bootstrap stuck on an unreadable
+   * store is abandoned (new generation) and the rebuild completes its merge.
+   * If a bootstrap is requested or the hook unmounts during the rebuild, the
+   * new provider is destroyed and the call rejects.
    */
   const rebuildLocalStore = useCallback((): Promise<void> => {
     if (isReadOnly || !enableIndexeddbSync || !dsheetId) {
@@ -242,14 +274,22 @@ export const useEditorSync = (
       onIndexedDbErrorRef.current?.(indexedDbError);
     };
     const run = async () => {
-      // Let the latest bootstrap finish (it may be superseded meanwhile).
+      // Let the latest bootstrap finish (it may be superseded meanwhile). A
+      // bootstrap whose IndexedDB read never completes is abandoned: a new
+      // generation makes it destroy its provider and return, and this rebuild
+      // finishes the bootstrap's merge once the store is rebuilt.
+      let abandonedBootstrap = false;
       let waited: Promise<void> | null = null;
       while (
         bootstrapPromiseRef.current &&
         bootstrapPromiseRef.current !== waited
       ) {
         waited = bootstrapPromiseRef.current;
-        await waited.catch(() => {});
+        if ((await waitForBootstrapOrAbandon(waited)) === 'stuck') {
+          abandonedBootstrap = true;
+          bootstrapGenerationRef.current += 1;
+          break;
+        }
       }
       if (unmountedRef.current) {
         throw new Error('[DSheet] IndexedDB rebuild after unmount');
@@ -267,6 +307,9 @@ export const useEditorSync = (
             persistenceRef.current = created;
             created.on('error', reportError);
           },
+          {
+            isCurrent: () => generation === bootstrapGenerationRef.current,
+          },
         );
       } catch (error) {
         persistenceRef.current = null;
@@ -283,6 +326,7 @@ export const useEditorSync = (
         throw new Error('[DSheet] IndexedDB rebuild superseded');
       }
       indexeddbSyncedRef.current = true;
+      if (abandonedBootstrap) completeBootstrapContent(generation);
     };
     const promise = run().finally(() => {
       rebuildWritingRef.current = false;
@@ -290,7 +334,13 @@ export const useEditorSync = (
     });
     rebuildInFlightRef.current = promise;
     return promise;
-  }, [dsheetId, enableIndexeddbSync, isReadOnly, ydoc]);
+  }, [
+    completeBootstrapContent,
+    dsheetId,
+    enableIndexeddbSync,
+    isReadOnly,
+    ydoc,
+  ]);
 
   const getContentSnapshot = useCallback(
     () =>

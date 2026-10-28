@@ -854,7 +854,7 @@ Tests: unit suite 44 files, 346 tests; `tsc` clean.
 Not covered: no mounted-React test of the editor-context wiring (vitest has no React renderer). The permission chip still shows the prop's state and the comment toolbar item still shows while locked (its anchor write is guarded). A template apply that returns early leaves `selectedTemplate` set. `watchFormatGate` creates the empty `meta` root type. Format 2 edits already merged before this client opened are not detected until the watch starts, except where the read-only pre-watch check is used (merge, migrate).
 
 
-## Audit fixes (2026-10-27, not committed)
+## Audit fixes (2026-10-27, committed in 750bb33)
 
 Found by comparing the branch with the spec (`docs/perf/stabilize-spec-audit.md`). Each has a test; the C8 walk test was run against the old behaviour first.
 
@@ -872,7 +872,7 @@ Unit suite: 49 files, 359 tests pass; `tsc` clean. No benchmark was run for thes
 Not done from the audit: E1–E6, the browser measurements (section 6 of the spec) and the app side.
 
 
-## `fingerprintFromUpdate` builds a temporary document (2026-10-27, not committed)
+## `fingerprintFromUpdate` builds a temporary document (2026-10-27, committed in d96a8bd)
 
 The spec (A1) rejects reading the delete ranges from the update with `Y.decodeUpdate`: a raw IndexedDB row written when the document received a compacted body carries that body's GC structs with no delete range. Audit item "implemented differently" 3 found the branch still used that approach.
 
@@ -895,7 +895,7 @@ The two figures come from different runs, not interleaved; the same harness's "o
 Unit suite: 49 files, 360 tests pass; `tsc` clean.
 
 
-## K1 and K2: structural edits reach a second client (2026-10-27, not committed)
+## K1 and K2: structural edits reach a second client (2026-10-27, committed in 037248b)
 
 **Cause (K1).** `insertRowCol` and `deleteRowCol` rewrite formula text on every tab in memory, but write to Yjs only the edited tab's rows from the edit point down (`emitCellRangeToYdoc`). A formula above the edit point, or on any other tab (`=A!B5`), changed on the editing client only, and every peer kept the old text. Reproduced earlier at the Yjs level on this branch and on `main` (`.superpowers/.../k3-k1-report.md`); not a regression from this branch.
 
@@ -934,3 +934,24 @@ So the same-tab part of K1 (the row above the insert point) and K2 (row count) a
 **Why the cross-tab formula did not move.** In the inserting tab, tab `B` had no `data` grid: its entry in the workbook context held `celldata` and `calcChain` only (`hasData: false`). It had a grid (`hasData: true`, `=A!B5` readable) only while it was the active tab, and lost it again after switching back to `A`. `rowcol.ts` skips a tab with no `data` when it rewrites cross-tab formulas (`if (!sheetData) return`), so nothing was rewritten, in memory or in Yjs. That is K6, and in this app it covers every inactive tab, not only unusual cases [Inference from one run: only tabs `A` and `B` were tried]. My `snapshotFormulaTexts` also skips tabs without `data`. The unit test for the cross-tab case passes because its tab `B` has a `data` grid.
 
 Not checked: whether values on the peer were recalculated; the same insert with `B` active; delete and column cases; different users in the two tabs.
+
+## PR 466 review fixes (2026-10-28, not committed)
+
+Six must-fix comments from the review of PR 466 (`docs/perf/pr-466-review.md`). Unit suite: 52 files, 397 tests pass (50 files, 368 tests before); `tsc` clean. Nothing was run in a browser.
+
+| # | Item | Test | Before | After |
+|---|---|---|---|---|
+| 1 | Debug `afterTransaction` logger removed | none | logged and encoded the state vector on every transaction | removed |
+| 6 | K1 diff: formula cells are copied into the snapshot | `structural-edit-formula-sync.test.ts`, 4 cases | merged cell above the edit: peer kept `=B5`, `=SUM(B1:B10)` (engine `=B6`, `=SUM(B1:B11)`); 5 of 6 repeated `=$B$5` stayed (engine `=$B$6`); 3 of 4 cases failed | peer equals engine in all 4 |
+| 5 | Legacy `onChange` read through a ref; throttle built once per `dsheetId` | `legacy-on-change.test.ts`, 4 | a new host `onChange` rebuilt the throttle and cancelled the pending call | the latest handler is called once |
+| 2 | `reregisterRestoredFormulas` in one pass (chain read into a set, batch delete) | `history-calc-chain.test.ts`, 4 new | undo of a top-row insert, 1,000 x 26 with 1,000 formulas: **6,321 ms** | **24 ms** |
+| 3 | `shouldSkipEchoWrite` holds echo hooks while a structural remount is pending; `afterUpdateCell` writes the chain entry of a formula committed then | `remote-apply-guard.test.ts` 5, `after-update-cell.test.ts` 3 | echo hooks could write the engine's old chain over the peer's | held back; chain entry written with the cell |
+| 4 | `waitForPersistenceSynced` (15 s, generation check) in the bootstrap and `rebuildIndexedDbStore`; a rebuild abandons a bootstrap after 3 s | `wait-for-sync.test.ts` 7, `rebuild-indexeddb-store.test.ts` 2 new | `await whenSynced` could wait forever (library source read; the hang was not run) | rejects on timeout or when superseded |
+
+**Method for #2.** One run per row, Node, a temporary Vitest file (deleted), `insertRowCol` on a draft, then `planHistoryPatches`, `applyPatches` and `reregisterRestoredFormulas`; the same harness gave the before figure on `037248b` and the after figures here. Other sheets after the fix: 1,000 x 26 with 100 formulas 17 ms, 9,000 x 26 without formulas 138 ms. The reviewer's figures for the same cases on `037248b` were 0.43 s and 0.85 s (not re-measured here).
+
+**Not measured / not covered.**
+- The cost of copying formula cells into the snapshot (#6) on a very large sheet.
+- The end-to-end repro of #3 (deferred remount, then a local formula commit), and the hook wiring of #3, #4 and #5: vitest has no React renderer.
+- #5 has no failing run against the old throttle (the test file is new). #4's two new rebuild tests were not run against the old unbounded wait.
+- Behaviour changes: a first IndexedDB read slower than 15 s now continues without IndexedDB and calls `onIndexedDbError`; metadata echoes are not written during a pending remount; a restored non-formula cell that is not in the chain no longer has its dependency edges dropped.

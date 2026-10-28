@@ -1527,17 +1527,8 @@ export function getAllFunctionGroup(ctx: Context) {
   return ret;
 }
 
-export function delFunctionGroup(
-  ctx: Context,
-  r: number,
-  c: number,
-  id?: string,
-) {
-  if (_.isNil(id)) {
-    id = ctx.currentSheetId;
-  }
-
-  // Remove dependency edges for this cell (it is no longer a formula).
+/** Remove the dependency edges recorded for a cell that is no longer a formula. */
+function dropDependencyEdges(ctx: Context, r: number, c: number, id: string) {
   const originKey = `${id}:${r}:${c}`;
   ctx.formulaCache.formulasWithWideRangeDeps.delete(originKey);
   const prevDeps = ctx.formulaCache?.depsByCell?.get(originKey);
@@ -1551,6 +1542,59 @@ export function delFunctionGroup(
     ctx.formulaCache.depsByCell.delete(originKey);
     invalidateSheetsRequiredDenseCache();
   }
+}
+
+/**
+ * delFunctionGroup for many cells of one sheet: the chain and the dynamic
+ * array list are filtered once, not scanned and copied per cell. Same result
+ * as calling delFunctionGroup for each cell.
+ */
+export function delFunctionGroupBatch(
+  ctx: Context,
+  id: string,
+  cells: { r: number; c: number }[],
+) {
+  if (cells.length === 0) return;
+  cells.forEach(({ r, c }) => dropDependencyEdges(ctx, r, c, id));
+
+  const file = ctx.luckysheetfile[getSheetIndex(ctx, id)!];
+  const drop = new Set(cells.map(({ r, c }) => `${r}_${c}`));
+
+  const { calcChain } = file;
+  if (!_.isNil(calcChain)) {
+    const kept = calcChain.filter(
+      (calc) => !(calc.id === id && drop.has(`${calc.r}_${calc.c}`)),
+    );
+    if (kept.length !== calcChain.length) {
+      file.calcChain = kept;
+      invalidateSheetsRequiredDenseCache();
+    }
+  }
+
+  const { dynamicArray } = file;
+  if (!_.isNil(dynamicArray)) {
+    const kept = dynamicArray.filter(
+      (calc) =>
+        !(
+          (_.isNil(calc.id) || calc.id === id) && drop.has(`${calc.r}_${calc.c}`)
+        ),
+    );
+    if (kept.length !== dynamicArray.length) file.dynamicArray = kept;
+  }
+}
+
+export function delFunctionGroup(
+  ctx: Context,
+  r: number,
+  c: number,
+  id?: string,
+) {
+  if (_.isNil(id)) {
+    id = ctx.currentSheetId;
+  }
+
+  // Remove dependency edges for this cell (it is no longer a formula).
+  dropDependencyEdges(ctx, r, c, id);
 
   const file = ctx.luckysheetfile[getSheetIndex(ctx, id)!];
 

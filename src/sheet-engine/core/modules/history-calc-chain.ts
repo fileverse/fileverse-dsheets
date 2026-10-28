@@ -1,6 +1,6 @@
 import type { Patch } from 'immer';
 import type { Context } from '../context';
-import { delFunctionGroup, insertUpdateFunctionGroup } from './formula';
+import { delFunctionGroupBatch, insertUpdateFunctionGroup } from './formula';
 
 /**
  * Undo and redo apply Immer patches that address `calcChain` by array index.
@@ -55,20 +55,51 @@ export function planHistoryPatches(patches: Patch[]): {
  * Register the restored cells that hold a formula and drop the ones that no
  * longer do. Run on a draft after the patches were applied. The graph is left
  * incomplete: restored formulas are not evaluated.
+ *
+ * A row-level patch lists every cell of the row, so most restored cells are
+ * unchanged. The chain is read once into a set; only a formula missing from it
+ * is added and only an entry whose cell lost its formula is removed (in one
+ * batch). Calling insertUpdateFunctionGroup / delFunctionGroup per cell
+ * scanned the chain each time: 6.8 s for 1,000 formulas on 1,000 rows.
  */
 export function reregisterRestoredFormulas(
   ctx: Context,
   restored: RestoredCell[],
 ) {
-  restored.forEach(({ sheetIndex, r, c }) => {
+  const bySheet = new Map<number, RestoredCell[]>();
+  restored.forEach((cell) => {
+    const list = bySheet.get(cell.sheetIndex);
+    if (list) list.push(cell);
+    else bySheet.set(cell.sheetIndex, [cell]);
+  });
+
+  bySheet.forEach((cells, sheetIndex) => {
     const sheet = ctx.luckysheetfile[sheetIndex];
     const id = sheet?.id;
-    const row = sheet?.data?.[r];
-    if (!id || !row) return;
-    const columns = c == null ? row.map((_cell, i) => i) : [c];
-    columns.forEach((col) => {
-      if (row[col]?.f != null) insertUpdateFunctionGroup(ctx, r, col, id);
-      else delFunctionGroup(ctx, r, col, id);
+    if (!id || !sheet.data) return;
+
+    const inChain = new Set<string>();
+    (sheet.calcChain ?? []).forEach((calc) => {
+      if (calc.id === id) inChain.add(`${calc.r}_${calc.c}_${id}`);
     });
+
+    const toDelete: { r: number; c: number }[] = [];
+    cells.forEach(({ r, c }) => {
+      const row = sheet.data?.[r];
+      if (!row) return;
+      const columns = c == null ? row.map((_cell, i) => i) : [c];
+      columns.forEach((col) => {
+        const key = `${r}_${col}_${id}`;
+        if (row[col]?.f != null) {
+          if (inChain.has(key)) return;
+          insertUpdateFunctionGroup(ctx, r, col, id, inChain);
+          inChain.add(key);
+        } else if (inChain.has(key)) {
+          toDelete.push({ r, c: col });
+          inChain.delete(key);
+        }
+      });
+    });
+    delFunctionGroupBatch(ctx, id, toDelete);
   });
 }

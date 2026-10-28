@@ -7,6 +7,10 @@ import {
   fingerprintFromUpdate,
 } from './content-fingerprint';
 import { rebuildIndexedDbStore } from './rebuild-indexeddb-store';
+import {
+  PersistenceSupersededError,
+  PersistenceSyncTimeoutError,
+} from './wait-for-sync';
 
 const edit = (doc: Y.Doc, n: number) => {
   const arr = doc.getArray<string>('sheet');
@@ -142,5 +146,42 @@ describe('D3 rebuild of the local IndexedDB store', () => {
     await next.destroy();
     const { doc } = await openFresh('rebuild-null');
     expect(doc.getArray('sheet').length).toBe(live.getArray('sheet').length);
+  });
+
+  // y-indexeddb never rejects whenSynced: a provider destroyed before its first
+  // read (the bootstrap effect restarting) simply never syncs.
+  it('rejects instead of hanging when the new provider is destroyed before it syncs', async () => {
+    const live = new Y.Doc();
+    edit(live, 3);
+    await expect(
+      rebuildIndexedDbStore(
+        'rebuild-destroyed',
+        live,
+        null,
+        (created) => {
+          void created.destroy();
+        },
+        { timeoutMs: 200 },
+      ),
+    ).rejects.toBeInstanceOf(PersistenceSyncTimeoutError);
+  });
+
+  it('rejects as superseded once the caller is no longer current', async () => {
+    const live = new Y.Doc();
+    edit(live, 3);
+    let current = true;
+    const result = rebuildIndexedDbStore(
+      'rebuild-superseded',
+      live,
+      null,
+      (created) => {
+        void created.destroy();
+        setTimeout(() => {
+          current = false;
+        }, 50);
+      },
+      { timeoutMs: 10_000, isCurrent: () => current },
+    );
+    await expect(result).rejects.toBeInstanceOf(PersistenceSupersededError);
   });
 });

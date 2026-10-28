@@ -17,6 +17,7 @@ const seed = () => {
       doc.getArray<Y.Map<any>>(ID).push([sheet]);
       sheet.set('id', id);
       sheet.set('celldata', new Y.Map());
+      sheet.set('calcChain', new Y.Map());
       sheet.set('config', new Y.Map());
     }
   });
@@ -29,6 +30,14 @@ const cellsOf = (doc: Y.Doc, sheetId: string) => {
     .toArray()
     .find((s) => s.get('id') === sheetId)!;
   return (sheet.get('celldata') as Y.Map<any>).toJSON();
+};
+
+const chainOf = (doc: Y.Doc, sheetId: string) => {
+  const sheet = doc
+    .getArray<Y.Map<any>>(ID)
+    .toArray()
+    .find((s) => s.get('id') === sheetId)!;
+  return (sheet.get('calcChain') as Y.Map<any>).toJSON();
 };
 
 const editorOn = (currentSheetId: string) => ({
@@ -112,5 +121,60 @@ describe('afterUpdateCell persistence (B2)', () => {
     );
     expect(cellsOf(doc, 'A')['0_0']?.v?.v).toBe('mine');
     expect(cellsOf(doc, 'B')).toEqual({});
+  });
+});
+
+// PR 466 review (#3): the calcChain echo hook is held back while a peer's
+// structural edit waits to remount the grid. A formula committed in that
+// window must still get its chain entry, at the coordinates it is written at.
+describe('afterUpdateCell during a pending structural remount', () => {
+  const formula = { v: 3, m: '3', f: '=1+2' };
+  const gate = {
+    collabEnabled: true,
+    collabIsOwner: false,
+    localUserEditRef: { current: false },
+  };
+
+  it('writes the chain entry for a committed formula', async () => {
+    const doc = seed();
+    await afterUpdateCell(
+      base(doc, {
+        ...gate,
+        structuralRemountPendingRef: { current: true },
+        row: 4,
+        column: 1,
+        newValue: formula,
+      }),
+    );
+    expect(cellsOf(doc, 'A')['4_1']?.v?.f).toBe('=1+2');
+    expect(chainOf(doc, 'A')['4_1']).toEqual({ r: 4, c: 1, id: 'A' });
+  });
+
+  it('does not touch the chain when no remount is pending', async () => {
+    const doc = seed();
+    await afterUpdateCell(
+      base(doc, {
+        ...gate,
+        structuralRemountPendingRef: { current: false },
+        row: 4,
+        column: 1,
+        newValue: formula,
+      }),
+    );
+    expect(chainOf(doc, 'A')).toEqual({});
+  });
+
+  it('does not write a chain entry for a plain value', async () => {
+    const doc = seed();
+    await afterUpdateCell(
+      base(doc, {
+        ...gate,
+        structuralRemountPendingRef: { current: true },
+        row: 4,
+        column: 1,
+        newValue: { v: 'x', m: 'x' },
+      }),
+    );
+    expect(chainOf(doc, 'A')).toEqual({});
   });
 });

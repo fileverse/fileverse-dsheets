@@ -4,6 +4,7 @@ import {
   cancelStructuralRemount,
   endRemoteApplyAfterPaint,
   scheduleStructuralRemount,
+  shouldSkipEchoWrite,
   type StructuralRemountRefs,
 } from './remote-apply-guard';
 
@@ -257,5 +258,83 @@ describe('structural remount while a cell edit is open (B3)', () => {
     expect(refs.remoteApplyDepthRef.current).toBe(0);
     expect(refs.pendingRef.current).toBe(false);
     expect(refs.timerRef.current).toBeNull();
+  });
+});
+
+// PR 466 review (#3): engine -> Yjs echo hooks stay quiet from the moment a
+// peer's structural edit is scheduled until the remount has painted.
+describe('shouldSkipEchoWrite', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal('window', globalThis);
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) =>
+      setTimeout(() => cb(performance.now()), 16),
+    );
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('is false when nothing is pending', () => {
+    const refs = makeRefs();
+    expect(
+      shouldSkipEchoWrite({
+        remoteUpdateRef: refs.remoteUpdateRef,
+        structuralRemountPendingRef: refs.pendingRef,
+      }),
+    ).toBe(false);
+  });
+
+  it('is true while a remount is deferred by a cell edit, and the edit is not held', () => {
+    const refs = makeRefs();
+    const echo = () =>
+      shouldSkipEchoWrite({
+        remoteUpdateRef: refs.remoteUpdateRef,
+        structuralRemountPendingRef: refs.pendingRef,
+      });
+    scheduleStructuralRemount(refs, vi.fn(), 50, () => true);
+    vi.advanceTimersByTime(500);
+    expect(refs.pendingRef.current).toBe(true);
+    expect(echo()).toBe(true);
+    // The guard that drops typed commits is still not held.
+    expect(refs.remoteUpdateRef.current).toBe(false);
+  });
+
+  it('stays true through the remount and its paint, then clears', () => {
+    const refs = makeRefs();
+    const echo = () =>
+      shouldSkipEchoWrite({
+        remoteUpdateRef: refs.remoteUpdateRef,
+        structuralRemountPendingRef: refs.pendingRef,
+      });
+    scheduleStructuralRemount(refs, vi.fn(), 50);
+    expect(echo()).toBe(true);
+    vi.advanceTimersByTime(50);
+    expect(refs.pendingRef.current).toBe(false);
+    expect(echo()).toBe(true); // remote-apply guard held until paint
+    vi.advanceTimersByTime(100);
+    expect(echo()).toBe(false);
+  });
+
+  it('is false again after the observer tears the pending remount down', () => {
+    const refs = makeRefs();
+    scheduleStructuralRemount(refs, vi.fn(), 50);
+    cancelStructuralRemount(refs);
+    expect(
+      shouldSkipEchoWrite({
+        remoteUpdateRef: refs.remoteUpdateRef,
+        structuralRemountPendingRef: refs.pendingRef,
+      }),
+    ).toBe(false);
+  });
+
+  it('works without the pending ref (older callers)', () => {
+    expect(shouldSkipEchoWrite({ remoteUpdateRef: { current: true } })).toBe(
+      true,
+    );
+    expect(shouldSkipEchoWrite({ remoteUpdateRef: { current: false } })).toBe(
+      false,
+    );
   });
 });

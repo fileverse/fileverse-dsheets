@@ -90,6 +90,8 @@ interface AfterUpdateCellParams {
   collabEnabled?: boolean;
   collabIsOwner?: boolean;
   remoteUpdateRef?: React.MutableRefObject<boolean>;
+  /** True while a peer's structural edit waits to remount the grid. */
+  structuralRemountPendingRef?: React.MutableRefObject<boolean>;
   localUserEditRef?: React.MutableRefObject<boolean>;
   /** Sheet that held the cell at commit time; falls back to the current sheet. */
   sheetId?: string;
@@ -525,6 +527,7 @@ export const afterUpdateCell = async (
     params.sheetId ??
     (params.sheetEditorRef.current?.getWorkbookContext()
       ?.currentSheetId as string);
+  const key = params.row + '_' + params.column;
   updateYdocSheetData(
     // @ts-ignore
     params.ydocRef.current,
@@ -539,9 +542,29 @@ export const afterUpdateCell = async (
           c: params.column,
           v: params.newValue,
         },
-        key: params.row + '_' + params.column,
+        key,
         type: 'update',
       },
+      // The calcChain echo hook is held back while a structural remount is
+      // pending (the engine grid is stale), so the chain entry for a formula
+      // committed in that window is written here, at the coordinates the cell
+      // is written at. The remount rebuilds the engine chain from Yjs.
+      ...(params.structuralRemountPendingRef?.current &&
+      params.newValue?.f != null
+        ? [
+            {
+              sheetId: currentSheetId,
+              path: ['calcChain'],
+              value: {
+                r: params.row,
+                c: params.column,
+                v: { r: params.row, c: params.column, id: currentSheetId },
+              },
+              key,
+              type: 'update' as const,
+            },
+          ]
+        : []),
     ],
     // @ts-ignore
     params.handleContentPortal,

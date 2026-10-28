@@ -1314,6 +1314,7 @@ export const useEditorData = (
     setSheetData,
     currentDataRef,
     remoteUpdateRef,
+    structuralRemountPendingRef,
     isDataLoaded,
     setIsDataLoaded,
     handleChange,

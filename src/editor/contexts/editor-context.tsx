@@ -26,6 +26,7 @@ import {
 import { useCelldataCompaction } from '../hooks/use-celldata-compaction';
 import { useEditorData } from '../hooks/use-editor-data';
 import { navigateToSheet } from '../utils/navigate-to-sheet';
+import { createLegacyOnChangeThrottle } from '../utils/legacy-on-change';
 import { activateSheetForLink } from '../utils/activate-sheet-for-link';
 import { createActiveSheetKeeper } from '../utils/active-sheet-keeper';
 import {
@@ -87,6 +88,8 @@ export interface EditorContextType {
   setSheetData: React.Dispatch<React.SetStateAction<Sheet[]>>;
   currentDataRef: React.MutableRefObject<Sheet[]>;
   remoteUpdateRef: React.MutableRefObject<boolean>;
+  /** True while a peer's structural edit waits to remount the grid. */
+  structuralRemountPendingRef: React.MutableRefObject<boolean>;
   handleChange: (data: Sheet[]) => void;
   initialiseLiveQueryData: (data: Sheet[]) => void;
 
@@ -449,15 +452,18 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     [externalEditorRef, legacyEditorRef],
   );
 
+  // The host's handler is read when the throttle fires. A host that passes an
+  // inline onChange must not rebuild the throttle: that cancels its pending
+  // call and the edit never reaches the host's save.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   const handleOnChange = useMemo(
     () =>
-      throttle(
+      createLegacyOnChangeThrottle<SheetUpdateData>(
+        () => onChangeRef.current,
         () => {
-          if (!onChange || !ydocRef.current) return;
-
-          const encodedUpdate = fromUint8Array(
-            Y.encodeStateAsUpdate(ydocRef.current),
-          );
+          if (!ydocRef.current) return null;
+          const update = fromUint8Array(Y.encodeStateAsUpdate(ydocRef.current));
           // Local cell edits update Yjs celldata but do not refresh currentDataRef.
           // Build the legacy plain snapshot from Yjs only for hosts that still
           // request onChange.
@@ -469,14 +475,10 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
           } catch {
             // Fall back to ref if Yjs → plain conversion fails.
           }
-          onChange({ data: plain }, encodedUpdate);
+          return { data: { data: plain }, update };
         },
-        // Trailing only: the whole-doc encode runs at most once per second,
-        // never per edit. flush() runs only on unload and unmount.
-        1000,
-        { leading: false, trailing: true },
       ),
-    [onChange, dsheetId],
+    [dsheetId],
   );
 
   // A1: cheap change signal, built from the live doc when it fires.
@@ -548,6 +550,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     setSheetData,
     currentDataRef,
     remoteUpdateRef,
+    structuralRemountPendingRef,
     isDataLoaded,
     handleChange,
     handleLiveQuery,
@@ -682,6 +685,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
       setSheetData,
       currentDataRef,
       remoteUpdateRef,
+      structuralRemountPendingRef,
       handleChange,
       loading,
       isDataLoaded,
@@ -732,6 +736,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     setSheetData,
     currentDataRef,
     remoteUpdateRef,
+    structuralRemountPendingRef,
     handleChange,
     loading,
     isDataLoaded,

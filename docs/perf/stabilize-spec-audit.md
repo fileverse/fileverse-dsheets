@@ -47,3 +47,7 @@ A1 hasContent / userEdited / fingerprint tracker (GC-struct counting, attached a
 ## 5. Not verified by me
 
 C3, C4, C5, C6 internals; `rebuildLocalStore` ordering; format-gate UI wiring (no React renderer in vitest, K42); whether every spec section-6 unit test exists (I checked A4-undo, C2-date, C8 flag-off tests: absent; A1 compacted-body reopen test: not checked); whole-text diff of the pasted spec against `docs/perf/dsheet-stabilize-spec.md` (only B3, C8 and status table compared).
+
+## Status update (2026-10-28, PR 466 review)
+
+The review of PR 466 (`docs/perf/pr-466-review.md`) found six must-fix problems in the branch; all six are fixed in the working tree (not committed). One touches this audit's items: section 2 item 4 (B3 guard depth). The review showed the stated reason for not holding the guard is only partly right: `afterUpdateCell` writes the cell before it checks `remoteUpdateRef`, so holding the guard would not drop a typed commit. What must not run while a remount is pending is the engine to Yjs echo hooks, which now check `shouldSkipEchoWrite`. The guard is still not held (the data-block work and `handleChange` do drop work under it), and K8 (position of a commit during the deferral) is still open.

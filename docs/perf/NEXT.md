@@ -10,13 +10,15 @@ Done and committed: G5 = Task 6 (`4d181b5`, `rebuildLocalStore`, D3 package side
 
 Done and committed: G6 = Task 8 (`71d758d`, format gate F, S13); docs `4122b95`. Unit suite 44 files, 346 tests; `tsc` clean.
 
-Audit fixes (2026-10-27, in the working tree, not committed): snapshot `fingerprint`, A4 undo/redo calcChain guard, C8 wide-range seed walk, C8 paste/cut flag clears, C2 date key, `onContentUpdate` flush. Details: `docs/perf/stabilize-spec-audit.md`, results doc "Audit fixes". Unit suite 49 files, 359 tests; `tsc` clean.
+Audit fixes (2026-10-27, committed in `750bb33`): snapshot `fingerprint`, A4 undo/redo calcChain guard, C8 wide-range seed walk, C8 paste/cut flag clears, C2 date key, `onContentUpdate` flush. Details: `docs/perf/stabilize-spec-audit.md`, results doc "Audit fixes". Unit suite 49 files, 359 tests; `tsc` clean.
 
-`fingerprintFromUpdate` fix (2026-10-27, uncommitted): builds a temporary document like the spec; test T9b; 360 tests, `tsc` clean. Remaining audit deviations are listed in `stabilize-spec-audit.md` section 2 (C8 warm-up evaluates formulas, pre-warm commit path, B3 guard, B2 `cloneDeep`).
+`fingerprintFromUpdate` fix (2026-10-27, committed in `d96a8bd`): builds a temporary document like the spec; test T9b; 360 tests, `tsc` clean. Remaining audit deviations are listed in `stabilize-spec-audit.md` section 2 (C8 warm-up evaluates formulas, pre-warm commit path, B3 guard, B2 `cloneDeep`).
 
-K1 and K2 fix (2026-10-27, uncommitted): formula text and grid size now reach a second client after a row or column insert or delete; test `structural-edit-formula-sync.test.ts` (8, failed before). 368 tests, `tsc` clean. Browser check done 2026-10-27 with a BroadcastChannel relay (collaboration server unreachable): same-tab formulas and row count reach the peer; cross-tab formula on an inactive tab does not (K6).
+K1 and K2 fix (2026-10-27, committed in `037248b`): formula text and grid size now reach a second client after a row or column insert or delete; test `structural-edit-formula-sync.test.ts` (8, failed before). 368 tests, `tsc` clean. Browser check done 2026-10-27 with a BroadcastChannel relay (collaboration server unreachable): same-tab formulas and row count reach the peer; cross-tab formula on an inactive tab does not (K6).
 
-Not done: 6 tasks (9–14), then a final review.
+PR 466 review fixes (2026-10-28, in the working tree, **not committed**): the six must-fix comments of nadeem-fileverse are fixed: debug logger removed (#1); K1 diff misses merged cells and repeated formulas (#6); legacy `onChange` no longer cancelled by a host re-render (#5); undo of a row insert re-registers in one pass, 6,321 ms to 24 ms on 1,000 formulas (#2); echo hooks held back while a structural remount is pending, and a formula committed then gets its calcChain entry (#3); `rebuildLocalStore` and the bootstrap no longer wait forever for y-indexeddb (#4). Unit suite 52 files, 397 tests; `tsc` clean. Not browser-checked; the hook wiring for #3, #4 and #5 has no test. Details: `docs/perf/pr-466-review.md` section 9, results doc "PR 466 review fixes". The 12 other review comments (#7 to #18) are K6 (cause) and K45 to K55 in `KNOWN-ISSUES.md`.
+
+Not done: 6 tasks (9–14), then a final review. Also open from the PR 466 review: K45 (stale chain entry after undo) is the suggested next fix.
 
 | Order | Group | Task | What | Reviewer |
 |---|---|---|---|---|
@@ -59,7 +61,7 @@ The ledger `.superpowers/sdd/2026-10-26-p1-stabilise-remaining/progress.md` is g
 
 The complete list, 39 items with evidence labels, locations and next steps, is `docs/perf/KNOWN-ISSUES.md`. The summary below is the short version.
 
-1. **K1 and K2 fixed in the working tree (2026-10-27)**; see the results doc. Browser-checked 2026-10-27 (relay rig): same-tab formulas and row count (86, 87) reach the peer. The cross-tab formula on an inactive tab does not: that tab has no `data` grid and the rewrite skips it (K6). Values of rewritten formulas on the peer were not checked.
+1. **K1 and K2 fixed (committed `037248b`)**; the merged-cell and repeated-formula gaps in that fix were closed in the working tree on 2026-10-28 (PR 466 #6); see the results doc. Browser-checked 2026-10-27 (relay rig): same-tab formulas and row count (86, 87) reach the peer. The cross-tab formula on an inactive tab does not: that tab has no `data` grid and the rewrite skips it (K6). Values of rewritten formulas on the peer were not checked.
 3. Paste: `docs/paste-sizing-issues.md` and `docs/copy-mechanism-findings.md` (named in the user's notes) are not in this repository tree, so they were not updated. C5 changed paste auto-fit sizing (fonts via the grid's font builder, cached text measurement, batched layout for wrapped cells); the 10k-cell figure and its limits are in the results doc. Whether C5 closes sizing Issues 2 and 3 there has not been verified, and the row-height-from-`fs` minor below suggests part of Issue 3 remains. Not measured: a full paste event (clipboard parse, Yjs write, render).
 4. Deferred minors (final review to triage):
    - Banner shows the previous sheet's cached result for up to about 1 s after a sheet switch, and a cache hit can be served while fonts are loading.

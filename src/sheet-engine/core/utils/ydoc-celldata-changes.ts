@@ -45,6 +45,19 @@ function normalizeRange(
 }
 
 /**
+ * A formula cell is copied into a snapshot: a row/column insert or delete
+ * rewrites `f` (and may set `v`/`m` to #REF!) on the live object, so a snapshot
+ * that kept the object would compare the rewritten cell with itself and the
+ * diff would write nothing. Other cells are not rewritten, so they are kept by
+ * reference.
+ */
+function snapshotCell<T>(cell: T): T {
+  return cell != null && typeof cell === 'object' && (cell as Cell).f != null
+    ? ({ ...(cell as object) } as T)
+    : cell;
+}
+
+/**
  * Snapshot persisted cells in a range.
  * Prefer sparse `celldata` when provided — O(populated cells), not O(range area).
  */
@@ -74,7 +87,7 @@ export function snapshotPersistedCelldataInRange(
       if (shouldPersistCelldataCell(entry.v)) {
         map.set(
           `${entry.r}_${entry.c}`,
-          entry.v as Cell | string | number | boolean,
+          snapshotCell(entry.v) as Cell | string | number | boolean,
         );
       }
     }
@@ -88,7 +101,10 @@ export function snapshotPersistedCelldataInRange(
       const cell = row[c];
       if (cell == null) continue;
       if (shouldPersistCelldataCell(cell)) {
-        map.set(`${r}_${c}`, cell as Cell | string | number | boolean);
+        map.set(
+          `${r}_${c}`,
+          snapshotCell(cell) as Cell | string | number | boolean,
+        );
       }
     }
   }
