@@ -22,11 +22,11 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | D5 step 3 (package side) | done, committed `4603bd9` (Task 7) | | `appendDsheetUpdate` in `./persistence` (not `src/index.ts`); S12: 113 ms and 1.09 MB written to 0.24 ms and 1,580 B (Node, fake-indexeddb). Other D5 steps are app side. |
 | F | done, committed `71d758d` (Task 8) | | `format-gate.ts`; S13: gate costs 0.9 microseconds per open, paired medians within 1 ms; results doc "F". Every writer reachable without the toolbar is guarded. |
 | E1–E6 | not started | | Plan Tasks 9–14. |
-| Audit fixes (2026-10-27, uncommitted) | done | | `DSheetContentSnapshot.fingerprint` (A1/D5); A4 undo/redo keeps a collaborator's calcChain entries and the calcChain hook never deletes a key whose cell still holds a formula; C8 walk seeded with the very-large-range and named-range formulas; C8 flag turned off by HTML-table paste and cut-paste; C2 cache key includes today; legacy `onContentUpdate` per-edit flush restored. See `docs/perf/stabilize-spec-audit.md`. |
-| `fingerprintFromUpdate` (2026-10-27 fix) | done, uncommitted | | Now builds a temporary document and scans its delete set, as A1 says; the `Y.decodeUpdate` version undercounted GC structs in raw rows (test T9b: 2 against 22). S5: 34.9 ms to 60.8 ms. See results doc. |
+| Audit fixes (2026-10-27) | done | 750bb33 | `DSheetContentSnapshot.fingerprint` (A1/D5); A4 undo/redo keeps a collaborator's calcChain entries and the calcChain hook never deletes a key whose cell still holds a formula; C8 walk seeded with the very-large-range and named-range formulas; C8 flag turned off by HTML-table paste and cut-paste; C2 cache key includes today; legacy `onContentUpdate` per-edit flush restored. See `docs/perf/stabilize-spec-audit.md`. |
+| `fingerprintFromUpdate` (2026-10-27 fix) | done | d96a8bd | Now builds a temporary document and scans its delete set, as A1 says; the `Y.decodeUpdate` version undercounted GC structs in raw rows (test T9b: 2 against 22). S5: 34.9 ms to 60.8 ms. See results doc. |
 | D0–D2, D4, D6 (app side, dsheets.new) | not in this repo | | See NEXT.md. |
 
-Open finding, not yet an item: formula text rewritten by a row insert is not carried to a second client in the same room (observed in the demo with two tabs; not checked on `main`). It bears on B5 and on part 2's removal of the rewrite. Details in `docs/perf/NEXT.md`.
+Former open finding, fixed (K1 and K2, `037248b`; gaps closed in `a7abbed`): formula text rewritten by a row insert was not carried to a second client in the same room. It bears on B5 and on part 2's removal of the rewrite. Remaining: K6 (inactive or unhydrated tabs), K8. Details in `docs/perf/NEXT.md`.
 
 Line numbers refer to fileverse-dsheet origin/main 9411d95 (package 4.1.21), dsheets.new origin/staging db44e94 and ddocs.new origin/staging 62723dca, except where a line is marked `origin/main` for ddocs.new.
 

@@ -83,5 +83,5 @@ Also from the review: the `'error'` listeners on y-indexeddb providers (`use-edi
 ## How to use this list
 
 - Items K4 and K5 are already tasks (17 and 16). Everything else waits for the final whole-branch review to triage, or for the user to promote it.
-- Suggested promotion order: K8, K11, K6 (remaining parts), then the rest. K6 now matters more (it blocks the cross-tab half of K1 on inactive tabs). K1 and K2 are fixed in the working tree for the active tab and hydrated tabs.
+- Suggested promotion order: K8, K11, K6 (remaining parts), then the rest. K6 now matters more (it blocks the cross-tab half of K1 on inactive tabs). K1 and K2 are fixed and committed (`037248b`, gaps closed in `a7abbed`) for the active tab and hydrated tabs.
 - When an item is fixed, move it to the results doc and delete its row here.

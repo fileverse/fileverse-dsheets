@@ -6,7 +6,7 @@ How checked: read the diffs and code for each item; ran `npm run test:unit` (44 
 
 ## Status update (2026-10-27, same day)
 
-Missing items 1, 3, 4, 5, 6 and 7 below are now fixed in the working tree (not committed), with tests; see "Audit fixes" in `stabilize-bench-results.md`. Section 2 item 3 (`fingerprintFromUpdate`) is also fixed (temporary document, test T9b). Still open: item 2 (E1–E6), item 8 (browser measurements), item 9 (app side). Deviations in section 2 are unchanged. Unit suite 359 tests, `tsc` clean.
+Missing items 1, 3, 4, 5, 6 and 7 below are now fixed and committed (`750bb33`), with tests; see "Audit fixes" in `stabilize-bench-results.md`. Section 2 item 3 (`fingerprintFromUpdate`) is also fixed (temporary document, test T9b). Still open: item 2 (E1–E6), item 8 (browser measurements), item 9 (app side). Deviations in section 2 are unchanged. Unit suite 359 tests, `tsc` clean.
 
 ## 1. Missing (spec requires, branch does not have it)
 
@@ -40,7 +40,7 @@ A1 hasContent / userEdited / fingerprint tracker (GC-struct counting, attached a
 
 ## 4. Open correctness issues the docs already record (not spec items, but they affect it)
 
-- **K1/K2** (fixed 2026-10-27, uncommitted; browser-checked for the same tab; cross-tab on inactive tabs blocked by K6): after a row insert, rewritten formula text did not reach a second client; peer row count differed (84 vs 86). Reproduced at Yjs level on `main` too. See the results doc.
+- **K1/K2** (fixed 2026-10-27, committed `037248b`; browser-checked for the same tab; cross-tab on inactive tabs blocked by K6): after a row insert, rewritten formula text did not reach a second client; peer row count differed (84 vs 86). Reproduced at Yjs level on `main` too. See the results doc.
 - A4 browser check found: after a reconnect the editing tab shows a stale grid and a calcChain entry was not written (not traced).
 - K3 cross-tab stale value (not reproduced after Task 16), K6, K7, K10–K12 (see `KNOWN-ISSUES.md`).
 
@@ -50,4 +50,4 @@ C3, C4, C5, C6 internals; `rebuildLocalStore` ordering; format-gate UI wiring (n
 
 ## Status update (2026-10-28, PR 466 review)
 
-The review of PR 466 (`docs/perf/pr-466-review.md`) found six must-fix problems in the branch; all six are fixed in the working tree (not committed). One touches this audit's items: section 2 item 4 (B3 guard depth). The review showed the stated reason for not holding the guard is only partly right: `afterUpdateCell` writes the cell before it checks `remoteUpdateRef`, so holding the guard would not drop a typed commit. What must not run while a remount is pending is the engine to Yjs echo hooks, which now check `shouldSkipEchoWrite`. The guard is still not held (the data-block work and `handleChange` do drop work under it), and K8 (position of a commit during the deferral) is still open.
+The review of PR 466 (`docs/perf/pr-466-review.md`) found six must-fix problems in the branch; all six are fixed (committed `a7abbed`; the other 12 comments in `a5dcd88` and `291c398`). One touches this audit's items: section 2 item 4 (B3 guard depth). The review showed the stated reason for not holding the guard is only partly right: `afterUpdateCell` writes the cell before it checks `remoteUpdateRef`, so holding the guard would not drop a typed commit. What must not run while a remount is pending is the engine to Yjs echo hooks, which now check `shouldSkipEchoWrite`. The guard is still not held (the data-block work and `handleChange` do drop work under it), and K8 (position of a commit during the deferral) is still open.

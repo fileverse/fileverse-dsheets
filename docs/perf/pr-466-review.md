@@ -257,7 +257,7 @@ In `editor-context.tsx` `watchFormatGate(...)` calls `setFormatLocked(true)`. Th
 - `KNOWN-ISSUES.md` K8: the reviewer says a commit at the old coordinates overwrites the cell that moved there, so a third cell is lost, not only the edit landing in the wrong row. Update the row and its "Next step".
 - `KNOWN-ISSUES.md` K6: change the cause to the regex (#7).
 - `remote-apply-guard.ts` doc comment on `scheduleStructuralRemount`: replace the "would drop the user's commit" reason with the real one (#3).
-- `docs/perf/NEXT.md`: still lists the audit fixes, `fingerprintFromUpdate` and K1/K2 as uncommitted; they are in `d96a8bd`, `750bb33` and `037248b`.
+- `docs/perf/NEXT.md`: listed the audit fixes, `fingerprintFromUpdate` and K1/K2 as uncommitted; they are in `d96a8bd`, `750bb33` and `037248b`. Corrected 2026-10-28.
 - Test for `rebuildLocalStore` failure: it mocks a `whenSynced` rejection that y-indexeddb 9.0.12 cannot produce (#4).
 - `rebuildLocalStore` drops rows the live doc never loaded (another tab's, or an appended row). The reviewer notes today's heal does the same, so this is a note. Not checked here.
 
@@ -299,7 +299,7 @@ These are proposals; none have been written.
 - `rebuildLocalStore` dropping rows the live doc never loaded.
 - The reviewer's statement that the 17 structural variants, 26 randomized fingerprint runs and 19 B5 edge cases pass: not re-run in this session (the 368-test unit result is from the commit message of `037248b`, not re-run).
 
-## 9. Fix status (2026-10-28, working tree, not committed)
+## 9. Fix status (2026-10-28, committed in a7abbed)
 
 Unit suite after the fixes: 52 files, 397 tests pass (50 files, 368 tests before); `tsc --noEmit` clean. No browser check was run.
 
@@ -321,7 +321,7 @@ Side effects to know about:
 
 Not fixed (listed in `KNOWN-ISSUES.md` as K45 to K55): #7 to #18. #8 (stale chain entry after undoing an insert) shares `history-calc-chain.ts` with #2 and is the natural next fix.
 
-## 10. Fix status, second round: #7 to #14 (2026-10-28, working tree, not committed)
+## 10. Fix status, second round: #7 to #14 (2026-10-28, committed in a5dcd88)
 
 Unit suite after this round: 54 files, 429 tests pass (52 and 397 before); `tsc --noEmit` clean. No browser check was run.
 
@@ -344,7 +344,7 @@ Side effects to know about:
 
 Still open: #15 to #18 (K52 to K55 in `KNOWN-ISSUES.md`).
 
-## 11. Fix status, third round: #15 to #18 (2026-10-28, working tree, not committed)
+## 11. Fix status, third round: #15 to #18 (2026-10-28, committed in 291c398)
 
 Unit suite after this round: 54 files, 439 tests pass (429 before); `tsc --noEmit` clean. No browser check was run.
 
