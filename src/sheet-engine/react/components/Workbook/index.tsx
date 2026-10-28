@@ -101,6 +101,7 @@ import React, {
   useEffect,
   useRef,
   useImperativeHandle,
+  useLayoutEffect,
 } from 'react';
 import './index.css';
 import produce, {
@@ -121,6 +122,7 @@ import ContextMenu from '../ContextMenu';
 import SVGDefines from '../SVGDefines';
 import SheetTabContextMenu from '../ContextMenu/SheetTab';
 import { generateAPIs } from './api';
+import { createStableHandle } from './stable-handle';
 import { applyDenominationBanner, hasDenominatedCell } from './denomination-scan';
 import { ModalProvider } from '../../context/modal';
 import FilterMenu from '../ContextMenu/FilterMenu';
@@ -2033,9 +2035,13 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       };
     }, [isFormulaCalculating, formulaAsyncEvalTotal, setContextWithProduce]);
 
-    // expose APIs
-    useImperativeHandle(ref, () => {
-      const workbookInstance = generateAPIs(
+    // expose APIs (E3). The api object is rebuilt after every render, as it
+    // was before, but the handle given to the host is built once and calls
+    // the latest api. The host's ref callback therefore runs once per mount
+    // instead of once per context update.
+    const latestApiRef = useRef<WorkbookInstance | null>(null);
+    useLayoutEffect(() => {
+      latestApiRef.current = generateAPIs(
         context,
         setContextWithProduce,
         handleUndo,
@@ -2047,16 +2053,12 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
         globalCache.current,
         refs,
       );
-      workbookInstanceRef.current = workbookInstance;
-      return workbookInstance;
-    }, [
-      context,
-      setContextWithProduce,
-      handleUndo,
-      handleRedo,
-      mergedSettings,
-      globalCache,
-    ]);
+    });
+    useImperativeHandle(ref, () => {
+      const stableHandle = createStableHandle(() => latestApiRef.current!);
+      workbookInstanceRef.current = stableHandle;
+      return stableHandle;
+    }, []);
 
     const i = getSheetIndex(context, context.currentSheetId);
     if (i == null) {

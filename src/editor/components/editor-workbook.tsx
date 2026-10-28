@@ -161,6 +161,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     isLiveCollabSession,
     collabIsOwner,
     setSheetEditorRef,
+    notifyActiveSheetChange,
     remoteUpdateRef,
     structuralRemountPendingRef,
     apiKeyStorage,
@@ -530,6 +531,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
             })
         }
         hooks={{
+          afterActivateSheet: () => notifyActiveSheetChange(),
           onLocalCellEdit: () => {
             localUserEditRef.current = true;
           },

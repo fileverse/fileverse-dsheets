@@ -80,6 +80,8 @@ export interface EditorContextType {
   // Core refs
   sheetEditorRef: React.MutableRefObject<WorkbookInstance | null>;
   setSheetEditorRef: React.RefCallback<WorkbookInstance>;
+  /** Call when the active sheet changes or sheets appear; lets the keeper remember or restore it. */
+  notifyActiveSheetChange: () => void;
   ydocRef: React.MutableRefObject<Y.Doc | null>;
   persistenceRef: React.MutableRefObject<IndexeddbPersistence | null>;
 
@@ -453,6 +455,16 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     [externalEditorRef, legacyEditorRef],
   );
 
+  // The Workbook handle is stable (E3), so the ref callback above runs once per
+  // mount, often before the sheets load. The Workbook's afterActivateSheet hook
+  // calls this to give the keeper its record and restore turns.
+  const notifyActiveSheetChange = useCallback(() => {
+    activeSheetKeeperRef.current.onAttach(
+      sheetEditorRef.current,
+      `${dsheetIdRef.current}-${forceSheetRenderRef.current}`,
+    );
+  }, []);
+
   // The host's handler is read when the throttle fires. A host that passes an
   // inline onChange must not rebuild the throttle: that cancels its pending
   // call and the edit never reaches the host's save.
@@ -680,6 +692,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
       setDataBlockCalcFunction,
       sheetEditorRef,
       setSheetEditorRef,
+      notifyActiveSheetChange,
       ydocRef,
       persistenceRef,
       sheetData,
@@ -731,6 +744,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     setDataBlockCalcFunction,
     sheetEditorRef,
     setSheetEditorRef,
+    notifyActiveSheetChange,
     ydocRef,
     persistenceRef,
     sheetData,

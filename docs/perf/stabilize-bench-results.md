@@ -1129,3 +1129,32 @@ A same-cell move now costs about nothing on the main thread. A cross-cell move i
 
 **Known limitation.** Moves inside one cell skip `overShowLinkCard` and `handleOverlayMouseMove` entirely. Anything that depends on the pointer position within a cell, as opposed to which cell it is in, and is not in the predicate, would stop updating. None was found in the code read (`overShowError` and the hover popup work per cell), but this was read, not exhaustively tested.
 
+## E3: a stable editor handle (Task 11, 2026-10-28, not committed)
+
+**What changed.**
+- `Workbook/stable-handle.ts`: `createStableHandle(getLatest)` returns an object with the keys of the api, whose identity never changes. Each function member calls the function of the same name on the latest api; any other member is a getter on the latest api.
+- `Workbook/index.tsx`: `generateAPIs(...)` is still called with the current context and arguments after every render, in a `useLayoutEffect` without a dependency list (the same timing the old `useImperativeHandle` ran at), and stored in `latestApiRef`. `useImperativeHandle(ref, ..., [])` now builds the stable handle once per mount. `workbookInstanceRef` points at the stable handle.
+- Keeper trigger (host side): the host's ref callback, which called `activeSheetKeeper.onAttach` on every attach, now runs once per mount, often before the sheets load. `editor-context.tsx` gets `notifyActiveSheetChange()` (calls `onAttach` with the current workbook and mount key); `editor-workbook.tsx` passes it as the Workbook's `afterActivateSheet` hook, which the Workbook already calls on mount and whenever `currentSheetId` changes.
+
+**Deviation from the spec text.** The spec says `generateAPIs` should read the context through a ref so it is built once. This keeps `generateAPIs` unchanged (it is rebuilt per render, as before) and gives the host a handle that delegates to the latest one. The observable result the spec asks for (the host's ref callback does not re-run per update, the handle is stable) is the same. The cost of building the api object per render (about 80 closures) is unchanged from before, and was not measured. Building it once, as the spec describes, needs about 100 call sites in `api.ts` changed; not done.
+
+**Tests.**
+- `stable-handle.test.ts` (5): same keys and stable identity; calls the latest api after it is replaced; forwards arguments and the return value; non-function members read the latest value; a host can assign extra methods onto the handle. Red run: `Failed to load url ./stable-handle`; green: 5 passed.
+- `active-sheet-keeper.test.ts` (4, new): characterization tests of the keeper as it is today, which had none: records and restores once per mount key; waits when the new mount has no sheets and does not mark the mount handled; does not restore a sheet that is gone. These passed before any change (they pin the contract E3 depends on, they were not red-first).
+- The `afterActivateSheet` wiring and the layout effect have no unit test (no React renderer in vitest).
+- Full suite: 59 files, 476 tests pass; `tsc --noEmit` clean.
+
+**Before and after, same method** (demo dev build, 10 wheel scroll ticks, `window.__dsheetRef.current` sampled every animation frame, distinct values seen):
+
+| | Before | After |
+|---|---|---|
+| Distinct editor handles over 10 scroll ticks | 11 (the original plus one per tick) | **1** |
+
+Each new handle is a ref-callback call on the host (`setSheetEditorRef`, which also re-runs `attachDSheetEditorHandle` and the keeper), so the host callback runs about once per mount now instead of once per update; the callback was not counted directly.
+
+**Browser checks.**
+- The handle exposes 80 members including the host methods `refreshIndexedDB` and `rebuildLocalStore`; `setCellValue` followed by `getCellValue` returned the new value (the handle reads the latest context); a typed edit committed with Enter reached the grid (`e3ok` in the expected cell); no new `TypeError` in the console.
+- Keeper, remount case: added a second sheet and made it active, then forced a remount by bumping the host's `forceSheetRender` state through the React fiber (a test rig, not a product path). With the new trigger the second sheet was still active after the remount (`3beaae`). Control with the trigger temporarily disabled: the active sheet reset to the first sheet (`79b918`), so the trigger is what restores it. The control edit was reverted (`grep TEMP-DISABLED` finds nothing).
+
+**Not covered.** A remount while collaborating with a peer; the host in dsheets.new and ddocs.new (they pass their own `hooks` and may pass `afterActivateSheet`, which would replace the keeper's trigger: this repo's `editor-workbook.tsx` does not merge host hooks, not checked for the packaged component); a Workbook whose `currentSheetId` is set before its sheets exist (the keeper would not be re-triggered); the time cost of rebuilding the api per render; hosts that hold a method from the handle across a remount (they now get a method that keeps working on the old handle until the host re-reads the ref).
+
