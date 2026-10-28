@@ -1830,12 +1830,18 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       setMoreToolbarItems(null);
     }, []);
 
+    // Bound once (E4): onPaste is rebuilt on every context update, so the
+    // listener calls the latest one through a ref instead of being removed and
+    // added again each time.
+    const onPasteRef = useRef(onPaste);
+    onPasteRef.current = onPaste;
     useEffect(() => {
-      document.addEventListener('paste', onPaste);
+      const listener = (e: ClipboardEvent) => onPasteRef.current(e);
+      document.addEventListener('paste', listener);
       return () => {
-        document.removeEventListener('paste', onPaste);
+        document.removeEventListener('paste', listener);
       };
-    }, [onPaste]);
+    }, []);
 
     const isFormulaCalculating = !!context.isFormulaCalculating;
     const formulaAsyncEvalTotal = context.formulaAsyncEval?.total;

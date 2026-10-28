@@ -1192,3 +1192,24 @@ Per scroll tick, `Toolbar`, `SheetTab`, `SheetItem`, `ContextMenu`, `FilterMenu`
 
 **Known gaps.** Indentation of the Workbook JSX inside the new `WorkbookStableContext.Provider` was not re-formatted (it would re-indent about 280 lines); `eslint` reports it as prettier errors in that file, like the other pre-existing ones.
 
+## E4: paste listener bound once, function list memo narrowed (Task 12, 2026-10-28, not committed)
+
+**What changed.**
+- `Workbook/index.tsx`: the document `paste` listener is added once; it calls the latest `onPaste` through a ref. `onPaste` is still rebuilt on every context update (it depends on `context`); it is just no longer removed and added each time.
+- `Toolbar/FunctionList/group-functions.ts` (new, pure): `groupFunctions(functionlist)` holds the category constants and grouping that were inline in `FunctionListButton.tsx`. The component now reads `locale(context).functionlist` each render and memoizes `groupFunctions` on that list's identity instead of on the whole `context`. The locale object is read each render, not only when the language changes, because its data can finish loading after the language is set.
+
+**Not done: `getToolbarItem` memo deps.** Its `useCallback` lists `context` and many individual fields (`Toolbar/index.tsx`, about 30 entries). The body reads `context` in about 25 places and passes it to helpers (`getFlowdata`, `mergeSelectionHasValues`, `updateCellsDecimalFormat`, and others). Removing `context` from the list would leave those reads stale; narrowing it safely means rewriting the body to read the fields it needs. After E2 the Toolbar renders only on a selection, sheet or data change, so the callback recomputes only when its inputs really changed anyway. Left as is.
+
+**Tests.** `group-functions.test.ts` (5): functions land in their category with sorted names; parser functions go to Parser regardless of type and type 11 to Operator; unknown types go to Other and unnamed entries are skipped; All is first and only categories with functions are listed; empty list. Red run: `Failed to load url ./group-functions`; green: 5 passed. These pin the grouping as it was moved, they are not a new behavior. The listener change is glue and has no unit test. Full suite: 61 files, 495 tests pass; `tsc --noEmit` clean.
+
+**Before and after, same method** (demo dev build; `document.addEventListener` and `removeEventListener` wrapped to count `paste`; 10 wheel scroll ticks; then one ArrowDown and one Enter commit):
+
+| | Before | After |
+|---|---|---|
+| `paste` listener added and removed over 10 scroll ticks | 10 added, 10 removed | **0, 0** |
+| After one ArrowDown and one commit | not measured separately (one rebind per context update) | 0, 0 |
+
+**Browser checks.** A synthetic `paste` event on `document` reached `onPaste` through the once-bound listener (the handler read the clipboard data: `getData` was called twice). The pasted value did not appear in the cell: the text path needs state set by a real copy and paste (`selectionCache.isPasteAction`), which a synthetic event does not set, so the end-to-end paste result was not verified. The function list could not be opened in the demo: the Sigma button is not in the demo's toolbar at this width, so the grouping change is covered by the unit test only. The paste listener count was taken before any paste.
+
+**Not covered.** A real clipboard paste; the function picker in the UI; a host that moves the Workbook between documents (the listener is bound for the Workbook's lifetime).
+

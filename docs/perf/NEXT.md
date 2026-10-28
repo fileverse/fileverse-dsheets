@@ -20,7 +20,7 @@ PR 466 review fixes (2026-10-28, committed: must-fix #1–6 `a7abbed`, #7–14 `
 
 Before numbers for E1–E6 are recorded (`stabilize-bench-results.md`, section "E1–E6 Before"); the demo-only counter is `demo/src/perf-render.ts` (uncommitted, plus a one-line import in `demo/src/main.tsx`), the sheet setup is `docs/perf/bench/e-baseline-setup.js`. Prep for G7 (code scouting, deviations from the spec text, order, open questions): `docs/perf/e-items-prep.md` (2026-10-28). Docs reconciled with git on 2026-10-28: the PR 466 fixes are committed (`a7abbed`, `a5dcd88`, `291c398`), working tree clean, 439 tests, `tsc` clean.
 
-Not done: 6 tasks (9–14), then a final review. Nothing open from the PR 466 review. Still open outside it: K8, K6 (remaining parts).
+G7 (E1–E6, Tasks 9–14) is implemented in the working tree, in groups committed or ready for commit by the user: E1, E5, E6 (one commit), E3, E2, then E4; numbers in `stabilize-bench-results.md` sections "E1–E6 Before", E1, E5 and E6, E3, E2, E4. Not done: the final review, and the parts of E2/E4 listed as not met there (commit-outside-selection, `getToolbarItem` deps). Nothing open from the PR 466 review. Still open outside it: K8, K6 (remaining parts).
 
 | Order | Group | Task | What | Reviewer |
 |---|---|---|---|---|
@@ -29,7 +29,7 @@ Not done: 6 tasks (9–14), then a final review. Nothing open from the PR 466 re
 | done | G5 | 6 | `rebuildLocalStore` (D3, package side) | sonnet |
 | done | G5 | 7 | `appendDsheetUpdate` (D5, package side), bench S12 | sonnet |
 | done | G6 | 8 | Format gate on `meta.format` (F), bench S13 | sonnet |
-| 5 | G7 | 9–14 | E1–E6 fewer whole-UI re-renders (demo render counters) | sonnet |
+| done (uncommitted at the time of writing) | G7 | 9–14 | E1–E6 fewer whole-UI re-renders (demo render counters) | sonnet |
 | 6 | end | | Final whole-branch review on the most capable model; triage the minors below | |
 
 Each task has a full brief in the plan. S9–S15 are all used.
