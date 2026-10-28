@@ -49,6 +49,8 @@ import ColumnHeader from './ColumnHeader';
 import RowHeader from './RowHeader';
 import InputBox from './InputBox';
 import ScrollBar from './ScrollBar';
+import { isEditingAsFormula } from './editing-as-formula';
+import { createHoverTracker, isHoverInteractionActive } from './hover-tracker';
 import SearchReplace from '../SearchReplace';
 import LinkEditCard from '../LinkEidtCard';
 import FilterOptions from '../FilterOption';
@@ -244,22 +246,78 @@ const SheetOverlay: React.FC = () => {
 
   const { showDialog } = useDialog();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // E1: a mouse move that stays in the same cell, with nothing dragged or
+  // hovered, needs no context update. The tracker reads the latest context
+  // through this ref so the document listener does not rebind on every update.
+  const contextRef = useRef(context);
+  contextRef.current = context;
+  const hoverTracker = useMemo(
+    () =>
+      createHoverTracker({
+        getRect: () => {
+          const area = document.getElementsByClassName(
+            'fortune-cell-area',
+          )[0] as HTMLDivElement | undefined;
+          return (area ?? containerRef.current)?.getBoundingClientRect();
+        },
+        locate: (pageX, pageY, rect) => {
+          if (!rect) return null;
+          const ctx = contextRef.current;
+          const mouseX = pageX - rect.left - window.scrollX;
+          const mouseY = pageY - rect.top - window.scrollY;
+          const _x = mouseX + ctx.scrollLeft;
+          const _y = mouseY + ctx.scrollTop;
+          if (
+            _x >= rect.width + ctx.scrollLeft ||
+            _y >= rect.height + ctx.scrollTop
+          ) {
+            return null;
+          }
+          const freeze = refs.globalCache.freezen?.[ctx.currentSheetId];
+          const { x, y } = fixPositionOnFrozenCells(
+            freeze,
+            _x,
+            _y,
+            mouseX,
+            mouseY,
+          );
+          return {
+            row: rowLocation(y, ctx.visibledatarow)[2],
+            col: colLocation(x, ctx.visibledatacolumn)[2],
+          };
+        },
+        isInteracting: () =>
+          isHoverInteractionActive(contextRef.current, refs.globalCache),
+        requestFrame: (cb) => {
+          requestAnimationFrame(cb);
+        },
+      }),
+    // containerRef and refs.globalCache are stable refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  // New data (a comment added, a sheet switch) can change what the hovered
+  // cell shows, so the next move there must run the full pass again.
+  useEffect(() => {
+    hoverTracker.reset();
+  }, [flowdataForQuickSearchDeps, hoverTracker]);
   const bottomAddRowInputRef = useRef<HTMLInputElement>(null);
   const dataVerificationHintBoxRef = useRef<HTMLDivElement>(null);
   const { showAlert } = useAlert();
   // Hide `#fortune-selection-copy` while formula refs are active (avoids double outline
   // with `formulaRangeHighlight` / `formulaRangeSelect`; lone `=A2` may have empty highlights).
   const editingSheetCell = (context.luckysheetCellUpdate?.length ?? 0) > 0;
-  const cellInputText = refs.cellInput.current?.innerText?.trim() ?? '';
-  const fxInputText = refs.fxInput.current?.innerText?.trim() ?? '';
-  const editingAsFormula =
-    editingSheetCell &&
-    (cellInputText.startsWith('=') || fxInputText.startsWith('='));
+  const editingAsFormula = isEditingAsFormula(
+    editingSheetCell,
+    () => refs.cellInput.current?.innerText,
+    () => refs.fxInput.current?.innerText,
+  );
   const suppressFortuneSelectionCopyOverlay =
     context.formulaRangeSelect != null ||
     editingAsFormula ||
     isLegacyFormulaRangeMode(context) ||
-    isFormulaReferenceInputMode(context) ||
+    (editingSheetCell && isFormulaReferenceInputMode(context)) ||
     ((context.formulaRangeHighlight?.length ?? 0) > 0 && editingSheetCell);
 
   // const isMobile = browser.mobilecheck();
@@ -417,6 +475,7 @@ const SheetOverlay: React.FC = () => {
 
   const onMouseMove = useCallback(
     (nativeEvent: MouseEvent) => {
+      if (!hoverTracker.shouldProcess(nativeEvent)) return;
       setContext((draftCtx) => {
         overShowLinkCard(
           draftCtx,
@@ -455,6 +514,7 @@ const SheetOverlay: React.FC = () => {
       });
     },
     [
+      hoverTracker,
       overShowLinkCard,
       refs.cellInput,
       refs.fxInput,

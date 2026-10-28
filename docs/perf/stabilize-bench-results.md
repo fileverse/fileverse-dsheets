@@ -1036,3 +1036,96 @@ Split of the same-cell cost, measured by wrapping the calls during 200 moves: `g
 Consequence for E1: moving the rectangle read out of the recipe saves almost nothing here. The saving comes only from not entering the recipe at all on a same-cell move (skip `overShowLinkCard` and `handleOverlayMouseMove` when no drag, resize or selection is in progress and the hovered cell is unchanged), which is the spec's second bullet. The After number to beat: about 4.2 ms per same-cell move. A same-cell move costs 0 renders today, so render counts cannot show E1. Layout reads were measured with a clean layout; if the page is dirty (a pending style change) each `getBoundingClientRect` would force layout and cost more; not measured.
 
 Caveats: synthetic events skip browser hit-testing and cursor updates; times are one machine, one run of the dev server. The Workbook-level `produceWithPatches` cost with an empty recipe (0.3 ms) stays after E1 on moves that do call `setContext`.
+
+## E5 and E6 (Tasks 13 and 14, 2026-10-28, not committed)
+
+### E5: shown comments applied only when the set changes
+
+**What changed.** `NotationBoxes/index.tsx` keeps the key of the last applied shown-comment set in a ref and calls `setContext(showComments)` only when the key differs. New pure helpers in `NotationBoxes/shown-comments.ts`: `collectShownCommentCells(data)` and `shownCommentsKey(sheetId, cells)`. The sheet id is part of the key so a sheet switch to an equal set still replaces the previous sheet's boxes. The grid scan itself is unchanged (still O(cells) per data change).
+
+**Tests** (`shown-comments.test.ts`, 4): shown cells listed row by row; same key when the shown set is unchanged even if other cells change; different key when a comment is shown or hidden; different key on another sheet. Red run: `Failed to load url ./shown-comments` (module missing); green: 4 passed.
+
+**Before and after, same method** (reference sheet, Enter commit of a typed value, `commentBoxes` read through `getWorkbookContext()` before and after the commit; Before measured by temporarily restoring the old file):
+
+| | Before (old file) | After |
+|---|---|---|
+| `ctx.commentBoxes` replaced by a commit | yes (new array each commit) | no (same identity) |
+| Root commits per Enter commit | 6 | 6 |
+| Component renders per Enter commit | 1,625 | 1,625 |
+| `Sheet` renders per Enter commit | 2 | 2 |
+
+**The render counts did not move.** The spec expects the second context update per commit to go away. In this build the skipped `showComments` update was replaced by another update in the same slot, so the pass still happens. [Inference] The likely source is the Sheet effect that rebuilds row and column offsets after every data change (`dsheet-stabilize-followups-spec.md` G1, out of scope here); not verified. So E5 as shipped removes the immer produce and the `commentBoxes` churn, not a render pass. The spec's "one context update per commit" target is not met until the other update is found.
+
+**Not covered:** pinned comments shown or hidden by a user in the browser (the key logic is unit tested, the toggle path was not exercised); a shown comment whose cell moves because of a row height change with no data change (the old effect did not recompute on that either).
+
+### E6: no `innerText` reads in SheetOverlay unless a cell is being edited
+
+**What changed.** New `SheetOverlay/editing-as-formula.ts`: `isEditingAsFormula(editing, readCellInputText, readFxInputText)` reads neither input unless `editing` is true, and reads the formula bar only if the cell input did not already answer. `SheetOverlay/index.tsx` uses it, and `isFormulaReferenceInputMode(context)` is now behind `editingSheetCell &&`, as `core/events/keyboard.ts` already does. The second guard goes beyond the two reads the spec names: `isFormulaReferenceInputMode` reads `innerText` too and ran on every render.
+
+**Tests** (`editing-as-formula.test.ts`, 5): no reads while not editing; true for `=` in the cell input; true for `=` only in the formula bar; false for plain text and trimmed before checking; the formula bar is not read when the cell input decides. Red run: `Failed to load url ./editing-as-formula`; green: 5 passed. The second guard (`editingSheetCell && isFormulaReferenceInputMode`) is inline in the component and has no unit test (no React renderer in vitest).
+
+**Before and after** (10 scroll ticks, 5 down and 5 up, same sheet and counter as the Before baseline; every `HTMLElement.innerText` read on the page, with the calling site):
+
+| | Before | After |
+|---|---|---|
+| `innerText` reads over 10 ticks | 90 | 50 |
+| Of those, from `SheetOverlay` (direct reads and `isFormulaReferenceInputMode`) | 40 (4 per tick) | 0 |
+| Remaining: `InputBox.tsx` | 20 | 20 |
+| Remaining: `CellDatePicker.tsx` | 20 | 20 |
+| Remaining: `FxEditor/index.tsx` | 10 | 10 |
+
+The Before split by site is from the first (inflated-stack) run of the After rig (65 reads, 11 updates, with `isFormulaReferenceInputMode` called from SheetOverlay 11 times, `InputBox` 21, `CellDatePicker` 22, `FxEditor` 11); the Before total of 90 is from the baseline run. The 40 reads attributed to SheetOverlay is 90 minus 50, not a measured per-site count for the Before run.
+
+Not removed: the other three components still read `innerText` on every render (5 per tick). They are outside E6's stated scope; a follow-up could apply the same guard.
+
+**Browser check:** typing `=SUM(B1:B3` into a cell and pressing Escape worked and left the page without new console errors. The formula-range outline suppression was not checked visually. Layout cost in milliseconds was not measured; the read count is a proxy.
+
+**Totals after Tasks 13 and 14:** unit suite 56 files, 448 tests pass (439 before, plus 4 and 5); `tsc --noEmit` clean.
+
+### E5 follow-up: where the second update per commit comes from (2026-10-28)
+
+**Method.** A temporary logger in `setContextWithProduce` (`Workbook/index.tsx`, removed afterwards; `git diff` of that file is empty) recorded, for every call during one Enter commit on the demo sheet: the call-site stack, how many Immer patches the recipe produced, and which top-level context keys changed. Same rig as above (demo dev build, built-in browser, `?perfRender=1`); this run used the default 84-row demo sheet rather than the 100-row reference sheet. The render counter showed 6 root commits and 2 `Sheet` renders, the same as the reference sheet.
+
+**Result.** Six `setContext` calls per commit, two of which change anything:
+
+| # | Call site | Patches | Context keys changed |
+|---|---|---|---|
+| 1 | `SheetOverlay/InputBox.tsx` (`setFormulaEditorOwner`) | 0 | none |
+| 2 | `Workbook/index.tsx` key handler (`handleGlobalKeyDown`, the commit itself) | 5 | `luckysheetfile`, `luckysheet_select_save`, `luckysheet_selection_range`, `formulaRangeHighlight`, `luckysheetCellUpdate` |
+| 3 | `InputBox.tsx` effect (selection recipe) | 0 | none |
+| 4 | **`Sheet/index.tsx:59` effect, `updateContextWithSheetData(draftCtx, data)`** | 3 | `visibledatarow`, `visibledatacolumn`, `luckysheet_select_save` |
+| 5 | `InputBox.tsx` effect | 0 | none |
+| 6 | `InputBox.tsx` effect (selection recipe) | 0 | none |
+
+So the second real update is the `Sheet` effect that rebuilds the row and column offset arrays whenever `data` changes identity, which is item G1 in `dsheet-stabilize-followups-spec.md` (out of scope for P1). The `NotationBoxes` update no longer appears in the log, which confirms the E5 skip works. Calls with 0 patches return the same state and cause no render.
+
+**Why E5's render counts did not move.** [Inference] Before E5, the `NotationBoxes` `showComments` update and the `Sheet` effect's update both ran in the same passive-effect flush and were batched into one render pass; removing the first leaves the second, so the pass count is unchanged. The spec's target "one context update per commit" therefore cannot be reached by E5 alone: it also needs G1 (guard the `Sheet` effect so unchanged offsets keep their identity). That was not tried here.
+
+**Consequence for the plan.** E5 is worth keeping for the `commentBoxes` identity and the skipped immer produce, but its render-count target depends on G1. Either pull G1 into P1 or drop the "one update per commit" claim from the E5 target.
+
+## E1: a mouse move inside one cell no longer runs the context update (Task 9, 2026-10-28, not committed)
+
+**What changed.** New `SheetOverlay/hover-tracker.ts`:
+- `createHoverTracker({ getRect, locate, isInteracting, requestFrame })` with `shouldProcess(event)` and `reset()`. A move that stays in the cell of the previous processed move, with nothing in progress, returns false and `SheetOverlay`'s `onMouseMove` returns before `setContext`. The cell-area rect is read at most once per animation frame (cached, invalidated by `requestAnimationFrame`); it is not read at all while interacting.
+- `isHoverInteractionActive(ctx, globalCache)` is the "run every move" predicate: a comment box resizing or moving, an image in progress, the search dialog or range-selection modal moving, cells being dragged (`luckysheet_cell_selected_move`), and any open popup that must see the pointer leave it (`hoveredCommentBox`, `editingCommentBox`, `hoverErrorBox`, `linkCard`). These are the states `handleOverlayMouseMove`, `overShowLinkCard` and the hover-popup code read. When any is set, every move takes the old path.
+- `SheetOverlay/index.tsx`: the tracker is built once (`useMemo`) and reads the latest context through a ref, so the document `mousemove` listener keeps its identity. `reset()` runs when the sheet's grid (`getFlowdata`) changes identity, so a comment added or a sheet switch is seen by the next move in the same cell.
+
+**Tests** (`hover-tracker.test.ts`, 19; the module did not exist for the red run: `Failed to load url ./hover-tracker`; green: 19 passed). They cover: three moves in one cell give one change; a cross-cell move gives another; every move while interacting; the first move after an interaction ends is processed even in the same cell; the rect is read once per frame and again after a frame, and never while interacting; leaving the cell area is one change and later outside moves are ignored; `reset()`; and each of the ten conditions in `isHoverInteractionActive`, plus the idle case. Full suite: 57 files, 467 tests pass; `tsc --noEmit` clean.
+
+**Before and after, same method** (the E1 Before method: synthetic `mousemove` on `document`, 200 moves per run, 3 runs, 30-move warm-up, one `setTimeout(0)` yield between moves, 100-row reference sheet, dev build). "Sync" is the `dispatchEvent` time.
+
+| Case | Before: sync median | After: sync median | Before: commits / renders per 200 moves | After: commits / renders per 200 moves |
+|---|---|---|---|---|
+| Move inside one cell | 4.2, 4.2, 4.2 ms | **0.0, 0.0, 0.0 ms** (mean 0.25, 0.18, 0.18; p95 2.6, 1.5, 1.5) | 0 to 2 / 0 to 13 | 0 to 1 / 0 to 13 |
+| Move to a different cell each time | 4.0, 4.0, 3.7 ms | 3.6, 3.7, 3.7 ms | 199 / 2,587 | 199 / 2,587 |
+
+A same-cell move now costs about nothing on the main thread. A cross-cell move is unchanged (it still takes the full pass, 13 renders per move). The residual mean of 0.2 ms and the 1.5 to 2.6 ms p95 are, [Inference], the once-per-frame rect read after a frame boundary.
+
+**Browser checks** (real mouse events, built-in browser):
+- Hover comment popup: set a comment on one cell; entering the cell showed `comment-box-5_2` (`hoveredCommentBox` `5_2`); a move inside the cell kept it; leaving the cell removed it; re-entering showed it again. This is the case that needed the "popup open runs every move" rule.
+- Drag selection from one cell to another still selected the right range (rows 2 to 5, columns 1 to 3).
+
+**Not checked in the browser:** error hover popup, link card show and hide, comment box or image drag and resize, search dialog drag, cell drag-move (these are covered only by the predicate's unit test and by the rule that any of them sets the "run every move" path); cursor changes at resize handles; touch and pen input; frozen panes (`locate` uses the same `fixPositionOnFrozenCells` as the existing code but was not exercised with a freeze).
+
+**Known limitation.** Moves inside one cell skip `overShowLinkCard` and `handleOverlayMouseMove` entirely. Anything that depends on the pointer position within a cell, as opposed to which cell it is in, and is not in the predicate, would stop updating. None was found in the code read (`overShowError` and the hover popup work per cell), but this was read, not exhaustively tested.
+
