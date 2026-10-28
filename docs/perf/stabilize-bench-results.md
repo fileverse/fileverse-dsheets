@@ -935,7 +935,7 @@ So the same-tab part of K1 (the row above the insert point) and K2 (row count) a
 
 Not checked: whether values on the peer were recalculated; the same insert with `B` active; delete and column cases; different users in the two tabs.
 
-## PR 466 review fixes (2026-10-28, not committed)
+## PR 466 review fixes (2026-10-28, committed in a7abbed)
 
 Six must-fix comments from the review of PR 466 (`docs/perf/pr-466-review.md`). Unit suite: 52 files, 397 tests pass (50 files, 368 tests before); `tsc` clean. Nothing was run in a browser.
 
@@ -956,7 +956,7 @@ Six must-fix comments from the review of PR 466 (`docs/perf/pr-466-review.md`). 
 - #5 has no failing run against the old throttle (the test file is new). #4's two new rebuild tests were not run against the old unbounded wait.
 - Behaviour changes: a first IndexedDB read slower than 15 s now continues without IndexedDB and calls `onIndexedDbError`; metadata echoes are not written during a pending remount; a restored non-formula cell that is not in the chain no longer has its dependency edges dropped.
 
-## PR 466 review fixes, second round: #7 to #14 (2026-10-28, not committed)
+## PR 466 review fixes, second round: #7 to #14 (2026-10-28, committed in a5dcd88)
 
 Unit suite: 54 files, 429 tests pass (52 and 397 before); `tsc` clean. Nothing was run in a browser and no benchmark was run for this round.
 
@@ -977,7 +977,7 @@ Unit suite: 54 files, 429 tests pass (52 and 397 before); `tsc` clean. Nothing w
 - #13: no GC-based test of the memory release.
 - #14: the browser behaviour of a commit between the lock and the remount was not run.
 
-## PR 466 review fixes, third round: #15 to #18 (2026-10-28, not committed)
+## PR 466 review fixes, third round: #15 to #18 (2026-10-28, committed in 291c398)
 
 Unit suite: 54 files, 439 tests pass (429 before); `tsc` clean. Nothing was run in a browser and no benchmark was run for this round.
 
@@ -992,3 +992,47 @@ Unit suite: 54 files, 439 tests pass (429 before); `tsc` clean. Nothing was run 
 - The hook wiring of #18 and #17 (no React renderer).
 - #16: the 4 / 5 counts of the review were not reproduced (the test setup has no format ranges and no beyond-grid deletes on an insert); the cost of the batch was not measured.
 - #15 against the old code: the plain-text test fails on the old top-of-function call by construction; it was not run against the old file.
+
+## E1–E6 Before: render baseline (2026-10-28, nothing changed yet)
+
+Measured before any E change, at `1b838d6` plus the demo-only counter. Method: demo dev build (`npm --prefix demo run dev`, port 5000), built-in browser, 1024x768, URL `http://localhost:5000/?perfRender=1`. The counter is `demo/src/perf-render.ts`, imported first in `demo/src/main.tsx`; it installs a DevTools-style hook (`__REACT_DEVTOOLS_GLOBAL_HOOK__`) before react-dom loads and counts, per root commit, the fibers that re-rendered (`PerformedWork`, descending only where the `child` pointer changed, as DevTools does). `window.__perfRender.reset()` / `.snapshot()`. No package source is touched. Reference sheet: `docs/perf/bench/e-baseline-setup.js` (100 rows x 10 columns, two fill colours, bold column, a 100-cell dropdown column, 2 conditional-format rules, a `borderInfo` config). Interactions are real browser events (click, wheel, mouse move, key), each followed by a 1 s wait. Dev build, so `React.StrictMode` double rendering is not in play (the demo does not use it). Counts are component renders per interaction, `commits` are React root commits.
+
+| Interaction | Root commits | Component renders | Sheet | SheetOverlay | Toolbar | SheetTab | SheetItem | ContextMenu | FilterMenu | SheetTabContextMenu | SVGDefines | NotationBoxes | FxEditor | InputBox | ScrollBar |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 scroll tick down | 2 | 798 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 2 |
+| 1 scroll tick up | 2 | 798 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 2 |
+| 10 scroll ticks (5 down, 5 up) | 20 | 7,980 | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 20 |
+| Mouse move inside one cell (1st) | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Mouse move inside one cell (2nd) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Mouse move to the next cell | 1 | 13 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 2 |
+| ArrowDown (two runs, identical) | 3 | 824 | 1 | 1 | 1 | 2 | 2 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 2 |
+| One keystroke in the cell editor | 1, then 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Enter commit of a typed value (two runs, identical) | 6 | 1,625 | 2 | 2 | 2 | 3 | 3 | 2 | 2 | 2 | 2 | 2 | 2 | 3 | 4 |
+
+Counters over 10 scroll ticks, same run: the document `paste` listener was added 10 times and removed 10 times (E4: one rebind per context update); `window.__dsheetRef.current` took 11 distinct values (E3: the handle was rebuilt about once per tick, the original plus 10); `HTMLElement.innerText` was read 90 times (E6: 9 reads per tick, from `SheetOverlay` and elsewhere; the patch counts every read on the page, not only `SheetOverlay`'s two, so the E6 After number must be compared the same way).
+
+**What this says about the plan** (read from the numbers; the cause for each row is [Inference] until the change is made):
+- Scroll, arrow keys and commits re-render Toolbar, SheetTab, ContextMenu, FilterMenu, SheetTabContextMenu and SVGDefines once per context update, as the spec says. 798 component renders per scroll tick is mostly the Toolbar's UI-library subtree (the 14 most-rendered names in a first, inflated run were Radix tooltip and popper components).
+- A mouse move inside one cell already costs 0 component renders (the context update produces no change, so React bails out). E1's saving is therefore not in render counts but in the work inside the `setContext` recipe (`overShowLinkCard`, `handleOverlayMouseMove`, `getElementsByClassName` plus `getBoundingClientRect` on each move). That was not timed here. A per-move time (a long-task or `performance.now()` bracket around the recipe) is needed as the E1 Before/After number. Moving to a new cell costs 13 renders.
+- A keystroke in the cell editor costs 0 renders: typing goes to the contenteditable and does not touch the context in this build. The spec's "keystroke in the cell editor" row is not borne out here; leave it out of the targets, or find the path that does re-render (for example formula-bar mirroring).
+- An Enter commit runs 2 context updates (Sheet rendered 2 times). E5's target is 1.
+
+**Not measured, and why:** render time (React Profiler at 4x CPU) because the built-in browser does not expose a CPU throttle here (not checked further); forced layouts from `SheetOverlay` in a 90-frame recording (E6 uses the `innerText` read count above instead, a proxy: `getBoundingClientRect` and layout-triggering reads are not counted); borders were set through `config.borderInfo` and were not confirmed visually in the grid.
+
+**Rig notes:** the demo does not persist edits across a reload, so the sheet is rebuilt by pasting `e-baseline-setup.js` after each load. `getWorkbookContext()` reads right after a write return the old grid for about a second (a remount follows the Yjs echo); wait 3 s before reading. Writing past the grid (100 rows into the 84-row default) throws in `setCellValue` and unmounts the Workbook; insert rows first.
+
+### E1 Before: cost of one mouse move (2026-10-28)
+
+Same rig and sheet as above. Synthetic `mousemove` events dispatched on `document` (the listener is `document.addEventListener('mousemove', onMouseMove)` in `SheetOverlay`), 200 moves per run, 3 runs per case after a 30-move warm-up, one `setTimeout(0)` yield between moves. "Sync" is the time `dispatchEvent` takes (the handler, including the `setContext` recipe that React runs eagerly). Points: same-cell alternates two points 4 px apart in the middle of a cell; cross-cell alternates two points 150 px apart (a different column each time). Dev build, no CPU throttle, 100-row reference sheet.
+
+| Case | Sync per move, median (3 runs) | Commits per 200 moves | Component renders per 200 moves |
+|---|---|---|---|
+| Move inside one cell | 4.2, 4.2, 4.2 ms | 0 to 2 | 0 to 13 |
+| Move to a different cell each time | 4.0, 4.0, 3.7 ms | 199 | 2,587 (13 per move) |
+| Empty `setContext` recipe (for comparison) | 0.3 ms | 200 | 0 |
+
+Split of the same-cell cost, measured by wrapping the calls during 200 moves: `getBoundingClientRect` 4.0 calls and 0.005 ms per move, `getElementsByClassName` 2.1 calls and 0.001 ms per move. So with a clean layout the forced-layout reads are negligible; about 3.9 ms of the 4.2 ms is inside the recipe's `overShowLinkCard` and `handleOverlayMouseMove` bodies (not profiled further, [Inference] from subtraction: 4.2 minus 0.3 empty-recipe overhead minus 0.005).
+
+Consequence for E1: moving the rectangle read out of the recipe saves almost nothing here. The saving comes only from not entering the recipe at all on a same-cell move (skip `overShowLinkCard` and `handleOverlayMouseMove` when no drag, resize or selection is in progress and the hovered cell is unchanged), which is the spec's second bullet. The After number to beat: about 4.2 ms per same-cell move. A same-cell move costs 0 renders today, so render counts cannot show E1. Layout reads were measured with a clean layout; if the page is dirty (a pending style change) each `getBoundingClientRect` would force layout and cost more; not measured.
+
+Caveats: synthetic events skip browser hit-testing and cursor updates; times are one machine, one run of the dev server. The Workbook-level `produceWithPatches` cost with an empty recipe (0.3 ms) stays after E1 on moves that do call `setContext`.
