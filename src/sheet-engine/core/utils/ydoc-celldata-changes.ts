@@ -4,6 +4,31 @@ import type { Context } from '../context';
 import type { Cell, CellWithRowAndCol } from '../types';
 import { shouldPersistCelldataCell } from './cell-persist-utils';
 
+/** Receives changes instead of the updateCellYdoc hook (see createYdocBatch). */
+export type YdocChangeSink = (changes: any[]) => void;
+
+/**
+ * Collect the Yjs changes of one structural edit and send them in a single
+ * updateCellYdoc call, so the edit is one transaction and one update for peers
+ * (an insert used to send four and a delete five).
+ */
+export function createYdocBatch(ctx: Context): {
+  sink: YdocChangeSink;
+  flush: () => void;
+} {
+  const pending: any[] = [];
+  return {
+    sink: (changes) => {
+      pending.push(...changes);
+    },
+    flush: () => {
+      if (pending.length > 0 && ctx?.hooks?.updateCellYdoc) {
+        ctx.hooks.updateCellYdoc(pending.splice(0));
+      }
+    },
+  };
+}
+
 export type CelldataYdocChange = {
   sheetId: string;
   path: string[];
@@ -199,6 +224,7 @@ export function emitCelldataRangeDiffToYdoc(
   c1: number,
   c2: number,
   beforePersisted?: Map<string, Cell | string | number | boolean>,
+  sink?: YdocChangeSink,
 ): void {
   if (!ctx?.hooks?.updateCellYdoc) return;
   const changes = buildCelldataChangesForRange(
@@ -211,7 +237,7 @@ export function emitCelldataRangeDiffToYdoc(
     beforePersisted,
   );
   if (changes.length > 0) {
-    ctx.hooks.updateCellYdoc(changes);
+    (sink ?? ctx.hooks.updateCellYdoc)(changes);
   }
 }
 
@@ -255,6 +281,7 @@ export function emitRewrittenFormulasToYdoc(
   editedSheetId: string,
   editedFromR: number,
   editedFromC: number,
+  sink?: YdocChangeSink,
 ): void {
   if (!ctx?.hooks?.updateCellYdoc || before.size === 0) return;
   const changes: CelldataYdocChange[] = [];
@@ -279,7 +306,7 @@ export function emitRewrittenFormulasToYdoc(
     });
   });
   if (changes.length > 0) {
-    ctx.hooks.updateCellYdoc(changes);
+    (sink ?? ctx.hooks.updateCellYdoc)(changes);
   }
 }
 
@@ -294,6 +321,7 @@ export function emitCelldataDeletesBeyondGrid(
   beforePersisted: Map<string, Cell | string | number | boolean> | undefined,
   rowCount: number,
   colCount: number,
+  sink?: YdocChangeSink,
 ): void {
   if (!ctx?.hooks?.updateCellYdoc || !beforePersisted?.size) return;
   if (rowCount < 0 || colCount < 0) return;
@@ -316,7 +344,7 @@ export function emitCelldataDeletesBeyondGrid(
     }
   }
   if (changes.length > 0) {
-    ctx.hooks.updateCellYdoc(changes);
+    (sink ?? ctx.hooks.updateCellYdoc)(changes);
   }
 }
 

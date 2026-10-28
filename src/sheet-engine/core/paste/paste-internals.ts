@@ -379,10 +379,6 @@ export function pasteHandler(ctx: Context, data: any, borderInfo?: any) {
     return trimmed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
   };
 
-  // Formula cells are written raw here and never added to the calc chain or
-  // evaluated, so the dependency graph no longer covers every formula (C8).
-  ctx.formulaCache.markDepGraphIncomplete();
-
   if (ctx.luckysheet_selection_range) {
     ctx.luckysheet_selection_range = [];
   }
@@ -413,6 +409,14 @@ export function pasteHandler(ctx: Context, data: any, borderInfo?: any) {
     if (data.length === 0) {
       return;
     }
+
+    // Formula cells of an HTML-table / object paste are written raw and never
+    // added to the calc chain or evaluated, so the dependency graph no longer
+    // covers every formula (C8). A plain-text paste writes no formula, and a
+    // blocked paste changes nothing: neither clears the flag. (A text paste
+    // with formulas evaluates them through execfunction, which clears it
+    // itself when it runs a formula pass.)
+    ctx.formulaCache.markDepGraphIncomplete();
 
     const cfg = ctx.config || {};
     if (cfg.merge == null) {

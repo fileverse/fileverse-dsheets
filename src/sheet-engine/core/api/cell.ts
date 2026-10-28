@@ -402,7 +402,11 @@ export function setSheetCalcChain(
   options: CommonOptions = {},
 ) {
   const sheet = getSheet(ctx, options);
-  sheet.calcChain = calcChain ?? [];
+  // The entries come from Yjs, which hands out the objects it stores. Immer
+  // deep-freezes whatever is assigned to a draft, so the engine gets copies.
+  sheet.calcChain = (calcChain ?? []).map((entry) =>
+    entry != null && typeof entry === 'object' ? { ...entry } : entry,
+  );
   resetFormulaDependencyIndexes(ctx);
 }
 

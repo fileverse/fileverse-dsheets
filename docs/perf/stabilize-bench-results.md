@@ -976,3 +976,19 @@ Unit suite: 54 files, 429 tests pass (52 and 397 before); `tsc` clean. Nothing w
 - #12: the call sites in `dropCell.ts` and `paste-internals.ts` are not tested; the double write was not counted.
 - #13: no GC-based test of the memory release.
 - #14: the browser behaviour of a commit between the lock and the remount was not run.
+
+## PR 466 review fixes, third round: #15 to #18 (2026-10-28, not committed)
+
+Unit suite: 54 files, 439 tests pass (429 before); `tsc` clean. Nothing was run in a browser and no benchmark was run for this round.
+
+| # | Item | Test | Before | After |
+|---|---|---|---|---|
+| 18 | Guard ended when `rehydrateWorkbookFromYdoc` throws | `remote-apply-guard.test.ts`, 3 | a throw left the depth above zero (reading) | depth 0, error rethrown |
+| 15 | Paste flag only for object pastes | `paste-dep-graph.test.ts`, 2 new | plain-text and blocked pastes cleared `depGraphComplete` | flag stays on |
+| 17 | Copies of calcChain entries | `remote-apply.test.ts`, 1 | Immer could freeze objects Yjs holds (`toJSON` returns them by reference, reading) | caller's entry unfrozen |
+| 16 | One Yjs update per structural edit | `structural-edit-formula-sync.test.ts`, 4 | 2 `update` events on an insert in the test setup (the reviewer counted 4 and 5 with all emits present) | 1 for row/column insert and delete |
+
+**Not measured / not covered.**
+- The hook wiring of #18 and #17 (no React renderer).
+- #16: the 4 / 5 counts of the review were not reproduced (the test setup has no format ranges and no beyond-grid deletes on an insert); the cost of the batch was not measured.
+- #15 against the old code: the plain-text test fails on the old top-of-function call by construction; it was not run against the old file.

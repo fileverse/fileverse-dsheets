@@ -1,6 +1,6 @@
 # P1 Stabilise: issues found and not worked on
 
-Written 2026-10-26, updated 2026-10-28 after the PR 466 review (must-fix items and review #7 to #14 fixed; K52 to K55 are the review comments still open; K6 cause corrected and fixed; K40 timeout part fixed), updated after G6 (K42 to K44 added from Task 8; K1 and K2 fixed 2026-10-27 for hydrated tabs, browser-checked; the cross-tab case on inactive tabs is K6) (K4 and K5 fixed by Tasks 17 and 16; K40 and K41 added from Tasks 6 and 7; see the results doc). Everything here was seen while doing the P1 Stabilise tasks (G1–G4) and is **not** fixed and **not** assigned to a task, unless the Task column says so. Plan: `docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md`. Handoff: `docs/perf/NEXT.md`.
+Written 2026-10-26, updated 2026-10-28 after the PR 466 review (must-fix items and all 18 review comments fixed (K45 to K55 were the unfixed ones and are deleted from this list); K6 cause corrected and fixed; K40 timeout part fixed), updated after G6 (K42 to K44 added from Task 8; K1 and K2 fixed 2026-10-27 for hydrated tabs, browser-checked; the cross-tab case on inactive tabs is K6) (K4 and K5 fixed by Tasks 17 and 16; K40 and K41 added from Tasks 6 and 7; see the results doc). Everything here was seen while doing the P1 Stabilise tasks (G1–G4) and is **not** fixed and **not** assigned to a task, unless the Task column says so. Plan: `docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md`. Handoff: `docs/perf/NEXT.md`.
 
 Evidence labels: **Observed** = seen running (browser or test run). **Code-read** = read in code or reported by a reviewer, not run. **[Inference]** = reasoning, not confirmed. **[Unverified]** = no check done.
 
@@ -71,21 +71,17 @@ Evidence labels: **Observed** = seen running (browser or test run). **Code-read*
 | K43 | **Format gate (F): second-tab demo check not run.** Only a single-tab check (format set on the doc locally) was done. Also, in the demo, edits do not survive a reload even without the lock, so the rig cannot show persistence. Task 8. | Repeat with two tabs in one room, and on dsheets.new. |
 | K44 | **Format gate (F): writes made before the watch starts** (bootstrap) are not blocked except merge and migrate, which have a read-only pre-check. Task 8. | Accept, or pre-check earlier. |
 
-## 6. From the PR 466 review (2026-10-28, still open)
+## 6. From the PR 466 review (2026-10-28, all comments fixed)
 
-Reviewer: nadeem-fileverse, commit `037248b`. Details and evidence in `docs/perf/pr-466-review.md`. The six must-fix comments and #7 to #14 are fixed (section 9 of that file); K45 to K51 were these fixes and are deleted from this list. Evidence is Code-read unless stated.
+Reviewer: nadeem-fileverse, commit `037248b`. Details and evidence in `docs/perf/pr-466-review.md`. All 18 inline comments are fixed (sections 9 to 11 of that file); the rows K45 to K55 that tracked them are deleted from this list. Evidence is Code-read unless stated.
 
 | ID | Issue | Where | Next step |
 |---|---|---|---|
-| K52 | **Plain-text and blocked pastes clear `depGraphComplete`**: `markDepGraphIncomplete` runs before the allow-edit check and the object branch. Review #15. | `paste-internals.ts:380` | Move it into the object branch. |
-| K53 | **Structural edit sends 4 (insert) or 5 (delete) separate Yjs transactions**, so peers can see intermediate states. Review #16. | `rowcol.ts` | One `updateCellYdoc` call or one transaction. |
-| K54 | **`setSheetCalcChain` assigns the array from `readYdocSheetField` to the draft; Immer may freeze objects Yjs holds.** Not traced whether those are live Yjs objects. Review #17. | `api/cell.ts`, `use-editor-data.tsx` | Shallow-clone each entry. |
-| K55 | **`rehydrateWorkbookFromYdoc` never ends the remote-apply guard on error**; a throw leaves the depth above zero and local writes are dropped until reload (worse than the review's "Low"). Existing. Review #18. | `use-editor-data.tsx` | `try/finally`. |
 
 Also from the review: the `'error'` listeners on y-indexeddb providers (`use-editor-sync.tsx`) never fire because y-indexeddb 9.0.12 never emits `'error'`; and `rebuildLocalStore` drops rows the live doc never loaded (another tab's, an appended row), as today's heal does (not checked here).
 
 ## How to use this list
 
 - Items K4 and K5 are already tasks (17 and 16). Everything else waits for the final whole-branch review to triage, or for the user to promote it.
-- Suggested promotion order: K8, K11, K6 (remaining parts), K52 to K55, then the rest. K6 now matters more (it blocks the cross-tab half of K1 on inactive tabs). K1 and K2 are fixed in the working tree for the active tab and hydrated tabs.
+- Suggested promotion order: K8, K11, K6 (remaining parts), then the rest. K6 now matters more (it blocks the cross-tab half of K1 on inactive tabs). K1 and K2 are fixed in the working tree for the active tab and hydrated tabs.
 - When an item is fixed, move it to the results doc and delete its row here.

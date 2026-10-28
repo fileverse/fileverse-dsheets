@@ -47,6 +47,28 @@ describe('C8 flag after pastes that skip the calc chain', () => {
     expect(ctx.formulaCache.depGraphComplete).toBe(false);
   });
 
+  // PR 466 review (#15): only a paste that writes formulas raw clears the flag.
+  it('a plain-text paste keeps the flag on', () => {
+    const ctx = makeCtx();
+    try {
+      pasteHandler(ctx, 'hello');
+    } catch {
+      // The paste body needs a full workbook; only the flag is under test.
+    }
+    expect(ctx.formulaCache.depGraphComplete).toBe(true);
+  });
+
+  it('a paste that is not allowed keeps the flag on', () => {
+    const ctx = makeCtx();
+    ctx.isFlvReadOnly = true;
+    try {
+      pasteHandler(ctx, [[{ v: 1, m: '1', f: '=1+1' }]]);
+    } catch {
+      // As above.
+    }
+    expect(ctx.formulaCache.depGraphComplete).toBe(true);
+  });
+
   it('a cut-paste turns the flag off', () => {
     const ctx = makeCtx();
     try {

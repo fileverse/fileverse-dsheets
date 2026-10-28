@@ -280,3 +280,57 @@ describe('K1: formulas the range diff would miss still reach the peer', () => {
     expectPeerMatchesEngine(ctx, doc2);
   });
 });
+
+// PR 466 review (#16): the writes of one structural edit are one transaction,
+// so a peer gets one update and never sees the cells without the new size.
+describe('a structural edit is one Yjs update', () => {
+  const updatesDuring = (run: (setupResult: ReturnType<typeof setup>) => void) => {
+    const result = setup();
+    let updates = 0;
+    result.doc1.on('update', () => {
+      updates += 1;
+    });
+    run(result);
+    return { ...result, updates };
+  };
+
+  it('row insert', () => {
+    const { ctx, doc2, updates } = updatesDuring(({ ctx: c }) =>
+      insertRowCol(
+        c,
+        { type: 'row', index: 1, count: 2, direction: 'lefttop', id: 'a' },
+        false,
+      ),
+    );
+    expect(updates).toBe(1);
+    expectPeerMatchesEngine(ctx, doc2);
+    expect(sizeInDoc(doc2, 'a').row).toBe(ROWS + 2);
+  });
+
+  it('column insert', () => {
+    const { updates } = updatesDuring(({ ctx: c }) =>
+      insertRowCol(
+        c,
+        { type: 'column', index: 1, count: 1, direction: 'lefttop', id: 'a' },
+        false,
+      ),
+    );
+    expect(updates).toBe(1);
+  });
+
+  it('row delete', () => {
+    const { ctx, doc2, updates } = updatesDuring(({ ctx: c }) =>
+      deleteRowCol(c, { type: 'row', start: 1, end: 2, id: 'a' }),
+    );
+    expect(updates).toBe(1);
+    expectPeerMatchesEngine(ctx, doc2);
+    expect(sizeInDoc(doc2, 'a').row).toBe(ROWS - 2);
+  });
+
+  it('column delete', () => {
+    const { updates } = updatesDuring(({ ctx: c }) =>
+      deleteRowCol(c, { type: 'column', start: 0, end: 0, id: 'a' }),
+    );
+    expect(updates).toBe(1);
+  });
+});

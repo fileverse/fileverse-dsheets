@@ -97,6 +97,20 @@ describe('setSheetCalcChain (A4)', () => {
     expect(next.formulaCache.formulasWithWideRangeDeps.size).toBe(0);
   });
 
+  // PR 466 review (#17): Yjs hands out the objects it stores; Immer must not
+  // freeze them.
+  it('gives the engine copies, so the caller\'s objects stay unfrozen', () => {
+    const entry = { r: 0, c: 1, id: 's1' };
+    const chain = [entry];
+    const next = produce<any>(makeCtx(), (d: any) =>
+      setSheetCalcChain(d, chain, { id: 's1' }),
+    );
+    expect(next.luckysheetfile[0].calcChain).toEqual([entry]);
+    expect(next.luckysheetfile[0].calcChain[0]).not.toBe(entry);
+    expect(Object.isFrozen(entry)).toBe(false);
+    expect(Object.isFrozen(next.luckysheetfile[0].calcChain[0])).toBe(true);
+  });
+
   it('treats a missing chain as empty', () => {
     const next = produce<any>(makeCtx(), (d: any) =>
       setSheetCalcChain(d, undefined, { id: 's1' }),

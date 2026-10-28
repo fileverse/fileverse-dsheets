@@ -21,6 +21,8 @@ import {
 import {
   emitCelldataDeletesBeyondGrid,
   emitCelldataRangeDiffToYdoc,
+  createYdocBatch,
+  type YdocChangeSink,
   emitRewrittenFormulasToYdoc,
   getDeleteRowColSnapshotBounds,
   getInsertRowColSnapshotBounds,
@@ -177,6 +179,7 @@ const emitCellRangeToYdoc = (
   c1: number,
   c2: number,
   beforePersisted?: Map<string, Cell | string | number | boolean>,
+  sink?: YdocChangeSink,
 ) => {
   emitCelldataRangeDiffToYdoc(
     ctx,
@@ -187,6 +190,7 @@ const emitCellRangeToYdoc = (
     c1,
     c2,
     beforePersisted,
+    sink,
   );
 };
 
@@ -194,9 +198,10 @@ const emitCellFormatRangesToYdoc = (
   ctx: Context,
   sheetId: string,
   ranges: any[] | undefined,
+  sink?: YdocChangeSink,
 ) => {
   if (!ctx?.hooks?.updateCellYdoc) return;
-  ctx.hooks.updateCellYdoc([
+  (sink ?? ctx.hooks.updateCellYdoc)([
     {
       sheetId,
       path: ['config', 'cellFormatRanges'],
@@ -208,7 +213,12 @@ const emitCellFormatRangesToYdoc = (
 
 // Grid size rides with the structural edit so a peer never sees the moved
 // cells with the old row/column count (K2).
-const emitGridSizeToYdoc = (ctx: Context, sheetId: string, file: Sheet) => {
+const emitGridSizeToYdoc = (
+  ctx: Context,
+  sheetId: string,
+  file: Sheet,
+  sink?: YdocChangeSink,
+) => {
   if (!ctx?.hooks?.updateCellYdoc) return;
   const changes: any[] = [];
   if (file.row != null) {
@@ -222,7 +232,7 @@ const emitGridSizeToYdoc = (ctx: Context, sheetId: string, file: Sheet) => {
       type: 'update',
     });
   }
-  if (changes.length > 0) ctx.hooks.updateCellYdoc(changes);
+  if (changes.length > 0) (sink ?? ctx.hooks.updateCellYdoc)(changes);
 };
 
 const markCellRefError = (cell: Cell) => {
@@ -303,6 +313,7 @@ export function insertRowCol(
   const { type, index, direction, templateSourceRows, templateSourceColumns } =
     op;
   id = id || ctx.currentSheetId;
+  const ydocBatch = createYdocBatch(ctx);
 
   // if (
   //   type === "row" &&
@@ -1196,7 +1207,12 @@ export function insertRowCol(
       direction,
     );
     if (!_.isEqual(prevFormatRanges, cfg.cellFormatRanges)) {
-      emitCellFormatRangesToYdoc(ctx, id, cfg.cellFormatRanges);
+      emitCellFormatRangesToYdoc(
+        ctx,
+        id,
+        cfg.cellFormatRanges,
+        ydocBatch.sink,
+      );
     }
 
     const arr = [];
@@ -1460,7 +1476,12 @@ export function insertRowCol(
       direction,
     );
     if (!_.isEqual(prevFormatRangesCol, cfg.cellFormatRanges)) {
-      emitCellFormatRangesToYdoc(ctx, id, cfg.cellFormatRanges);
+      emitCellFormatRangesToYdoc(
+        ctx,
+        id,
+        cfg.cellFormatRanges,
+        ydocBatch.sink,
+      );
     }
 
     for (let i = 0; i < count; i += 1) {
@@ -1647,7 +1668,12 @@ export function insertRowCol(
       if (file.id === ctx.currentSheetId) {
         ctx.config = cfg;
       }
-      emitCellFormatRangesToYdoc(ctx, id, cfg.cellFormatRanges);
+      emitCellFormatRangesToYdoc(
+        ctx,
+        id,
+        cfg.cellFormatRanges,
+        ydocBatch.sink,
+      );
     }
   }
 
@@ -1679,6 +1705,7 @@ export function insertRowCol(
       0,
       (d[0]?.length ?? 1) - 1,
       ydocBeforePersisted,
+      ydocBatch.sink,
     );
   } else {
     const baseStart = direction === 'lefttop' ? index : index + 1;
@@ -1694,6 +1721,7 @@ export function insertRowCol(
       startC,
       (d[0]?.length ?? 1) - 1,
       ydocBeforePersisted,
+      ydocBatch.sink,
     );
   }
   // Formulas rewritten outside the range above (other tabs, rows above the
@@ -1714,9 +1742,11 @@ export function insertRowCol(
           mergeBounds?.minC ?? Infinity,
         )
       : Infinity,
+    ydocBatch.sink,
   );
 
-  emitGridSizeToYdoc(ctx, id, file);
+  emitGridSizeToYdoc(ctx, id, file, ydocBatch.sink);
+  ydocBatch.flush();
 
   notifyCommentAnchorMove(ctx, {
     type: 'insert',
@@ -2753,6 +2783,8 @@ export function deleteRowCol(
 
   refreshLocalMergeData(merge_new, file);
 
+  const ydocBatch = createYdocBatch(ctx);
+
   const prevFormatRangesDelete = cfg.cellFormatRanges;
   cfg.cellFormatRanges = shiftCellFormatRangesOnDelete(
     cfg.cellFormatRanges,
@@ -2761,7 +2793,12 @@ export function deleteRowCol(
     end,
   );
   if (!_.isEqual(prevFormatRangesDelete, cfg.cellFormatRanges)) {
-    emitCellFormatRangesToYdoc(ctx, id, cfg.cellFormatRanges);
+    emitCellFormatRangesToYdoc(
+      ctx,
+      id,
+      cfg.cellFormatRanges,
+      ydocBatch.sink,
+    );
   }
 
   const namedRangeNames = shiftDefinedNamesOnDelete(ctx, id, type, start, end);
@@ -2782,6 +2819,7 @@ export function deleteRowCol(
       0,
       (d[0]?.length ?? 1) - 1,
       ydocBeforePersisted,
+      ydocBatch.sink,
     );
   } else {
     const startC = mergeBounds ? Math.min(start, mergeBounds.minC) : start;
@@ -2794,6 +2832,7 @@ export function deleteRowCol(
       startC,
       (d[0]?.length ?? 1) - 1,
       ydocBeforePersisted,
+      ydocBatch.sink,
     );
   }
   emitRewrittenFormulasToYdoc(
@@ -2806,6 +2845,7 @@ export function deleteRowCol(
     type === 'column'
       ? Math.min(start, mergeBounds?.minC ?? Infinity)
       : Infinity,
+    ydocBatch.sink,
   );
   // Range diffs never visit coords past the new grid — delete those ghosts.
   emitCelldataDeletesBeyondGrid(
@@ -2814,9 +2854,11 @@ export function deleteRowCol(
     ydocBeforePersisted,
     d.length,
     d[0]?.length ?? 0,
+    ydocBatch.sink,
   );
 
-  emitGridSizeToYdoc(ctx, id, file);
+  emitGridSizeToYdoc(ctx, id, file, ydocBatch.sink);
+  ydocBatch.flush();
 
   notifyCommentAnchorMove(ctx, {
     type: 'delete',

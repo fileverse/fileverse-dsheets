@@ -17,9 +17,8 @@ import {
   getCommentAnchorsYMap,
 } from '../utils/comment-anchors-ydoc';
 import {
-  beginRemoteApply,
   cancelStructuralRemount,
-  endRemoteApplyAfterPaint,
+  runRemoteApplyUntilPaint,
   runUnderRemoteApply,
   scheduleStructuralRemount as scheduleGuardedStructuralRemount,
 } from '../utils/remote-apply-guard';
@@ -1043,7 +1042,12 @@ export const useEditorData = (
           const plainSheet = currentDataRef.current?.find(
             (sheet) => sheet.id === sheetId,
           );
-          if (plainSheet) plainSheet.calcChain = calcChain;
+          // Its own copies: the engine's chain is frozen by Immer.
+          if (plainSheet) {
+            plainSheet.calcChain = calcChain.map((entry: any) =>
+              entry != null && typeof entry === 'object' ? { ...entry } : entry,
+            );
+          }
         }
       };
 
@@ -1252,25 +1256,23 @@ export const useEditorData = (
         // @ts-ignore
         const plain = ySheetArrayToPlain(sheetArray as Y.Array<Y.Map>);
 
-        beginRemoteApply(remoteApplyGuardRefs);
+        runRemoteApplyUntilPaint(remoteApplyGuardRefs, () => {
+          applyCommentMarkers(
+            plain,
+            commentsForMarkers(),
+            allowCommentsRef.current,
+          );
+          currentDataRef.current = plain;
+          syncDataBlockCalcFromPlain(plain);
+          initialiseLiveQueryData(plain);
 
-        applyCommentMarkers(
-          plain,
-          commentsForMarkers(),
-          allowCommentsRef.current,
-        );
-        currentDataRef.current = plain;
-        syncDataBlockCalcFromPlain(plain);
-        initialiseLiveQueryData(plain);
+          dataInitialized.current = true;
+          setIsDataLoaded(true);
 
-        dataInitialized.current = true;
-        setIsDataLoaded(true);
-
-        if (setForceSheetRender) {
-          setForceSheetRender((prev) => prev + 1);
-        }
-
-        endRemoteApplyAfterPaint(remoteApplyGuardRefs);
+          if (setForceSheetRender) {
+            setForceSheetRender((prev) => prev + 1);
+          }
+        });
 
         return true;
       } catch (error) {

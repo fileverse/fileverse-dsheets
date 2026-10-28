@@ -145,6 +145,28 @@ export function cancelStructuralRemount(refs: StructuralRemountRefs) {
   refs.pendingRef.current = false;
 }
 
+/**
+ * Run `fn` under the guard and keep it until paint (a remount follows). If
+ * `fn` throws, the guard is ended at once and the error is rethrown: a begin
+ * with no matching end leaves the depth above zero, and `handleChange` then
+ * drops every local write until reload.
+ */
+export function runRemoteApplyUntilPaint<T>(
+  refs: RemoteApplyGuardRefs,
+  fn: () => T,
+): T {
+  beginRemoteApply(refs);
+  let result: T;
+  try {
+    result = fn();
+  } catch (error) {
+    endRemoteApply(refs);
+    throw error;
+  }
+  endRemoteApplyAfterPaint(refs);
+  return result;
+}
+
 /** End after Workbook remount hooks have flushed (2 rAF ≈ one paint). */
 export function endRemoteApplyAfterPaint(refs: RemoteApplyGuardRefs) {
   requestAnimationFrame(() => {

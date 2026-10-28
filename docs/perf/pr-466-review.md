@@ -18,7 +18,7 @@ Evidence labels used below:
 - **Not checked**: not verified in this session.
 - **Reviewer figure**: a number taken from the review comment, not re-measured here.
 
-Sections 1 to 8 describe the review as validated on 2026-10-28 before any fix. The six must-fix items and comments #7 to #14 were fixed afterwards (the must-fix ones are committed as the first round; #7 to #14 are in the working tree); see sections 9 and 10. Fix designs in the sections above are the proposals that were made; they are labeled [Inference] where they rest on reasoning rather than a run.
+Sections 1 to 8 describe the review as validated on 2026-10-28 before any fix. All 18 comments were fixed afterwards in three rounds (must-fix #1 to #6, should-fix #7 to #14, low #15 to #18); see sections 9 to 11. Fix designs in the sections above are the proposals that were made; they are labeled [Inference] where they rest on reasoning rather than a run.
 
 ## 2. Verdict summary
 
@@ -343,3 +343,22 @@ Side effects to know about:
 - #10: the check for "already in the chain" scans the chain once more per remote formula cell, as `insertUpdateFunctionGroup` already does.
 
 Still open: #15 to #18 (K52 to K55 in `KNOWN-ISSUES.md`).
+
+## 11. Fix status, third round: #15 to #18 (2026-10-28, working tree, not committed)
+
+Unit suite after this round: 54 files, 439 tests pass (429 before); `tsc --noEmit` clean. No browser check was run.
+
+| # | Status | Change | Tests |
+|---|---|---|---|
+| 18 | Fixed | `runRemoteApplyUntilPaint` (`remote-apply-guard.ts`): begins the guard, runs the body, ends it after paint, and ends it at once and rethrows if the body throws. `rehydrateWorkbookFromYdoc` uses it, so a throw no longer leaves the depth above zero. | 3 tests in `remote-apply-guard.test.ts`. The hook itself has no test (no React renderer). |
+| 15 | Fixed | `pasteHandler` calls `markDepGraphIncomplete()` only in the object branch, after the `data.length === 0` check. A plain-text paste and a blocked paste leave the flag on. | 2 new tests in `paste-dep-graph.test.ts` (plain text, read-only). A text paste that contains a formula still clears the flag: the engine's `execFunctionGroup` does it when `handleFormulaOnPaste` runs (seen in a stack trace), so I did not add a second clear. |
+| 17 | Fixed | `setSheetCalcChain` assigns copies of the entries; `use-editor-data.tsx` gives the plain snapshot its own copies too. Cause found: the entries come from `Y.Map.toJSON()`, which returns the stored plain objects by reference, so Immer's deep freeze reached objects Yjs holds. | 1 test in `remote-apply.test.ts`: the caller's entry stays unfrozen, the engine's copy is frozen. |
+| 16 | Fixed | `createYdocBatch` (`ydoc-celldata-changes.ts`) collects the changes of one insert or delete; the emit helpers take an optional sink; `insertRowCol` and `deleteRowCol` flush once, so a peer receives one Yjs update. Before: 2 updates on an insert in the test setup (the format-ranges write and the cell/size write); the reviewer counted 4 (insert) and 5 (delete) when cell-format ranges, rewritten formulas and the beyond-grid deletes are all present. | 4 tests in `structural-edit-formula-sync.test.ts` count the `update` events of the first doc: 1 each for row/column insert and delete. The two insert tests failed before this change on the first run of the new code (2 instead of 1) and led to moving the batch to the top of `insertRowCol`. |
+
+Side effects to know about:
+
+- #16: the changes of one edit are applied in the order they were emitted, in one transaction. The two format-range writes that happen inside `insertRowCol` (row and column branches) are now part of the batch, so they are sent with the cells instead of before them.
+- #15: unchanged behaviour for HTML-table and object pastes.
+- #17: one extra shallow copy per chain entry on each remote chain apply.
+
+All 18 inline review comments are now fixed. Still open and outside the review: K8 (position of a commit during a deferred remount), the remaining parts of K6 (sheets with no calcChain, unhydrated sheets), the dead y-indexeddb `'error'` listeners, and `rebuildLocalStore` dropping rows the live doc never loaded.

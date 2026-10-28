@@ -440,6 +440,14 @@ Notation: **Owner** = owner window, **Collaborator** = collaborator window. Afte
 8. Open and close several sheets in a long session → memory does not grow with every sheet opened (heap snapshot; **[Unverified]** the size of the effect). [#13]
 9. Collaborator upgrades the sheet to a newer format while the owner is typing in a cell → the owner's grid turns read-only at once; a cell committed right after is not shown as saved and is not silently lost on reload (it is rejected). [#14]
 
+### 2.16 PR 466 review fixes, third round [review #15 to #18]
+
+1. Paste plain text (no `=`) into a sheet with 2,000 formulas, then edit an input of a formula → the recalculation stays fast right after the paste (no switch to the slow path). [#15]
+2. Paste an HTML table that contains formulas → the formulas recalculate when their inputs change. [#15]
+3. Insert a row on the owner → the collaborator receives it as one change: the rows, the shifted formulas and the new row count appear together (no frame with the new cells and the old count). Same for column insert, row delete, column delete. [#16]
+4. Make `rehydrateWorkbookFromYdoc` fail (for example by throwing from a comment-marker callback in a debug build) → the console shows the error once, and a cell typed afterwards still reaches the collaborator. [#18] **[Unverified]** that this can be provoked without a debug build.
+5. A collaborator changes a formula list; the owner reloads → no console warning about a frozen object or "Cannot assign to read only property" from the chain. [#17]
+
 ---
 
 ## 3. What to report

@@ -3,6 +3,7 @@ import {
   beginRemoteApply,
   cancelStructuralRemount,
   endRemoteApplyAfterPaint,
+  runRemoteApplyUntilPaint,
   scheduleStructuralRemount,
   shouldSkipEchoWrite,
   type StructuralRemountRefs,
@@ -336,5 +337,49 @@ describe('shouldSkipEchoWrite', () => {
     expect(shouldSkipEchoWrite({ remoteUpdateRef: { current: false } })).toBe(
       false,
     );
+  });
+});
+
+// PR 466 review (#18): rehydrateWorkbookFromYdoc began the guard and never
+// ended it when something inside threw.
+describe('runRemoteApplyUntilPaint', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal('window', globalThis);
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) =>
+      setTimeout(() => cb(performance.now()), 16),
+    );
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('holds the guard while fn runs and until paint after it', () => {
+    const refs = makeRefs();
+    let during = false;
+    runRemoteApplyUntilPaint(refs, () => {
+      during = refs.remoteUpdateRef.current;
+    });
+    expect(during).toBe(true);
+    expect(refs.remoteUpdateRef.current).toBe(true);
+    vi.advanceTimersByTime(100);
+    expect(refs.remoteUpdateRef.current).toBe(false);
+    expect(refs.remoteApplyDepthRef.current).toBe(0);
+  });
+
+  it('ends the guard at once and rethrows when fn throws', () => {
+    const refs = makeRefs();
+    expect(() =>
+      runRemoteApplyUntilPaint(refs, () => {
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    expect(refs.remoteApplyDepthRef.current).toBe(0);
+    expect(refs.remoteUpdateRef.current).toBe(false);
+  });
+
+  it('returns the value of fn', () => {
+    expect(runRemoteApplyUntilPaint(makeRefs(), () => 42)).toBe(42);
   });
 });
