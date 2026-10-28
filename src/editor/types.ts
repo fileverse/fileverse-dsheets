@@ -47,7 +47,13 @@ export type DSheetEditorHandle = WorkbookInstance & {
    * document (same Y.Doc, never replaced), so local edits are kept. Resolves
    * once the new store has synced. Resolves as a no-op when the editor is
    * read-only, local persistence is disabled or there is no sheet id. Rejects
-   * if the rebuild fails or a refresh/unmount supersedes it. Concurrent calls share one rebuild.
+   * if the rebuild fails, if the new store does not sync within 15 s, or if a
+   * refresh/unmount supersedes it. Concurrent calls share one rebuild.
+   *
+   * A bootstrap that is still waiting on an unreadable store (the case this
+   * heals) is abandoned after 3 s: the rebuild then finishes the bootstrap
+   * itself, merging the published content into the document, so the editor
+   * leaves "syncing" once the rebuild resolves.
    */
   rebuildLocalStore: () => Promise<void>;
   terminateSession: () => void;
@@ -142,12 +148,17 @@ export interface DsheetProps {
   /**
    * @deprecated Encodes the whole Y.Doc and rebuilds a plain workbook per
    * call. Use `onContentChange` and read full state on demand. Called at most
-   * once per second (trailing), flushed only on unload and unmount.
+   * once per second (trailing), flushed only on unload and unmount. The latest
+   * `onChange` you pass is the one called, so an inline function is safe: a new
+   * identity does not cancel a pending call.
    */
   onChange?: (updateData: SheetUpdateData, encodedUpdate?: string) => void;
   collaboration?: CollaborationProps;
   /** Called when local IndexedDB persistence fails. The editor and durable
-   * collaboration continue using the in-memory Y.Doc, matching dDoc. */
+   * collaboration continue using the in-memory Y.Doc, matching dDoc. Also
+   * called when the first read of the local store does not finish within 15 s
+   * (the editor then continues without local persistence, and
+   * `rebuildLocalStore()` can recreate the store). */
   onIndexedDbError?: (error: Error) => void;
   username?: string;
   portalContent?: string;
