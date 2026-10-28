@@ -12,7 +12,7 @@ Done and committed: G6 = Task 8 (`71d758d`, format gate F, S13); docs `4122b95`.
 
 Audit fixes (2026-10-27, committed in `750bb33`): snapshot `fingerprint`, A4 undo/redo calcChain guard, C8 wide-range seed walk, C8 paste/cut flag clears, C2 date key, `onContentUpdate` flush. Details: `docs/perf/stabilize-spec-audit.md`, results doc "Audit fixes". Unit suite 49 files, 359 tests; `tsc` clean.
 
-`fingerprintFromUpdate` fix (2026-10-27, committed in `d96a8bd`): builds a temporary document like the spec; test T9b; 360 tests, `tsc` clean. Remaining audit deviations are listed in `stabilize-spec-audit.md` section 2 (C8 warm-up evaluates formulas, pre-warm commit path, B3 guard, B2 `cloneDeep`).
+`fingerprintFromUpdate` fix (2026-10-27, committed in `d96a8bd`): builds a temporary document like the spec; test T9b; 360 tests, `tsc` clean. Remaining audit deviations are listed in `stabilize-spec-audit.md` section 2 (pre-warm commit path, B2 `cloneDeep`, extra `userEdited` origins). Since 2026-10-28 (uncommitted) the C8 warm-up builds the index from formula text and B3 holds the guard while the remount is deferred, both as the ticket text says.
 
 K1 and K2 fix (2026-10-27, committed in `037248b`): formula text and grid size now reach a second client after a row or column insert or delete; test `structural-edit-formula-sync.test.ts` (8, failed before). 368 tests, `tsc` clean. Browser check done 2026-10-27 with a BroadcastChannel relay (collaboration server unreachable): same-tab formulas and row count reach the peer; cross-tab formula on an inactive tab does not (K6).
 
@@ -71,8 +71,8 @@ The complete list with evidence labels, locations and next steps is `docs/perf/K
    - `getMeasureContext2d` makes a new canvas per call; no test for the `!measure2d` fallback.
    - A removed-cell stale key stays in `formulasWithWideRangeDeps` for the session.
    - No mounted-React test for the Workbook banner effect.
-   - C8: worker path never removes a resolved formula from `formulasWithWideRangeDeps`; warm-up slice budget is checked only between formulas, so one heavy formula can exceed 8 ms; `isAsyncFormulaFunction` checks only top-level AsyncFunction exports; no >10,000-cell range test.
-   - B3: a local commit made while the remount is deferred is written at pre-change coordinates (K8, accepted for P1: the spec's part 2 case); compaction in that window is guarded (K9, fixed 2026-10-28, uncommitted); no test for a surgical event in the post-fire, pre-paint hold; the "commit not suppressed" test is near-tautological.
+   - C8: worker path never removes a resolved formula from `formulasWithWideRangeDeps`; warm-up slice budget is checked only between formulas. (`isAsyncFormulaFunction` is gone: the warm-up no longer calls any function. The >10,000-cell range case is covered by `formula-dep-text.test.ts`.)
+   - B3: a local commit made while the remount is deferred is written at pre-change coordinates (K8, accepted for P1: the spec's part 2 case); compaction in that window is guarded (K9, fixed 2026-10-28, uncommitted); no test for a surgical event in the post-fire, pre-paint hold. The guard is now held while the remount is deferred (ticket text, 2026-10-28, uncommitted); the old "commit not suppressed" test was replaced by one that checks the depth returns to 0 after the edit.
    - B5: tests lack an apostrophe-in-double-quoted-string case, an unbalanced-quote case and a call-site test; `rangetxt: any`. Fixed 2026-10-28 (uncommitted): sheets with no calcChain or not hydrated are now rewritten (K6), and `#REF!` marking is the same in both branches (K7).
 
 ## App-side work (outside this repo)

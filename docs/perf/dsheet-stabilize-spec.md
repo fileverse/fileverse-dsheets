@@ -11,11 +11,11 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | A4, A5 | done | b056601, ab23c16 | |
 | B1 | done | cf58246 | |
 | B2, B4, B6 | done | b3e38a9 | |
-| **B3** | done | 1587101 | Deviation from the Fix text below: the guard is not held while the remount is deferred; it begins once right before the remount (see B3). Browser-checked. |
+| **B3** | done | 1587101 | Follows the ticket text again (2026-10-28): the guard begins when the remount becomes pending, is held while it is deferred, and ends after paint. Earlier commits did not hold it. Not yet browser-checked in this form. |
 | **B5** | done | 8b18a94; case rule fixed in Task 17 (782aacd) | Shipped case-insensitive; Task 17 made the comparison exact and case-sensitive, as this spec says. |
 | C1, C3 | done | 7a1a19e | |
 | C2, C6, C7 | done | 03fc133, 4ef4fd4, 9290e13 | |
-| **C8** | done | fb80dfc, a324b38 | Plus a warm-up pass after open so the flag turns true; shadow indexes merged at completion. |
+| **C8** | done | fb80dfc, a324b38 | Warm-up after open builds the index from formula text (`formula-dep-text.ts`), without evaluating anything (2026-10-28); shadow indexes merged at completion. |
 | **C4, C5** | done | 29843e6 | C5 browser timing: 10k single-line cells 1,827 ms to 49 ms median. |
 | July narrowing bug (commit 1611aee, not a spec item) | done (Task 16, 627aeda) | | Commit-path narrowing waits for a complete graph; flag-false sheets run the full list per commit (S15: 0.21 ms to 3.9 ms at 500 formulas). |
 | D3 (package side) | done, committed `4d181b5` (Task 6) | | `rebuildLocalStore()` on the editor handle; results doc "D3 (package side)". App side (call it instead of delete-and-remount, `onIndexedDbError`) is in dsheets.new. |
@@ -205,7 +205,7 @@ Data-block gating (`shouldExecuteDataBlocks`, `localUserEditRef`) is unchanged a
 
 Today, when the remount timer fires while the local user is editing a cell, the remount is skipped and the pending flag cleared (`use-editor-data.tsx:744-766`); the engine keeps stale data until some later remount.
 
-**Fix:** while editing, re-arm the timer (250 ms) and keep the pending flag; remount once the edit ends. Do **not** hold the remote-apply guard while the remount is deferred. The guard makes `handleChange`, `guardRemoteEcho` and `afterUpdateCell` return early, so holding it across the edit drops the commit's `onChange` and the remount then rebuilds from Yjs without the user's edit. B1's single begin is kept: the guard begins once right before the remount runs and ends after paint.
+**Fix:** while editing, re-arm the timer (250 ms) and keep the pending flag and guard depth; remount once the edit ends. The guard begins when the remount becomes pending (B1: one begin and one end per pending remount) and ends after paint. The typed cell is still written: the commit-time write and the write in `afterUpdateCell` do not check the guard; `handleChange`, `guardRemoteEcho` and the data-block work do.
 
 Consequences, accepted: while the remount is deferred, every remote surgical event on that tab is folded into the pending remount (the editing tab shows no remote change until the edit ends), and a local commit made in that window is written at the coordinates the tab had before the structural change.
 
@@ -282,7 +282,7 @@ Note: today's code measures with the wrong font (`ff` index used as a family nam
 
 **C8. No formula pass for a cell nothing depends on.**
 
-**Implemented (fb80dfc, a324b38).** The skip runs only when `depGraphComplete` is true. Because only forced passes complete the graph, a dependency-only warm-up (`formula-warmup.ts`) runs in idle slices after open and publishes its edges into shadow indexes that are merged only when the whole warm-up finishes, so a partial graph never narrows a commit. Task 16 (627aeda): the narrowing added at commit 1611aee (July) used to apply on `revDepsByCell.size > 0` while the flag was false, which could leave a never-evaluated formula stale. It now narrows only when `depGraphComplete` is true. Sheets where the flag never turns true (for example a sparse tab holding a formula) run the full list on every commit: slower, correct (S15, 500 formulas: 0.211 ms to 3.897 ms; flag-true sheets 0.155 ms to 0.158 ms).
+**Implemented (fb80dfc, a324b38).** The skip runs only when `depGraphComplete` is true. Because only forced passes complete the graph, a warm-up (`formula-warmup.ts`) runs in idle slices after open, reads each formula's references from its text with `collectFormulaTextDeps` (`formula-dep-text.ts`, no evaluation, no other tab loaded) and publishes the edges into shadow indexes that are merged only when the whole warm-up finishes, so a partial graph never narrows a commit. Task 16 (627aeda): the narrowing added at commit 1611aee (July) used to apply on `revDepsByCell.size > 0` while the flag was false, which could leave a never-evaluated formula stale. It now narrows only when `depGraphComplete` is true. Sheets where the flag never turns true (for example a sparse tab holding a formula) run the full list on every commit: slower, correct (S15, 500 formulas: 0.211 ms to 3.897 ms; flag-true sheets 0.155 ms to 0.158 ms).
 
 Today the commit-time pass (`core/modules/formula.ts:2466-2518`) narrows the formula list to the edited cell's dependents only when the graph has entries and the dependents set is not empty. Otherwise it processes every formula: a commit to a cell no formula refers to re-tokenizes every formula and walks every referenced range. The teammate audit measured 11 ms against 2 ms at 500 `SUM(A:T)` formulas; it grows with formulas times range size.
 

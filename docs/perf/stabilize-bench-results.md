@@ -2,7 +2,7 @@
 
 Every change gets numbers measured the same way before and after.
 
-**Status index (2026-10-26).** Sections below, in file order: baseline; A1, A2; B4, B2, B6; A3; A5; A4; C1, C2, C3, C6, C7; C8 and the C8 warm-up; C4; C5 (and C5 browser timing); B3 (and B3 browser check); B5 (and B5 browser check). Task 16 (July narrowing bug, scenario S15) and Task 17 (B5 exact tab names) are done and have sections at the end. Still to add: D3, D5 (S12), F (S13), E1–E6. Scenarios used so far: S1–S11, S14 and S15; next free are S12 and S13 (reserved by the plan for D5 and F).
+**Status index (2026-10-26).** Sections below, in file order: baseline; A1, A2; B4, B2, B6; A3; A5; A4; C1, C2, C3, C6, C7; C8 and the C8 warm-up (and, at the end, the warm-up rebuilt from formula text); C4; C5 (and C5 browser timing); B3 (and B3 browser check); B5 (and B5 browser check). Task 16 (July narrowing bug, scenario S15) and Task 17 (B5 exact tab names) are done and have sections at the end. Still to add: D3, D5 (S12), F (S13), E1–E6. Scenarios used so far: S1–S11, S14 and S15; next free are S12 and S13 (reserved by the plan for D5 and F).
 
 B5 case rule: resolved by Task 17 (782aacd); see the Task 17 subsection at the end of the B5 section.
 
@@ -393,6 +393,8 @@ Not covered:
 - Not checked in the browser.
 
 ### C8 warm-up: a dependency-only pass after open
+
+> **Superseded 2026-10-28:** the warm-up no longer evaluates formulas; it reads references from formula text. See "C8 warm-up from formula text and B3 guard" at the end. The numbers below are for the evaluating version.
 
 Addresses the first "Not covered" point above for workbooks whose formulas all sit on the active tab (or on tabs kept dense). In a workbook with formulas on more than one tab, inactive tabs are sparse, so the warm-up never completes and C8 stays off there (see "Not covered" below). Same Node harness, scenario S14, run alone (`before-c8-warmup.json` → `after-c8-warmup.json`, `--only=S14`). 4000×25 values; 500, then 5,000 `=SUM(A{r}:T{r})` formulas (column Y, then column X). The context is opened as S9 builds it, but with no forced pass. One typed commit to V1001…V3000 through `updateCell`. In the after run, the warm-up runs first with an 8 ms budget, drained by a synchronous scheduler that times each slice. Yjs writes are counted on the `updateCellYdoc` hook, the engine's only cell-value path into Yjs.
 
@@ -1254,3 +1256,32 @@ The spec section 3 says this is out of scope: "Insert or delete a row while a co
 
 **Totals:** 63 files, 522 tests pass (495 before: +18, +2, +7); `tsc --noEmit` clean.
 
+
+
+## C8 warm-up from formula text, and the B3 guard (2026-10-28, not committed)
+
+The ticket text (TEC-3277, updated) asks for the C8 index to be "built from the formula text, without evaluating anything", and for B3 to keep the pending flag and guard depth while a remount is deferred. Both earlier versions deviated; both now follow the ticket.
+
+**C8.** New `core/modules/formula-dep-text.ts` (`collectFormulaTextDeps`): its own tokenizer, same cell keys, 10,000-cell cut-off and wide markers as `execfunction`; also reads references next to spaces, inside `INDEX(`, and behind an unquoted tab name with a split character (`Q1-2026!A1`). It never reads another tab's cells; a whole row or column into a tab with no grid yet is marked wide. `formula-warmup.ts` calls it instead of `execfunction` (the parser swap, the async-function skip list and the sparse-tab guard are gone). Slicing, shadow-index merge, stale-text check and abort rules are unchanged.
+
+**Before / after** (`npx vite-node docs/perf/bench/stabilize-bench.ts -- after-c8-text-index --only=S14`; before is `after-c8-warmup.json` in the section above, same method, same machine; one run each, so treat small differences as noise).
+
+| S14 warm-up | 500 before | 500 after | 5,000 before | 5,000 after |
+|---|---|---|---|---|
+| Total time | 27.0 ms | 8.24 ms | 139.1 ms | 54.45 ms |
+| Slices | 4 | 1 | 18 | 6 |
+| Longest slice (includes the final merge) | 8.1 ms | 7.88 ms | 8.4 ms | 10.96 ms |
+| Formulas evaluated | 500 | 0 | 5,000 | 0 |
+| Yjs writes | 0 | 0 | 0 | 0 |
+| Commit to an unreferenced cell, median | 0.138 ms | 0.159 ms | 0.125 ms | 0.125 ms |
+| Formulas read by that commit | 0 | 0 | 0 | 0 |
+
+The longest slice at 5,000 formulas went up (8.4 to 10.96 ms): reading is cheap, so a slice now covers many formulas before the check, and the final slice carries the merge. K15 is updated.
+
+**Tests.** `formula-dep-text.test.ts` (30): edges equal `execfunction`'s on 22 fixtures (cells, ranges, mixed and reversed ranges, whole row and column, other tabs, quoted names, named ranges, strings, very large range, unresolved and wrong-case tab names, spaces, `INDEX`), a check that the fixtures record real edges, the origin edge for a very large range holding the formula, `Q1-2026!A1`, case-sensitive tab names, string literals ignored, `INDIRECT`/`OFFSET` wide, and no parser call and no grid read. `formula-warmup.test.ts` (24): rewritten where it counted parser calls (now counts formula-text reads), the swap-region test replaced by "evaluates nothing", the sparse-tab test now expects an edge instead of a wide marker plus a new whole-column-into-sparse-tab case, and a new case where `=SUM(V1, V2)`, `=V1 + V2` and `=INDEX(V1:V5,2)` are recalculated correctly after a commit and equal a forced pass.
+
+Known difference from `execfunction`: for a range wider than 10,000 cells on another tab, `execfunction` adds the formula's own cell as an edge when its row and column fall inside the range (it does not compare tabs); the text index adds it only on the same tab.
+
+**B3.** `scheduleStructuralRemount` begins the guard when a remount becomes pending (no remount pending before), keeps it while the timer is deferred by a cell edit, and ends it once after paint; `cancelStructuralRemount` releases it. The typed cell is still written: the commit-time write and the `afterUpdateCell` write do not check the guard; `handleChange`, `guardRemoteEcho` and the data-block work do. Tests in `remote-apply-guard.test.ts` updated (24): depth stays 1 while deferred, returns to 0 after the remount, cancel releases it, a new event after a fired remount opens a second guard while the first waits for paint. Before/after numbers do not apply (no timing change). Not browser-checked.
+
+Full `npm run test:unit`: 64 files, 554 tests pass. `tsc --noEmit -p .`: no errors.

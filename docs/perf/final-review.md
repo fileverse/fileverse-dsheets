@@ -59,3 +59,8 @@ Browser targets of spec section 2 that no run has produced: commit-to-paint on 1
 - `e2e-regression-checklist.md` gets section 1.22 for E1 to E6.
 - `KNOWN-ISSUES.md`: the K6 line said "not committed"; it is in `a5dcd88`.
 - 2026-10-28, after the K6 to K11 work: statuses in section 1 updated; `NEXT.md`, the plan, the spec status table, the audit doc, `e-items-prep.md` and the results doc brought in line.
+
+
+## Update 2026-10-28 (uncommitted)
+
+Two spec deviations from the audit are closed: C8 now builds its index from formula text (`formula-dep-text.ts`, no evaluation), and B3 holds the remote-apply guard while a remount is deferred. K16 is closed; K8 stays accepted. Unit suite 64 files, 554 tests; `tsc` clean. Not browser-checked after these two changes.

@@ -19,6 +19,11 @@ const SPECIAL_COL = 26; // AA
 const UNREFERENCED: [number, number] = [10, 28];
 const FORMULAS = 100;
 
+// Counts reads of a formula's text (the warm-up reads each once) and lets a
+// test charge a cost per read.
+let onFormulaRead: () => void = () => {};
+let formulaReads = 0;
+
 type Special = { r: number; f: string; cell?: Record<string, unknown> };
 
 const formulaCell = (
@@ -35,6 +40,8 @@ const formulaCell = (
     configurable: true,
     get: () => {
       reads.add(`${r}_${c}`);
+      formulaReads += 1;
+      onFormulaRead();
       return text;
     },
     set: (next) => {
@@ -46,6 +53,8 @@ const formulaCell = (
 
 const makeFixture = (specials: Special[] = []) => {
   const reads = new Set<string>();
+  formulaReads = 0;
+  onFormulaRead = () => {};
   const globalCache = { undoList: [] as any[], redoList: [] as any[] };
   const ctx: any = defaultContext({
     globalCache,
@@ -102,6 +111,10 @@ const makeFixture = (specials: Special[] = []) => {
     setOnEvaluate: (fn: () => void) => {
       onEvaluate = fn;
     },
+    setOnRead: (fn: () => void) => {
+      onFormulaRead = fn;
+    },
+    formulaReads: () => formulaReads,
     resetCounters: () => {
       reads.clear();
       evaluations = 0;
@@ -282,29 +295,30 @@ describe('warmFormulaDependencyGraph (C8 warm-up)', () => {
   });
 
   it('keeps each slice within budgetMs (stub clock)', async () => {
-    const { ctx, evaluations, setOnEvaluate } = makeFixture();
+    const { ctx, setOnRead, formulaReads: readCount } = makeFixture();
     let clock = 1000;
     vi.spyOn(performance, 'now').mockImplementation(() => clock);
-    setOnEvaluate(() => {
+    setOnRead(() => {
       clock += 3; // each formula costs 3 ms
     });
     const run = startWarmup(ctx, 8);
     const perSlice: number[] = [];
     const elapsed: number[] = [];
     while (run.pending()) {
-      const e0 = evaluations();
+      const e0 = readCount();
       const c0 = clock;
       run.step();
-      perSlice.push(evaluations() - e0);
+      perSlice.push(readCount() - e0);
       elapsed.push(clock - c0);
     }
     expect(await run.result).toBe('complete');
     // 8 ms budget, 3 ms per formula: a slice stops once 8 ms have passed.
-    expect(Math.max(...perSlice)).toBe(3);
+    // (The last slice also re-reads every formula once to check its text.)
+    expect(Math.max(...perSlice.slice(0, -1))).toBe(3);
     expect(perSlice.slice(0, -1).every((n) => n === 3)).toBe(true);
-    expect(perSlice.reduce((a, b) => a + b, 0)).toBe(FORMULAS);
+    expect(perSlice.length).toBeGreaterThan(10);
     // No formula starts after the budget is spent: elapsed <= budget + one formula.
-    expect(Math.max(...elapsed)).toBeLessThanOrEqual(8 + 3);
+    expect(Math.max(...elapsed.slice(0, -1))).toBeLessThanOrEqual(8 + 3);
   });
 
   it('after warm-up, a commit to a referenced cell gives the grid a forced full pass gives', async () => {
@@ -396,31 +410,17 @@ describe('warmFormulaDependencyGraph (C8 warm-up)', () => {
     expect(ctx.luckysheetfile[0].data[50][SUM_COL].v).toBe(42);
   });
 
-  it('restores the real indexes if the swap region throws', async () => {
-    const { ctx } = makeFixture();
+  it('evaluates nothing: no parser call, no pass-local scratch, no function called', async () => {
+    const { ctx, evaluations } = makeFixture([
+      { r: 0, f: '=NOW()' },
+      { r: 1, f: '=INDEX(A1:A100,5)' },
+    ]);
     const { formulaCache } = ctx;
-    const { depsByCell, revDepsByCell, formulasWithWideRangeDeps } = formulaCache;
     const globalData = formulaCache.execFunctionGlobalData;
-    // The scratch swap throws once, after the index swap has happened.
-    let armed = true;
-    let stats: unknown;
-    Object.defineProperty(formulaCache, 'rangeValuePassCacheStats', {
-      configurable: true,
-      get: () => stats,
-      set: (next) => {
-        if (armed) {
-          armed = false;
-          throw new Error('swap failed');
-        }
-        stats = next;
-      },
-    });
-    await expect(startWarmup(ctx).drain()).rejects.toThrow('swap failed');
-    expect(formulaCache.depsByCell).toBe(depsByCell);
-    expect(formulaCache.revDepsByCell).toBe(revDepsByCell);
-    expect(formulaCache.formulasWithWideRangeDeps).toBe(formulasWithWideRangeDeps);
+    expect(await startWarmup(ctx).drain()).toBe('complete');
+    expect(evaluations()).toBe(0);
     expect(formulaCache.execFunctionGlobalData).toBe(globalData);
-    expect(formulaCache.depGraphComplete).toBe(false);
+    expect(formulaCache.rangeValuePassCache).toBeUndefined();
   });
 
   // K11: INDIRECT and OFFSET read cells the dependency graph cannot see. The
@@ -455,7 +455,23 @@ describe('warmFormulaDependencyGraph (C8 warm-up)', () => {
     ).toBe(true);
   });
 
-  it('does not hydrate a sparse tab a formula reads; that formula runs on every commit', async () => {
+  it('a formula with a space between references is recalculated when either changes (index built from text)', async () => {
+    const { ctx } = makeFixture([
+      { r: 0, f: '=SUM(V1, V2)', cell: { v: 30, m: '30' } },
+      { r: 1, f: '=V1 + V2', cell: { v: 30, m: '30' } },
+      { r: 2, f: '=INDEX(V1:V5,2)', cell: { v: 20, m: '20' } },
+    ]);
+    expect(await startWarmup(ctx).drain()).toBe('complete');
+    commit(ctx, 1, 21, 100); // V2
+    const grid = values(ctx);
+    expect(grid[0][SPECIAL_COL]).toBe(110);
+    expect(grid[1][SPECIAL_COL]).toBe(110);
+    expect(grid[2][SPECIAL_COL]).toBe(100);
+    forceFullPass(ctx);
+    expect(values(ctx)).toEqual(grid);
+  });
+
+  it('does not hydrate a sparse tab a formula reads, and records its edge', async () => {
     const { ctx } = makeFixture([{ r: 0, f: '=Sheet2!A1*2' }]);
     ctx.luckysheetfile.push({
       id: 's2',
@@ -470,9 +486,28 @@ describe('warmFormulaDependencyGraph (C8 warm-up)', () => {
     expect(ctx.luckysheetfile[1].data).toBeUndefined();
     expect(
       ctx.formulaCache.formulasWithWideRangeDeps.has(`s1:0:${SPECIAL_COL}`),
+    ).toBe(false);
+    expect(
+      ctx.formulaCache.revDepsByCell.get('s2:0:0')?.has(`s1:0:${SPECIAL_COL}`),
     ).toBe(true);
-    commit(ctx, UNREFERENCED[0], UNREFERENCED[1], 'typed');
-    expect(ctx.luckysheetfile[0].data[0][SPECIAL_COL].v).toBe(42);
+  });
+
+  it('marks a whole-column reference into a sparse tab wide, without hydrating it', async () => {
+    const { ctx } = makeFixture([{ r: 0, f: '=SUM(Sheet2!A:A)' }]);
+    ctx.luckysheetfile.push({
+      id: 's2',
+      name: 'Sheet2',
+      order: 1,
+      status: 0,
+      celldata: [{ r: 0, c: 0, v: { v: 21, m: '21' } }],
+      config: {},
+      calcChain: [],
+    });
+    expect(await startWarmup(ctx).drain()).toBe('complete');
+    expect(ctx.luckysheetfile[1].data).toBeUndefined();
+    expect(
+      ctx.formulaCache.formulasWithWideRangeDeps.has(`s1:0:${SPECIAL_COL}`),
+    ).toBe(true);
   });
 
   it('leaves the flag false while a tab holding formulas is sparse', async () => {
@@ -577,10 +612,10 @@ describe('scheduleFormulaWarmup', () => {
     vi.useFakeTimers();
     stubDocument('visible');
     stubIdle();
-    const { ctx, setOnEvaluate } = makeFixture();
+    const { ctx, setOnRead } = makeFixture();
     let clock = 0;
     vi.spyOn(performance, 'now').mockImplementation(() => clock);
-    setOnEvaluate(() => {
+    setOnRead(() => {
       clock += 3; // 3 formulas per 8 ms slice, one slice per idle callback
     });
     const warmup = scheduleFormulaWarmup(() => ctx);

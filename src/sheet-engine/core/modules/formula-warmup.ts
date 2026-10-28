@@ -1,22 +1,20 @@
 /**
- * C8 warm-up: a dependency-only pass after a sheet opens.
+ * C8 warm-up: build the formula dependency index after a sheet opens.
  *
  * C8 lets a commit to a cell nothing depends on skip the formula pass, but
  * only once `formulaCache.depGraphComplete` is true, and opening a sheet runs
- * no full pass. This walks the calc chain in small idle-time slices and runs
- * each formula through `execfunction` only so that it records its
- * dependencies, then marks the graph complete. Results are discarded.
+ * no full pass. This walks the calc chain in small idle-time slices and reads
+ * each formula's references from its text (`collectFormulaTextDeps`), without
+ * evaluating anything, then marks the graph complete.
  *
  * Nothing outside `formulaCache`'s dependency indexes changes: no setContext,
  * no Immer update, no Yjs write, no cell value or error marker, no calc-chain
- * edit. See `runSlice` for how each side effect of `execfunction` is kept out.
+ * edit, no parser call, and no other tab's grid is loaded.
  */
-import * as formulajs from '@fileverse-dev/formulajs';
 import { Context } from '../context';
-import { Sheet } from '../types';
 import { getcellFormula } from './cell';
+import { collectFormulaTextDeps } from './formula-dep-text';
 import {
-  execfunction,
   finishFullFormulaPass,
   FormulaCache,
   getAllFunctionGroup,
@@ -31,66 +29,16 @@ export const FORMULA_WARMUP_IDLE_TIMEOUT_MS = 1000;
 export type FormulaWarmupResult = 'complete' | 'aborted';
 
 export type FormulaWarmupOptions = {
-  /** Longest a slice keeps evaluating before it yields (default 8). */
+  /** Longest a slice keeps reading formulas before it yields (default 8). */
   budgetMs: number;
   /** Runs the next slice later (idle callback in the app). */
   schedule: (cb: () => void) => void;
   isCancelled?: () => boolean;
 };
 
-/**
- * `currentSheetId` of the context `execfunction` sees. No sheet has this id,
- * so `setCellError` and `clearCellError` (which write to the current sheet's
- * grid) find no grid and return.
- */
-const NO_SHEET_ID = '__formula_warmup_no_sheet__';
-
-/** What a network formula returns instead of being called: a promise, like the real one. */
-const UNCALLED_ASYNC_RESULT = new Promise<never>(() => {});
-
-let asyncFunctionNames: Set<string> | null = null;
-
-/**
- * Formula functions that are `async` (they fetch over the network, e.g.
- * ETHERSCAN, EOA). The warm-up records their arguments but never calls them.
- */
-export function isAsyncFormulaFunction(name: string): boolean {
-  if (!asyncFunctionNames) {
-    asyncFunctionNames = new Set();
-    Object.entries(formulajs as Record<string, unknown>).forEach(([key, fn]) => {
-      if (
-        typeof fn === 'function' &&
-        fn.constructor?.name === 'AsyncFunction'
-      ) {
-        asyncFunctionNames!.add(key.toUpperCase());
-      }
-    });
-  }
-  return asyncFunctionNames.has(String(name).toUpperCase());
-}
-
 /** Same condition as a forced pass (C8): every tab holding formulas is dense. */
 const formulaTabsDense = (ctx: Context) =>
   ctx.luckysheetfile.every((file) => !file.calcChain?.length || file.data);
-
-/**
- * A sparse tab as the warm-up's parser sees it. Reading its grid would
- * hydrate it (`ensureSheetFlowdata`); instead the formula reading it is put
- * on every commit's run list, as a reference to a missing sheet is (C8), and
- * the read fails.
- */
-const sparseTabGuard = (file: Sheet, formulaCache: FormulaCache): Sheet => {
-  const guarded = Object.create(file);
-  Object.defineProperty(guarded, 'data', {
-    get() {
-      if (formulaCache.activeDepCollection) {
-        formulaCache.activeDepCollection.hasWideRangeDep = true;
-      }
-      throw new Error('formula warm-up: sparse tab');
-    },
-  });
-  return guarded;
-};
 
 type ChainEntry = { r: number; c: number; id: string; key: string };
 
@@ -104,7 +52,7 @@ type ShadowIndexes = {
   depsByCell: Map<string, Set<string>>;
   revDepsByCell: Map<string, Set<string>>;
   formulasWithWideRangeDeps: Set<string>;
-  /** The text each shadow entry was evaluated from, by entry key. */
+  /** The text each shadow entry was read from, by entry key. */
   evaluatedFormula: Map<string, { f: string; entry: ChainEntry }>;
 };
 
@@ -185,8 +133,8 @@ function mergeShadowIndexes(
 }
 
 /**
- * Evaluate formulas from `entries[start]` until `budgetMs` has passed.
- * Returns the index of the next formula.
+ * Read the references of formulas from `entries[start]` until `budgetMs` has
+ * passed. Returns the index of the next formula.
  */
 function runSlice(
   ctx: Context,
@@ -197,90 +145,40 @@ function runSlice(
   budgetMs: number,
 ): number {
   const t0 = performance.now();
-  const { formulaCache } = ctx;
-  const { parser } = formulaCache;
-  const yy = parser.parser.yy;
-
-  // Scratch state execfunction or its callees touch, restored afterwards.
-  // Captured before the try; everything that mutates shared state happens
-  // inside it, so the finally restores even if the setup throws.
-  const saved = {
-    globalData: formulaCache.execFunctionGlobalData,
-    rangeCache: formulaCache.rangeValuePassCache,
-    rangeStats: formulaCache.rangeValuePassCacheStats,
-    parserContext: parser.context,
-    cryptoDenomination: parser.cryptoDenomination,
-    cryptoDecimals: parser.cryptoDecimals,
-    callFunction: yy.callFunction,
-    depsByCell: formulaCache.depsByCell,
-    revDepsByCell: formulaCache.revDepsByCell,
-    wide: formulaCache.formulasWithWideRangeDeps,
-  };
-  const realDeps = saved.depsByCell;
-
+  const realDeps = ctx.formulaCache.depsByCell;
   let i = start;
-  let evaluated = 0;
-  let warmCtx: Context;
-  try {
-    // execfunction records into whatever indexes formulaCache holds; for this
-    // synchronous slice those are the shadow ones.
-    formulaCache.depsByCell = shadow.depsByCell;
-    formulaCache.revDepsByCell = shadow.revDepsByCell;
-    formulaCache.formulasWithWideRangeDeps = shadow.formulasWithWideRangeDeps;
-    // Read committed grid values, not a previous pass's leftovers, and keep
-    // this slice's range reads out of any pass cache.
-    formulaCache.execFunctionGlobalData = null;
-    formulaCache.rangeValuePassCache = undefined;
-    formulaCache.rangeValuePassCacheStats = undefined;
-    // Arguments are evaluated (and recorded) before the function is called.
-    yy.callFunction = (name: string, params: unknown[], ...rest: unknown[]) =>
-      isAsyncFormulaFunction(name)
-        ? UNCALLED_ASYNC_RESULT
-        : saved.callFunction(name, params, ...rest);
-    // execfunction writes `calculateSheetId` and error markers; the context in
-    // state is frozen. A shallow copy takes the scratch field, and its
-    // `currentSheetId` matches no sheet so error markers are not written.
-    warmCtx = {
-      ...ctx,
-      currentSheetId: NO_SHEET_ID,
-      luckysheetfile: ctx.luckysheetfile.map((file) =>
-        file.data?.length ? file : sparseTabGuard(file, formulaCache),
-      ),
-    };
-    while (i < entries.length) {
-      if (evaluated > 0 && performance.now() - t0 >= budgetMs) break;
-      const entry = entries[i];
-      i += 1;
-      // Re-evaluated since the warm-up started (a commit, a deferred pass):
-      // its dependencies come from text at least as new as this context's.
-      if (realDeps.get(entry.key) !== depsAtStart.get(entry.key)) {
-        continue;
-      }
-      const f = getcellFormula(ctx, entry.r, entry.c, entry.id);
-      if (f == null) continue;
-      evaluated += 1;
-      shadow.evaluatedFormula.set(entry.key, { f, entry });
-      // isrefresh false: no execFunctionGroup. notInsertFunc true: no calc-chain edit.
-      execfunction(warmCtx, f, entry.r, entry.c, entry.id, undefined, false, true);
-    }
-  } finally {
-    formulaCache.depsByCell = saved.depsByCell;
-    formulaCache.revDepsByCell = saved.revDepsByCell;
-    formulaCache.formulasWithWideRangeDeps = saved.wide;
-    formulaCache.execFunctionGlobalData = saved.globalData;
-    formulaCache.rangeValuePassCache = saved.rangeCache;
-    formulaCache.rangeValuePassCacheStats = saved.rangeStats;
-    formulaCache.activeDepCollection = null;
-    parser.context = saved.parserContext;
-    parser.cryptoDenomination = saved.cryptoDenomination;
-    parser.cryptoDecimals = saved.cryptoDecimals;
-    yy.callFunction = saved.callFunction;
+  let read = 0;
+  while (i < entries.length) {
+    if (read > 0 && performance.now() - t0 >= budgetMs) break;
+    const entry = entries[i];
+    i += 1;
+    // Re-evaluated since the warm-up started (a commit, a deferred pass):
+    // its dependencies come from text at least as new as this context's.
+    if (realDeps.get(entry.key) !== depsAtStart.get(entry.key)) continue;
+    const f = getcellFormula(ctx, entry.r, entry.c, entry.id);
+    if (f == null) continue;
+    read += 1;
+    shadow.evaluatedFormula.set(entry.key, { f, entry });
+    const { deps, wide } = collectFormulaTextDeps(
+      ctx,
+      f,
+      entry.id,
+      entry.r,
+      entry.c,
+    );
+    shadow.depsByCell.set(entry.key, deps);
+    deps.forEach((depKey) => {
+      const rev = shadow.revDepsByCell.get(depKey) ?? new Set<string>();
+      rev.add(entry.key);
+      shadow.revDepsByCell.set(depKey, rev);
+    });
+    if (wide) shadow.formulasWithWideRangeDeps.add(entry.key);
   }
   return i;
 }
 
 /**
- * Walk the calc chain in slices and record every formula's dependencies, then
+ * Walk the calc chain in slices and read every formula's references, then
  * mark the graph complete (C8). Resolves 'aborted' if the graph is cleared
  * while it runs, a tab holding formulas is sparse, or `isCancelled` says so.
  *
@@ -293,8 +191,7 @@ export function warmFormulaDependencyGraph(
 ): Promise<FormulaWarmupResult> {
   const getCtx =
     typeof ctxOrGetter === 'function' ? ctxOrGetter : () => ctxOrGetter;
-  const budgetMs =
-    opts.budgetMs > 0 ? opts.budgetMs : FORMULA_WARMUP_BUDGET_MS;
+  const budgetMs = opts.budgetMs > 0 ? opts.budgetMs : FORMULA_WARMUP_BUDGET_MS;
   const startCtx = getCtx();
   const { formulaCache } = startCtx;
   const epoch = formulaCache.depGraphEpoch;

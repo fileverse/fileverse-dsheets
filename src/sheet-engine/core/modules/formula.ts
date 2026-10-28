@@ -1787,7 +1787,7 @@ function depGraphCoversSheetSize(
  * cannot see. Today both evaluate to an error (formulajs implements neither),
  * but formulas using them are kept on every commit's run list regardless.
  */
-const RUNTIME_REFERENCE_RE = /\b(INDIRECT|OFFSET)\s*\(/i;
+export const RUNTIME_REFERENCE_RE = /\b(INDIRECT|OFFSET)\s*\(/i;
 
 export function execfunction(
   ctx: Context,

@@ -73,9 +73,10 @@ describe('scheduleStructuralRemount (B1)', () => {
     scheduleStructuralRemount(refs, () => {});
     vi.advanceTimersByTime(50);
     // Remount fired; its end is waiting for paint. A new event arrives and
-    // its own begin comes only when its timer fires.
+    // opens its own begin at once (B3: held from pending to paint).
     scheduleStructuralRemount(refs, () => {});
-    expect(refs.remoteApplyDepthRef.current).toBe(1);
+    expect(refs.remoteApplyDepthRef.current).toBe(2);
+    // The first remount's paint has ended its own guard; the second holds one.
     vi.advanceTimersByTime(50);
     expect(refs.remoteApplyDepthRef.current).toBe(1);
     vi.runAllTimers();
@@ -179,7 +180,7 @@ describe('structural remount while a cell edit is open (B3)', () => {
     expect(refs.timerRef.current).toBeNull();
   });
 
-  it('keeps the pending flag and re-arms while editing, without the guard', () => {
+  it('keeps the pending flag, guard depth and timer while editing', () => {
     const refs = makeRefs();
     const run = vi.fn();
     scheduleStructuralRemount(refs, run, 50, () => true);
@@ -187,20 +188,22 @@ describe('structural remount while a cell edit is open (B3)', () => {
     expect(run).not.toHaveBeenCalled();
     expect(refs.pendingRef.current).toBe(true);
     expect(refs.timerRef.current).not.toBeNull();
-    // Local onChange / guardRemoteEcho / afterUpdateCell check this flag.
-    expect(refs.remoteApplyDepthRef.current).toBe(0);
-    expect(refs.remoteUpdateRef.current).toBe(false);
+    expect(refs.remoteApplyDepthRef.current).toBe(1);
+    expect(refs.remoteUpdateRef.current).toBe(true);
   });
 
-  it("the owner's commit is not suppressed while the remount is deferred", () => {
+  it('remounts once the edit ends and the depth returns to 0', () => {
     const refs = makeRefs();
+    const run = vi.fn();
     let editing = true;
-    scheduleStructuralRemount(refs, vi.fn(), 50, () => editing);
+    scheduleStructuralRemount(refs, run, 50, () => editing);
     vi.advanceTimersByTime(400);
-    // Edit ends; the commit's onChange arrives before the next retry tick.
+    expect(refs.remoteApplyDepthRef.current).toBe(1);
     editing = false;
-    const commitSuppressed = refs.remoteUpdateRef.current;
-    expect(commitSuppressed).toBe(false);
+    vi.runAllTimers();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(refs.remoteApplyDepthRef.current).toBe(0);
+    expect(refs.remoteUpdateRef.current).toBe(false);
   });
 
   it('echo suppression holds during the actual remount and ends after paint', () => {
@@ -233,7 +236,7 @@ describe('structural remount while a cell edit is open (B3)', () => {
     scheduleStructuralRemount(refs, run, 50, () => editing);
     vi.advanceTimersByTime(300);
     scheduleStructuralRemount(refs, run, 50, () => editing);
-    expect(refs.remoteApplyDepthRef.current).toBe(0);
+    expect(refs.remoteApplyDepthRef.current).toBe(1);
     editing = false;
     vi.runAllTimers();
     expect(run).toHaveBeenCalledTimes(1);
@@ -251,10 +254,11 @@ describe('structural remount while a cell edit is open (B3)', () => {
     expect(refs.remoteApplyDepthRef.current).toBe(0);
   });
 
-  it('cancel drops a remount deferred by editing', () => {
+  it('cancel drops a remount deferred by editing and releases its guard', () => {
     const refs = makeRefs();
     scheduleStructuralRemount(refs, vi.fn(), 50, () => true);
     vi.advanceTimersByTime(500);
+    expect(refs.remoteApplyDepthRef.current).toBe(1);
     cancelStructuralRemount(refs);
     expect(refs.remoteApplyDepthRef.current).toBe(0);
     expect(refs.pendingRef.current).toBe(false);
@@ -287,7 +291,7 @@ describe('shouldSkipEchoWrite', () => {
     ).toBe(false);
   });
 
-  it('is true while a remount is deferred by a cell edit, and the edit is not held', () => {
+  it('is true while a remount is deferred by a cell edit', () => {
     const refs = makeRefs();
     const echo = () =>
       shouldSkipEchoWrite({
@@ -298,8 +302,7 @@ describe('shouldSkipEchoWrite', () => {
     vi.advanceTimersByTime(500);
     expect(refs.pendingRef.current).toBe(true);
     expect(echo()).toBe(true);
-    // The guard that drops typed commits is still not held.
-    expect(refs.remoteUpdateRef.current).toBe(false);
+    expect(refs.remoteUpdateRef.current).toBe(true);
   });
 
   it('stays true through the remount and its paint, then clears', () => {

@@ -67,18 +67,16 @@ export type StructuralRemountRefs = RemoteApplyGuardRefs & {
 /**
  * Debounced structural remount under the remote-apply guard.
  *
- * The guard is begun once, right before `run`, and ended after paint, so each
- * remount owns exactly one begin and one end. It is NOT held while the timer
- * is merely pending or deferred by a cell edit: `remoteUpdateRef` makes
- * handleChange and the data-block work in afterUpdateCell drop local work, so
- * holding it across an edit would drop the user's typed edit. (The cell write
- * in afterUpdateCell and the commit-time write do not check it.) What must not
- * run while a remount is pending is the engine → Yjs echo hooks, which diff
- * the old grid against Yjs: they check `shouldSkipEchoWrite`. Events that
- * land while one is pending only re-arm its timer.
+ * Each pending remount owns exactly one begin and one end (B1): the guard is
+ * begun when the remount becomes pending (no remount was pending before),
+ * held while the timer is pending or deferred by a cell edit (B3), and ended
+ * after paint once `run` has finished. Events that land while one is pending
+ * only re-arm its timer.
  *
  * While `isEditing()` is true at fire time the timer re-arms (250 ms) and the
- * pending flag is kept; the remount runs once the edit ends.
+ * pending flag and guard depth are kept; the remount runs once the edit ends.
+ * The typed cell itself is still written: the commit-time write and the cell
+ * write in afterUpdateCell do not check the guard.
  */
 export function scheduleStructuralRemount(
   refs: StructuralRemountRefs,
@@ -86,6 +84,9 @@ export function scheduleStructuralRemount(
   delayMs = 50,
   isEditing?: () => boolean,
 ) {
+  if (!refs.pendingRef.current) {
+    beginRemoteApply(refs);
+  }
   refs.pendingRef.current = true;
   if (refs.timerRef.current !== null) {
     window.clearTimeout(refs.timerRef.current);
@@ -121,7 +122,6 @@ function armStructuralRemount(
       );
       return;
     }
-    beginRemoteApply(refs);
     try {
       run();
     } finally {
@@ -133,14 +133,16 @@ function armStructuralRemount(
 }
 
 /**
- * Drop a pending structural remount (observer teardown). The guard is only
- * held while `run` executes and until paint afterwards, so there is nothing
- * to release here.
+ * Drop a pending structural remount (observer teardown) and release the
+ * guard begun for it.
  */
 export function cancelStructuralRemount(refs: StructuralRemountRefs) {
   if (refs.timerRef.current !== null) {
     window.clearTimeout(refs.timerRef.current);
     refs.timerRef.current = null;
+  }
+  if (refs.pendingRef.current) {
+    endRemoteApply(refs);
   }
   refs.pendingRef.current = false;
 }
