@@ -423,6 +423,38 @@ describe('warmFormulaDependencyGraph (C8 warm-up)', () => {
     expect(formulaCache.depGraphComplete).toBe(false);
   });
 
+  // K11: INDIRECT and OFFSET read cells the dependency graph cannot see. The
+  // warm-up must leave them on every commit's run list, whatever edges it
+  // recorded for them.
+  it('keeps INDIRECT and OFFSET formulas on the run list of every commit', async () => {
+    const { ctx, reads, evaluations, resetCounters } = makeFixture([
+      { r: 0, f: '=INDIRECT("V1")' },
+      { r: 1, f: '=OFFSET(V1,1,0)' },
+    ]);
+    expect(await startWarmup(ctx).drain()).toBe('complete');
+    const wide = ctx.formulaCache.formulasWithWideRangeDeps;
+    expect(wide.has(`s1:0:${SPECIAL_COL}`)).toBe(true);
+    expect(wide.has(`s1:1:${SPECIAL_COL}`)).toBe(true);
+    resetCounters();
+    commit(ctx, UNREFERENCED[0], UNREFERENCED[1], 'typed');
+    expect([...reads].sort()).toEqual(
+      [`0_${SPECIAL_COL}`, `1_${SPECIAL_COL}`].sort(),
+    );
+    expect(evaluations()).toBe(2);
+  });
+
+  it('keeps them on the list when the formula text changes after the warm-up evaluated it', async () => {
+    const { ctx } = makeFixture([{ r: 0, f: '=INDIRECT("V1")' }]);
+    const run = startWarmup(ctx);
+    run.step();
+    // A commit rewrites the formula text between two slices.
+    commit(ctx, 0, SPECIAL_COL, { f: '=OFFSET(V1,1,0)', v: 0, m: '0' });
+    await run.drain();
+    expect(
+      ctx.formulaCache.formulasWithWideRangeDeps.has(`s1:0:${SPECIAL_COL}`),
+    ).toBe(true);
+  });
+
   it('does not hydrate a sparse tab a formula reads; that formula runs on every commit', async () => {
     const { ctx } = makeFixture([{ r: 0, f: '=Sheet2!A1*2' }]);
     ctx.luckysheetfile.push({

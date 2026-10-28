@@ -246,6 +246,28 @@ const markCellRefError = (cell: Cell) => {
   }
 };
 
+const rewriteFormulasInCelldata = (
+  sheet: Sheet,
+  mode: 'add' | 'del',
+  rc: 'row' | 'col',
+  orient: 'lefttop' | 'rightbottom' | null,
+  stindex: number,
+  step: number,
+  editedTab: string,
+) => {
+  if (!Array.isArray(sheet.celldata)) return;
+  sheet.celldata.forEach((entry: any) => {
+    const cell = entry?.v;
+    if (!cell?.f) return;
+    const newF = `=${functionStrChange(cell.f, mode, rc, orient, stindex, step, {
+      editedTab,
+      formulaTab: sheet.name,
+    })}`;
+    cell.f = newF;
+    if (newF.includes('#REF!')) markCellRefError(cell);
+  });
+};
+
 const rewriteFormulasByScanningSheet = (
   sheet: Sheet,
   calcChain: any[] | null | undefined,
@@ -257,7 +279,12 @@ const rewriteFormulasByScanningSheet = (
   editedTab: string,
 ) => {
   const sheetData = sheet.data;
-  if (!sheetData) return;
+  if (!sheetData) {
+    // Not hydrated: the formulas are in celldata and the calcChain loop could
+    // not reach them (K6).
+    rewriteFormulasInCelldata(sheet, mode, rc, orient, stindex, step, editedTab);
+    return;
+  }
 
   const calcChainSet = new Set<string>();
   (calcChain || []).forEach((item: any) => {
@@ -513,13 +540,9 @@ export function insertRowCol(
     SheetIndex < ctx.luckysheetfile.length;
     SheetIndex += 1
   ) {
-    if (
-      _.isNil(ctx.luckysheetfile[SheetIndex].calcChain) ||
-      ctx.luckysheetfile.length === 0
-    ) {
-      continue;
-    }
-    const { calcChain } = ctx.luckysheetfile[SheetIndex];
+    // A tab with no calcChain still holds formulas that can point into the
+    // edited tab: it is not skipped (K6), the scan below finds them.
+    const calcChain = ctx.luckysheetfile[SheetIndex].calcChain ?? [];
     const { data } = ctx.luckysheetfile[SheetIndex];
     for (let i = 0; i < calcChain!.length; i += 1) {
       const calc: any = _.cloneDeep(calcChain![i]);
@@ -2004,13 +2027,9 @@ export function deleteRowCol(
     SheetIndex < ctx.luckysheetfile.length;
     SheetIndex += 1
   ) {
-    if (
-      _.isNil(ctx.luckysheetfile[SheetIndex].calcChain) ||
-      ctx.luckysheetfile.length === 0
-    ) {
-      continue;
-    }
-    const { calcChain } = ctx.luckysheetfile[SheetIndex];
+    // A tab with no calcChain still holds formulas that can point into the
+    // edited tab: it is not skipped (K6), the scan below finds them.
+    const calcChain = ctx.luckysheetfile[SheetIndex].calcChain ?? [];
     const { data } = ctx.luckysheetfile[SheetIndex];
     for (let i = 0; i < calcChain!.length; i += 1) {
       const calc: any = _.cloneDeep(calcChain![i]);
@@ -2063,7 +2082,7 @@ export function deleteRowCol(
         const otherDelRowCell = data?.[calc_r]?.[calc_c];
         if (otherDelRowCell != null && otherDelRowCell.f === calc_funcStr) {
           otherDelRowCell.f = functionStr;
-          if (functionStr === '=#REF!') markCellRefError(otherDelRowCell);
+          if (functionStr.includes('#REF!')) markCellRefError(otherDelRowCell);
         }
       } else if (type === 'column' && SheetIndex === curOrder) {
         if (calc_c < start || calc_c > end) {
@@ -2109,7 +2128,7 @@ export function deleteRowCol(
         const otherDelColCell = data?.[calc_r]?.[calc_c];
         if (otherDelColCell != null && otherDelColCell.f === calc_funcStr) {
           otherDelColCell.f = functionStr;
-          if (functionStr === '=#REF!') markCellRefError(otherDelColCell);
+          if (functionStr.includes('#REF!')) markCellRefError(otherDelColCell);
         }
       }
     }

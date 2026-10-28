@@ -1,5 +1,7 @@
 # E1–E6 prep (Tasks 9–14): whole-UI re-renders
 
+**Status (2026-10-28): all six are implemented and committed** (`8b639d1` E1, E5, E6; `756e442` E3; `e081c39` E2; `96d9ab0` E4). This note is the scouting done before the work; where it differs from what was built, the results doc is right: E2 used an ignore list instead of per-component selectors, E3 kept `generateAPIs` and uses a delegating handle with a host effect for the keeper, E4 left `getToolbarItem` unchanged.
+
 Written 2026-10-28 on `maitra/stabilize-package` at `1b838d6` (tree clean, `npm run test:unit` 54 files / 439 tests, `tsc` clean). Spec: `dsheet-stabilize-spec.md` section 4 E. Plan rows: `docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md` Tasks 9–14. Nothing here is implemented yet. Line numbers are from this commit and drift; locate by name.
 
 Paths below are under `src/sheet-engine/react/components/` unless stated.

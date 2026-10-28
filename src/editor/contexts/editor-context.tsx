@@ -601,6 +601,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     isDataLoaded,
     isReadOnly,
     remoteUpdateRef,
+    structuralRemountPendingRef,
     collabSyncing: isCollabSyncing,
   });
 

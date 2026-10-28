@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { MutableRefObject, RefObject } from 'react';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 import type { WorkbookInstance, Sheet } from '@sheet-engine/react';
 import {
   buildCompactionRevChange,
@@ -12,6 +12,7 @@ import {
 import { updateYdocSheetData } from '../utils/update-ydoc';
 import { COMPACTION_ORIGIN } from '../utils/content-change';
 import { applyCellFormatRangesCommits } from '../../sheet-engine/core/utils/mirror-cell-format-ranges';
+import { shouldSkipEchoWrite } from '../utils/remote-apply-guard';
 
 /** Wait for editor + IDB sync, then a quiet window before scanning. */
 const SETTLE_MS = 4_000;
@@ -28,21 +29,52 @@ type UseCelldataCompactionArgs = {
   isDataLoaded: boolean;
   isReadOnly: boolean;
   remoteUpdateRef: MutableRefObject<boolean>;
+  /** True while a structural remote change waits to remount the Workbook. */
+  structuralRemountPendingRef?: MutableRefObject<boolean>;
   collabSyncing: boolean;
 };
 
-async function applyCompactionChangesInChunks(
+/**
+ * False while a remote apply is running, while a structural remount is pending
+ * (the engine still has the old grid and the Yjs document has the new one) or
+ * while collaboration is still syncing.
+ */
+export function canRunCompaction(
+  refs: {
+    remoteUpdateRef: MutableRefObject<boolean>;
+    structuralRemountPendingRef?: MutableRefObject<boolean>;
+  },
+  collabSyncing: boolean,
+): boolean {
+  return !shouldSkipEchoWrite(refs) && !collabSyncing;
+}
+
+const sameVector = (a: Uint8Array, b: Uint8Array) =>
+  a.length === b.length && a.every((byte, i) => byte === b[i]);
+
+/**
+ * Applies the plan chunk by chunk, yielding between chunks. The plan was made
+ * from the document as it was, and one change in it, the whole-value
+ * borderInfo write, would overwrite a newer value. So the run stops, leaving
+ * the compaction unfinished (it is retried on a later open), as soon as the
+ * document differs from what the previous chunk left. Returns true when every
+ * chunk was applied.
+ */
+export async function applyCompactionChangesInChunks(
   ydoc: Y.Doc,
   dsheetId: string,
   changes: ReturnType<typeof planYdocCompaction>['changes'],
   handleOnChangePortalUpdate: () => void,
   isCancelled: () => boolean,
   sheetEditorRef: RefObject<WorkbookInstance | null>,
-): Promise<void> {
-  for (let i = 0; i < changes.length; i += DELETE_CHUNK_SIZE) {
-    if (isCancelled()) return;
-    const chunk = changes.slice(i, i + DELETE_CHUNK_SIZE);
-    const isLast = i + DELETE_CHUNK_SIZE >= changes.length;
+  chunkSize: number = DELETE_CHUNK_SIZE,
+): Promise<boolean> {
+  let expected = Y.encodeStateVector(ydoc);
+  for (let i = 0; i < changes.length; i += chunkSize) {
+    if (isCancelled()) return false;
+    if (!sameVector(Y.encodeStateVector(ydoc), expected)) return false;
+    const chunk = changes.slice(i, i + chunkSize);
+    const isLast = i + chunkSize >= changes.length;
     updateYdocSheetData(
       ydoc,
       dsheetId,
@@ -56,6 +88,7 @@ async function applyCompactionChangesInChunks(
       },
       COMPACTION_ORIGIN,
     );
+    expected = Y.encodeStateVector(ydoc);
     if (!isLast) {
       await new Promise<void>((resolve) => {
         if (typeof window.requestIdleCallback === 'function') {
@@ -66,6 +99,7 @@ async function applyCompactionChangesInChunks(
       });
     }
   }
+  return true;
 }
 
 /**
@@ -82,6 +116,7 @@ export function useCelldataCompaction({
   isDataLoaded,
   isReadOnly,
   remoteUpdateRef,
+  structuralRemountPendingRef,
   collabSyncing,
 }: UseCelldataCompactionArgs): void {
   const runningRef = useRef(false);
@@ -102,7 +137,14 @@ export function useCelldataCompaction({
 
     const runCompaction = () => {
       if (cancelled || runningRef.current) return;
-      if (remoteUpdateRef.current || collabSyncing) return;
+      if (
+        !canRunCompaction(
+          { remoteUpdateRef, structuralRemountPendingRef },
+          collabSyncing,
+        )
+      ) {
+        return;
+      }
 
       const liveYdoc = ydocRef.current;
       if (!liveYdoc || hasSheetCompactionCompleted(liveYdoc, dsheetId)) return;
@@ -111,7 +153,15 @@ export function useCelldataCompaction({
 
       void (async () => {
         try {
-          if (isCancelled() || remoteUpdateRef.current) return;
+          if (
+            isCancelled() ||
+            !canRunCompaction(
+              { remoteUpdateRef, structuralRemountPendingRef },
+              collabSyncing,
+            )
+          ) {
+            return;
+          }
 
           const plan = planYdocCompaction(liveYdoc, dsheetId);
           const revChange = buildCompactionRevChange(liveYdoc, dsheetId);
@@ -123,7 +173,7 @@ export function useCelldataCompaction({
 
           compactInMemorySheets(currentDataRef.current);
 
-          await applyCompactionChangesInChunks(
+          const finished = await applyCompactionChangesInChunks(
             liveYdoc,
             dsheetId,
             changes,
@@ -132,7 +182,9 @@ export function useCelldataCompaction({
             sheetEditorRef,
           );
 
-          if (isCancelled()) return;
+          // Cancelled, or the document changed under a multi-chunk run: the
+          // compaction is not complete and is retried later.
+          if (isCancelled() || !finished) return;
 
           markCompactionRevInMemory(currentDataRef.current);
           const workbook = sheetEditorRef.current?.getWorkbookContext?.()
@@ -191,6 +243,7 @@ export function useCelldataCompaction({
     isDataLoaded,
     isReadOnly,
     remoteUpdateRef,
+    structuralRemountPendingRef,
     collabSyncing,
   ]);
 }

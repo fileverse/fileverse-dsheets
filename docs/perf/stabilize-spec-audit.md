@@ -42,7 +42,7 @@ A1 hasContent / userEdited / fingerprint tracker (GC-struct counting, attached a
 
 - **K1/K2** (fixed 2026-10-27, committed `037248b`; browser-checked for the same tab; cross-tab on inactive tabs blocked by K6): after a row insert, rewritten formula text did not reach a second client; peer row count differed (84 vs 86). Reproduced at Yjs level on `main` too. See the results doc.
 - A4 browser check found: after a reconnect the editing tab shows a stale grid and a calcChain entry was not written (not traced).
-- K3 cross-tab stale value (not reproduced after Task 16), K6, K7, K10–K12 (see `KNOWN-ISSUES.md`).
+- K3 cross-tab stale value (not reproduced after Task 16), K10, K12 (see `KNOWN-ISSUES.md`). K6 and K7 were fixed and K11 closed on 2026-10-28 (results doc section "K6, K7, K9, K11, K8"); K9 is hardened and K8 accepted for P1.
 
 ## 5. Not verified by me
 
@@ -51,3 +51,8 @@ C3, C4, C5, C6 internals; `rebuildLocalStore` ordering; format-gate UI wiring (n
 ## Status update (2026-10-28, PR 466 review)
 
 The review of PR 466 (`docs/perf/pr-466-review.md`) found six must-fix problems in the branch; all six are fixed (committed `a7abbed`; the other 12 comments in `a5dcd88` and `291c398`). One touches this audit's items: section 2 item 4 (B3 guard depth). The review showed the stated reason for not holding the guard is only partly right: `afterUpdateCell` writes the cell before it checks `remoteUpdateRef`, so holding the guard would not drop a typed commit. What must not run while a remount is pending is the engine to Yjs echo hooks, which now check `shouldSkipEchoWrite`. The guard is still not held (the data-block work and `handleChange` do drop work under it), and K8 (position of a commit during the deferral) is still open.
+
+## Status update (2026-10-28, after G7 and the K6 to K11 work)
+
+Section 1 item 2 (E1–E6) is done and committed (`8b639d1`, `756e442`, `e081c39`, `96d9ab0`); E2 and E5 only partly meet their targets (results doc). Item 8 (browser measurements) is still open. Section 2 deviations are unchanged: C8 still evaluates formulas in its warm-up instead of building the index from text, which the updated TEC-3277 description now asks for; that is the largest open difference from the spec. Unit suite 63 files, 522 tests; `tsc` clean.
+

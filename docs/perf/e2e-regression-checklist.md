@@ -209,9 +209,9 @@ Open each sheet fresh (reload), then edit a precedent within 1 s and again after
 
 1. Insert a **column** on `A` → on `B`, `=A!B5` becomes `=A!C5`; `=B5` and `=C!B5` unchanged. Same checks for delete column (`#REF!` for a deleted precedent, others shift left).
 2. Absolute references `=A!$B$5` and ranges that span the insert (`=SUM(A!B2:B9)` with an insert at row 5) → absolute row moves, range end moves; same-tab `$B$5` still correct.
-3. **KNOWN (K6):** a tab whose data is not yet loaded (open the sheet, do not visit tab C), insert a row on `A`, then visit `C` → C's `=A!B5` should read `=A!B6`. Record what it shows.
-4. **KNOWN (K6):** a tab with no calcChain (formulas typed but never evaluated on it) pointing at `A`: insert a row on `A`; record whether it shifts.
-5. **KNOWN (K7):** `=SUM(A!B3,1)` on `B`, delete row 3 on `A` → text is `SUM(#REF!,1)`; record whether the cell shows an error.
+3. A tab whose data is not yet loaded (open the sheet, do not visit tab C), insert a row on `A`, then visit `C` → C's `=A!B5` reads `=A!B6`, on the owner and on the collaborator. [K6, fixed 2026-10-28]
+4. A tab with no calcChain (formulas typed but never evaluated on it) pointing at `A`: insert a row on `A` → it shifts. [K6, fixed 2026-10-28]
+5. `=SUM(A!B3,1)` on `B`, delete row 3 on `A` → text is `SUM(#REF!,1)` and the cell shows an error. [K7, fixed 2026-10-28]
 6. **KNOWN (K31):** `=SUM(B5,'oops)+B6` is an invalid formula; inserting a row must not crash.
 7. **KNOWN (K32):** `='A'!B5:'A'!B9` (prefix on both ends) is not shifted; record.
 8. A string containing an apostrophe: `="it's"&B5` → inserting a row shifts only B5; the string is unchanged. [K34]
@@ -273,6 +273,28 @@ Use the demo's `onContentChange` log or add a temporary `console.log` in the dem
 8. A remote edit (peer types) → `onContentChange` fires on the receiving side with `userEdited` still false on a window that never typed.
 9. A host that passes the legacy `onChange` → called about once per second while typing, and once on close; no whole-document encode per keystroke (devtools Performance: no 100 ms+ task per edit on the large sheet).
 10. Close the tab right after an edit (pagehide) → the final `onContentChange` is flushed (check with a persisted log, for example `localStorage`).
+
+### 1.22 Fewer whole-UI re-renders [E1 to E6, Tasks 9 to 14]
+
+Use a sheet of about 100 rows with a dropdown column, fills and a comment on one cell.
+
+1. Hover a cell with a pinned-off comment, move inside the cell, then leave it → the comment popup appears on entering, stays while moving inside, and disappears on leaving. [E1]
+2. Hover a cell with an error value (for example `=1/0`), move inside it, leave → the error popover shows and hides in the same way. [E1]
+3. Hover a cell with a hyperlink, move inside it, leave → the link card shows and hides (about 100 ms after leaving). [E1]
+4. Drag a comment box, an image, and a cell range (move cells), and resize a comment box and an image → each follows the pointer. Open Find and replace and drag its dialog → it follows the pointer. [E1]
+5. Drag-select from one cell to another, and select a whole column by its header → the selection range matches. With frozen rows or columns, repeat → the selection and the hovered cell are right in all four panes. [E1]
+6. Scroll the grid with the wheel and with the scrollbar, vertically and horizontally → rows and columns move, headers follow, and the toolbar, sheet tabs and menus do not flicker or lose their state (for example an open dropdown menu stays open). [E2]
+7. Select a bold cell, then a plain cell, then a cell with a fill colour → the Bold, font size and colour controls follow the selection each time; the status bar shows the right Sum for a numeric range. [E2]
+8. Right-click a cell, a row header and a column header, then open the filter menu and the sheet-tab menu → each opens with the right items. Scroll while one is open → it stays usable. [E2]
+9. Undo and redo from the toolbar and with the keyboard after a format change → the toolbar state follows. [E2]
+10. Add a second sheet, make it active, then make the editor remount (import a CSV, or a peer makes a structural change) → the second sheet is still active afterwards. [E3]
+11. Copy a range and paste it with Ctrl+V into another cell, and paste text from another app → the paste works as before, once (not twice). Paste an HTML table from another page. [E4]
+12. Pin a comment open on a cell (show comment), edit another cell → the pinned comment stays; hide it → it goes away; switch to another sheet and back → the pinned state is right on each sheet. [E5]
+13. Type `=SUM(A1:A3` in a cell → the formula editor works, the range highlights show, and the selection outline is not doubled. Press Escape. [E6]
+14. Open the function picker (Sigma button; widen the window if it is hidden) → categories and function names are listed as before. [E4]
+15. Collaborator window: with a peer typing, scroll and hover on the owner's window → no lag and no console errors. [E1 to E4]
+
+Report any case where a control shows a stale state (for example Bold not following the selection), which would point at a context key the E2 ignore list should not skip.
 
 ---
 
@@ -454,4 +476,4 @@ Notation: **Owner** = owner window, **Collaborator** = collaborator window. Afte
 
 For each failure give: section and case number, what you did, what each window showed, console output, and whether it also fails on `main`. A case that fails on `main` too is not a regression of this work; add it to `docs/perf/KNOWN-ISSUES.md`.
 
-Cases that should currently fail (so they are not a surprise): 1.9.5 (K25), 2.3.8 (K3, possible; did not reproduce at engine level after Task 16), 2.4.7 (K8), 1.17.3 to 1.17.5 (K6, K7), 1.17.6 and 1.17.7 (K31, K32), 1.18.1 (CF formula rule crash, from the audit), 1.19.2 (K27), 1.19.5 and 1.19.6 (P3 and P1 follow-ups are not done), 1.20.7 (K42), 2.12.10 (K42, K43). 1.2.9 and 1.3.9 were on this list before Tasks 16 and 17; they must pass now.
+Cases that should currently fail (so they are not a surprise): 1.9.5 (K25), 2.3.8 (K3, possible; did not reproduce at engine level after Task 16), 2.4.7 (K8), 1.17.6 and 1.17.7 (K31, K32), 1.18.1 (CF formula rule crash, from the audit), 1.19.2 (K27), 1.19.5 and 1.19.6 (P3 and P1 follow-ups are not done), 1.20.7 (K42), 2.12.10 (K42, K43). 1.2.9 and 1.3.9 were on this list before Tasks 16 and 17; they must pass now.

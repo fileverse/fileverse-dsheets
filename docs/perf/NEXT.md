@@ -1,6 +1,6 @@
 # P1 Stabilise: where we are and what to do next
 
-Written 2026-10-26. Branch `maitra/stabilize-package`. Plan: `docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md` (Status and Next sections at the top). Spec: `docs/perf/dsheet-stabilize-spec.md` (Implementation status table near the top). Numbers: `docs/perf/stabilize-bench-results.md`.
+Written 2026-10-26, updated 2026-10-28 (after G7 and the K6 to K11 work). Branch `maitra/stabilize-package`. Plan: `docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md` (Status and Next sections at the top). Spec: `docs/perf/dsheet-stabilize-spec.md` (Implementation status table near the top). Numbers: `docs/perf/stabilize-bench-results.md`. Triage of open findings and what is left: `docs/perf/final-review.md`.
 
 ## State
 
@@ -18,9 +18,9 @@ K1 and K2 fix (2026-10-27, committed in `037248b`): formula text and grid size n
 
 PR 466 review fixes (2026-10-28, committed: must-fix #1–6 `a7abbed`, #7–14 `a5dcd88`, #15–18 `291c398`; version bump `1b838d6`): the six must-fix comments of nadeem-fileverse are fixed: debug logger removed (#1); K1 diff misses merged cells and repeated formulas (#6); legacy `onChange` no longer cancelled by a host re-render (#5); undo of a row insert re-registers in one pass, 6,321 ms to 24 ms on 1,000 formulas (#2); echo hooks held back while a structural remount is pending, and a formula committed then gets its calcChain entry (#3); `rebuildLocalStore` and the bootstrap no longer wait forever for y-indexeddb (#4). Unit suite 52 files, 397 tests; `tsc` clean. Not browser-checked; the hook wiring for #3, #4 and #5 has no test. Details: `docs/perf/pr-466-review.md` section 9, results doc "PR 466 review fixes". Second round, same day, committed in `a5dcd88`: review #7 (sheet-name regex), #8 (stale chain after undo), #9 (grid size on undo/redo), #10 (remote formula keeps `depGraphComplete`), #11 (cut-paste moves the chain entry), #12 (no double write on paste/fill), #13 (WeakMap caches, `definedNames` in the CF key) and #14 (grid read-only in the tick the format lock is seen) are fixed; unit suite 54 files, 429 tests, `tsc` clean (`pr-466-review.md` section 10). Third round, same day, committed in `291c398`: #15 (paste flag only in the object branch), #16 (one Yjs update per structural edit), #17 (copies of calcChain entries) and #18 (guard ended when `rehydrateWorkbookFromYdoc` throws) are fixed; unit suite 54 files, 439 tests, `tsc` clean (`pr-466-review.md` section 11). **All 18 review comments are fixed.**
 
-Before numbers for E1–E6 are recorded (`stabilize-bench-results.md`, section "E1–E6 Before"); the demo-only counter is `demo/src/perf-render.ts` (uncommitted, plus a one-line import in `demo/src/main.tsx`), the sheet setup is `docs/perf/bench/e-baseline-setup.js`. Prep for G7 (code scouting, deviations from the spec text, order, open questions): `docs/perf/e-items-prep.md` (2026-10-28). Docs reconciled with git on 2026-10-28: the PR 466 fixes are committed (`a7abbed`, `a5dcd88`, `291c398`), working tree clean, 439 tests, `tsc` clean.
+G7 (E1–E6, Tasks 9–14) is done and committed: demo render counter, `e-items-prep.md` and the Before baseline `453c02c`; E1, E5, E6 `8b639d1`; E3 `756e442`; E2 `e081c39`; E4 `96d9ab0`. The demo-only counter is `demo/src/perf-render.ts` (imported first in `demo/src/main.tsx`), the sheet setup is `docs/perf/bench/e-baseline-setup.js`, the prep note is `docs/perf/e-items-prep.md`. Numbers are in `stabilize-bench-results.md` (sections "E1–E6 Before", E1, E5 and E6, E3, E2, E4). Targets not fully met: E2 (the Toolbar still renders on a commit; scroll renders per tick 798 to 54) and E5 (the second context update per commit comes from the `Sheet` offsets effect, G1 in the follow-ups spec, out of scope).
 
-G7 (E1–E6, Tasks 9–14) is implemented in the working tree, in groups committed or ready for commit by the user: E1, E5, E6 (one commit), E3, E2, then E4; numbers in `stabilize-bench-results.md` sections "E1–E6 Before", E1, E5 and E6, E3, E2, E4. Not done: the final review, and the parts of E2/E4 listed as not met there (commit-outside-selection, `getToolbarItem` deps). Nothing open from the PR 466 review. Still open outside it: K8, K6 (remaining parts).
+K6, K7, K9 fixes (2026-10-28, **not committed**): formulas on tabs with no `calcChain` and on tabs not hydrated are now rewritten after a row or column insert or delete, in memory and in Yjs (K6); `#REF!` is flagged on other tabs for a partial formula (K7); compaction waits for a pending remount and stops a multi-chunk run when the document changed (K9). K11 is not a bug (tests added). K8 is accepted for P1 (the spec's part 2 case). Unit suite 63 files, 522 tests; `tsc` clean. Details: results doc section "K6, K7, K9, K11, K8". Not done: the whole-branch diff review, the browser targets of spec section 6, two-window QA (K39, K43), and the app side (dsheets.new).
 
 | Order | Group | Task | What | Reviewer |
 |---|---|---|---|---|
@@ -29,8 +29,8 @@ G7 (E1–E6, Tasks 9–14) is implemented in the working tree, in groups committ
 | done | G5 | 6 | `rebuildLocalStore` (D3, package side) | sonnet |
 | done | G5 | 7 | `appendDsheetUpdate` (D5, package side), bench S12 | sonnet |
 | done | G6 | 8 | Format gate on `meta.format` (F), bench S13 | sonnet |
-| done (uncommitted at the time of writing) | G7 | 9–14 | E1–E6 fewer whole-UI re-renders (demo render counters) | sonnet |
-| 6 | end | | Final whole-branch review on the most capable model; triage the minors below | |
+| done | G7 | 9–14 | E1–E6 fewer whole-UI re-renders (demo render counters); `8b639d1`, `756e442`, `e081c39`, `96d9ab0` | sonnet |
+| partly done | end | | Final review: triage written (`final-review.md`) and K6, K7, K9, K11 resolved, K8 accepted; the whole-branch diff review has not been done | |
 
 Each task has a full brief in the plan. S9–S15 are all used.
 
@@ -39,7 +39,7 @@ Each task has a full brief in the plan. S9–S15 are all used.
 Paste this into a new session:
 
 ```text
-Resume P1 Stabilise. Plan: docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md (Status and Next at the top), branch maitra/stabilize-package. Read docs/perf/NEXT.md first. Use superpowers:subagent-driven-development. Sonnet implementers; opus reviewer for formula work; batch small same-shape tasks. Do G7 now: Tasks 9–14. Never commit, stage or stash. Stop after G7 for my check with commit messages, descriptions and numbered test cases per commit.
+Resume P1 Stabilise. Branch maitra/stabilize-package. Read docs/perf/NEXT.md and docs/perf/final-review.md first. G1 to G7 are done. Next: review the whole branch diff (main...HEAD) on the most capable model, then work through final-review.md section 2 (K17, K18, K12, K10, K29, K28), then the browser targets of spec section 6 and the two-window QA. Never commit, stage or stash; after each group give the commit message, description and numbered test cases.
 ```
 
 The ledger `.superpowers/sdd/2026-10-26-p1-stabilise-remaining/progress.md` is git-ignored, so it exists only on this machine. If it is gone, rebuild state from the plan's Status table and `git log`.
@@ -61,9 +61,9 @@ The ledger `.superpowers/sdd/2026-10-26-p1-stabilise-remaining/progress.md` is g
 
 ## Open findings (promote to tasks or triage at the final review)
 
-The complete list, 39 items with evidence labels, locations and next steps, is `docs/perf/KNOWN-ISSUES.md`. The summary below is the short version.
+The complete list with evidence labels, locations and next steps is `docs/perf/KNOWN-ISSUES.md`; the triage (what to do first) is `docs/perf/final-review.md`. K7 and K11 were removed from the list on 2026-10-28. The summary below is the short version.
 
-1. **K1 and K2 fixed (committed `037248b`)**; the merged-cell and repeated-formula gaps in that fix were closed on 2026-10-28 (PR 466 #6, committed `a7abbed`); see the results doc. Browser-checked 2026-10-27 (relay rig): same-tab formulas and row count (86, 87) reach the peer. The cross-tab formula on an inactive tab does not: that tab has no `data` grid and the rewrite skips it (K6). Values of rewritten formulas on the peer were not checked.
+1. **K1 and K2 fixed (committed `037248b`)**; the merged-cell and repeated-formula gaps in that fix were closed on 2026-10-28 (PR 466 #6, committed `a7abbed`); see the results doc. Browser-checked 2026-10-27 (relay rig): same-tab formulas and row count (86, 87) reach the peer. The cross-tab formula on an inactive tab did not reach the peer then: that tab has no `data` grid and the rewrite skipped it (K6); fixed 2026-10-28 (uncommitted) and covered by unit tests, not re-run in the browser. Values of rewritten formulas on the peer were not checked.
 3. Paste: `docs/paste-sizing-issues.md` and `docs/copy-mechanism-findings.md` (named in the user's notes) are not in this repository tree, so they were not updated. C5 changed paste auto-fit sizing (fonts via the grid's font builder, cached text measurement, batched layout for wrapped cells); the 10k-cell figure and its limits are in the results doc. Whether C5 closes sizing Issues 2 and 3 there has not been verified, and the row-height-from-`fs` minor below suggests part of Issue 3 remains. Not measured: a full paste event (clipboard parse, Yjs write, render).
 4. Deferred minors (final review to triage):
    - Banner shows the previous sheet's cached result for up to about 1 s after a sheet switch, and a cache hit can be served while fonts are loading.
@@ -72,8 +72,8 @@ The complete list, 39 items with evidence labels, locations and next steps, is `
    - A removed-cell stale key stays in `formulasWithWideRangeDeps` for the session.
    - No mounted-React test for the Workbook banner effect.
    - C8: worker path never removes a resolved formula from `formulasWithWideRangeDeps`; warm-up slice budget is checked only between formulas, so one heavy formula can exceed 8 ms; `isAsyncFormulaFunction` checks only top-level AsyncFunction exports; no >10,000-cell range test.
-   - B3: a local commit made while the remount is deferred is written at pre-change coordinates; `use-celldata-compaction.ts` may run in that window; no test for a surgical event in the post-fire, pre-paint hold; the "commit not suppressed" test is near-tautological.
-   - B5: sheets with no calcChain or not yet hydrated are skipped when cross-tab formulas are rewritten (`rowcol.ts`); `#REF!` marking differs between the current-sheet and other-sheet branches; tests lack an apostrophe-in-double-quoted-string case, an unbalanced-quote case and a call-site test; `rangetxt: any`.
+   - B3: a local commit made while the remount is deferred is written at pre-change coordinates (K8, accepted for P1: the spec's part 2 case); compaction in that window is guarded (K9, fixed 2026-10-28, uncommitted); no test for a surgical event in the post-fire, pre-paint hold; the "commit not suppressed" test is near-tautological.
+   - B5: tests lack an apostrophe-in-double-quoted-string case, an unbalanced-quote case and a call-site test; `rangetxt: any`. Fixed 2026-10-28 (uncommitted): sheets with no calcChain or not hydrated are now rewritten (K6), and `#REF!` marking is the same in both branches (K7).
 
 ## App-side work (outside this repo)
 

@@ -993,7 +993,7 @@ Unit suite: 54 files, 439 tests pass (429 before); `tsc` clean. Nothing was run 
 - #16: the 4 / 5 counts of the review were not reproduced (the test setup has no format ranges and no beyond-grid deletes on an insert); the cost of the batch was not measured.
 - #15 against the old code: the plain-text test fails on the old top-of-function call by construction; it was not run against the old file.
 
-## E1–E6 Before: render baseline (2026-10-28, nothing changed yet)
+## E1–E6 Before: render baseline (2026-10-28, nothing changed yet; committed in 453c02c)
 
 Measured before any E change, at `1b838d6` plus the demo-only counter. Method: demo dev build (`npm --prefix demo run dev`, port 5000), built-in browser, 1024x768, URL `http://localhost:5000/?perfRender=1`. The counter is `demo/src/perf-render.ts`, imported first in `demo/src/main.tsx`; it installs a DevTools-style hook (`__REACT_DEVTOOLS_GLOBAL_HOOK__`) before react-dom loads and counts, per root commit, the fibers that re-rendered (`PerformedWork`, descending only where the `child` pointer changed, as DevTools does). `window.__perfRender.reset()` / `.snapshot()`. No package source is touched. Reference sheet: `docs/perf/bench/e-baseline-setup.js` (100 rows x 10 columns, two fill colours, bold column, a 100-cell dropdown column, 2 conditional-format rules, a `borderInfo` config). Interactions are real browser events (click, wheel, mouse move, key), each followed by a 1 s wait. Dev build, so `React.StrictMode` double rendering is not in play (the demo does not use it). Counts are component renders per interaction, `commits` are React root commits.
 
@@ -1037,7 +1037,7 @@ Consequence for E1: moving the rectangle read out of the recipe saves almost not
 
 Caveats: synthetic events skip browser hit-testing and cursor updates; times are one machine, one run of the dev server. The Workbook-level `produceWithPatches` cost with an empty recipe (0.3 ms) stays after E1 on moves that do call `setContext`.
 
-## E5 and E6 (Tasks 13 and 14, 2026-10-28, not committed)
+## E5 and E6 (Tasks 13 and 14, 2026-10-28, committed in 8b639d1)
 
 ### E5: shown comments applied only when the set changes
 
@@ -1103,7 +1103,7 @@ So the second real update is the `Sheet` effect that rebuilds the row and column
 
 **Consequence for the plan.** E5 is worth keeping for the `commentBoxes` identity and the skipped immer produce, but its render-count target depends on G1. Either pull G1 into P1 or drop the "one update per commit" claim from the E5 target.
 
-## E1: a mouse move inside one cell no longer runs the context update (Task 9, 2026-10-28, not committed)
+## E1: a mouse move inside one cell no longer runs the context update (Task 9, 2026-10-28, committed in 8b639d1)
 
 **What changed.** New `SheetOverlay/hover-tracker.ts`:
 - `createHoverTracker({ getRect, locate, isInteracting, requestFrame })` with `shouldProcess(event)` and `reset()`. A move that stays in the cell of the previous processed move, with nothing in progress, returns false and `SheetOverlay`'s `onMouseMove` returns before `setContext`. The cell-area rect is read at most once per animation frame (cached, invalidated by `requestAnimationFrame`); it is not read at all while interacting.
@@ -1129,7 +1129,7 @@ A same-cell move now costs about nothing on the main thread. A cross-cell move i
 
 **Known limitation.** Moves inside one cell skip `overShowLinkCard` and `handleOverlayMouseMove` entirely. Anything that depends on the pointer position within a cell, as opposed to which cell it is in, and is not in the predicate, would stop updating. None was found in the code read (`overShowError` and the hover popup work per cell), but this was read, not exhaustively tested.
 
-## E3: a stable editor handle (Task 11, 2026-10-28, not committed)
+## E3: a stable editor handle (Task 11, 2026-10-28, committed in 756e442)
 
 **What changed.**
 - `Workbook/stable-handle.ts`: `createStableHandle(getLatest)` returns an object with the keys of the api, whose identity never changes. Each function member calls the function of the same name on the latest api; any other member is a getter on the latest api.
@@ -1158,7 +1158,7 @@ Each new handle is a ref-callback call on the host (`setSheetEditorRef`, which a
 
 **Not covered.** A remount while collaborating with a peer; the host in dsheets.new and ddocs.new (they pass their own `hooks` and may pass `afterActivateSheet`, which would replace the keeper's trigger: this repo's `editor-workbook.tsx` does not merge host hooks, not checked for the packaged component); a Workbook whose `currentSheetId` is set before its sheets exist (the keeper would not be re-triggered); the time cost of rebuilding the api per render; hosts that hold a method from the handle across a remount (they now get a method that keeps working on the old handle until the host re-reads the ref).
 
-## E2: heavy UI no longer renders on scroll (Task 10, 2026-10-28, not committed)
+## E2: heavy UI no longer renders on scroll (Task 10, 2026-10-28, committed in e081c39)
 
 **What changed.**
 - `react/context/workbook-store.ts` (pure): `createWorkbookStore` (one value, `getState`, `setState`, `subscribe`), `createSelection(store, selector, isEqual)` (the snapshot logic: returns the last handed-out value while `isEqual` says the new one is the same), `onlyIgnoredKeysChanged(keys)`, and `contextEqualIgnoringScroll`, which ignores `scrollLeft`, `scrollTop`, `visibledatarow` and `visibledatacolumn`.
@@ -1192,7 +1192,7 @@ Per scroll tick, `Toolbar`, `SheetTab`, `SheetItem`, `ContextMenu`, `FilterMenu`
 
 **Known gaps.** Indentation of the Workbook JSX inside the new `WorkbookStableContext.Provider` was not re-formatted (it would re-indent about 280 lines); `eslint` reports it as prettier errors in that file, like the other pre-existing ones.
 
-## E4: paste listener bound once, function list memo narrowed (Task 12, 2026-10-28, not committed)
+## E4: paste listener bound once, function list memo narrowed (Task 12, 2026-10-28, committed in 96d9ab0)
 
 **What changed.**
 - `Workbook/index.tsx`: the document `paste` listener is added once; it calls the latest `onPaste` through a ref. `onPaste` is still rebuilt on every context update (it depends on `context`); it is just no longer removed and added each time.
@@ -1212,4 +1212,45 @@ Per scroll tick, `Toolbar`, `SheetTab`, `SheetItem`, `ContextMenu`, `FilterMenu`
 **Browser checks.** A synthetic `paste` event on `document` reached `onPaste` through the once-bound listener (the handler read the clipboard data: `getData` was called twice). The pasted value did not appear in the cell: the text path needs state set by a real copy and paste (`selectionCache.isPasteAction`), which a synthetic event does not set, so the end-to-end paste result was not verified. The function list could not be opened in the demo: the Sigma button is not in the demo's toolbar at this width, so the grouping change is covered by the unit test only. The paste listener count was taken before any paste.
 
 **Not covered.** A real clipboard paste; the function picker in the UI; a host that moves the Workbook between documents (the listener is bound for the Workbook's lifetime).
+
+## K6, K7, K9, K11, K8: analysis and fixes (2026-10-28, not committed)
+
+Found by reading the code and running tests; nothing here was browser-checked.
+
+### K6: formulas on other tabs were not rewritten when the tab has no calcChain or is not hydrated
+
+**Cause.** In `insertRowCol` and `deleteRowCol` (`core/modules/rowcol.ts`) the loop over tabs did `continue` for a tab whose `calcChain` was nil, which also skipped `rewriteFormulasByScanningSheet`. For a tab with a chain the loop only touches cells through `data?.[r]?.[c]`, and the scan returns at once when `sheet.data` is missing. A tab that is not hydrated keeps its cells in `celldata` (the demo's inactive tabs have no `data`; the warm-up test fixture builds one the same way), so its formulas were never rewritten. The Yjs side had the same blind spot: `snapshotFormulaTexts` and `emitRewrittenFormulasToYdoc` (`utils/ydoc-celldata-changes.ts`) only read `sheet.data`, so even a rewrite would not have reached a peer. [Inference] Lazy hydration means most tabs of a large workbook are in this state until visited; not measured.
+
+**Fix.** The loop no longer skips a tab with no chain (`calcChain ?? []`). `rewriteFormulasInCelldata` rewrites `celldata[].v.f` and flags `#REF!` for a tab with no `data`. The snapshot and the emit read `celldata` when `data` is absent.
+
+**Tests** (`src/editor/utils/structural-edit-other-tabs.test.ts`, 18): for tab B hydrated (control), with no calcChain and unhydrated: row insert, column insert, row delete and column delete on `A` shift `=A!B5` on B in memory and in a second Yjs document; a formula that does not point at `A` is left alone (2 cases); K7 below. Red run before the fix: 12 of 18 failed (all 8 K6 cases for no-calcChain and unhydrated, 4 K7 cases); the hydrated K6 control passed. After: 18 passed.
+
+### K7: `#REF!` marking differed between branches
+
+`deleteRowCol` marked an other-tab cell as an error only when the whole formula was `=#REF!`; the current-sheet branches and the scan use `includes('#REF!')`. Both other-tab sites now use `includes`. Tests: `=SUM(A!B3,1)` on B after deleting row 3 on `A` becomes `=SUM(#REF!,1)` with `v` `#REF!` and an `error`, for B hydrated, with no calcChain and unhydrated; and a column delete (4 of the 18 tests).
+
+### K11: not a bug in the current code
+
+`execfunction` adds a formula to `formulasWithWideRangeDeps` when `RUNTIME_REFERENCE_RE` matches `INDIRECT(` or `OFFSET(` (`formula.ts` about 1968), so such a formula runs on every commit whatever edges were recorded. The warm-up goes through `execfunction`, and a formula whose text changed after it was evaluated is also put on that list. The code comment says formulajs implements neither function today, so both evaluate to an error. I added two tests to `formula-warmup.test.ts` that pass on the current code: after a warm-up both formulas are in the set and a commit to an unreferenced cell evaluates exactly those two; and a formula whose text is replaced between slices stays on the list. The second test passes, but with 102 formulas the first slice may finish the whole warm-up, so it may not exercise the mid-warm-up case. Verdict: close K11; the earlier concern is covered.
+
+### K9: compaction can run in the deferred window; the plan is safe, one write was not
+
+Compaction (`use-celldata-compaction.ts`) checked `remoteUpdateRef` and `collabSyncing` but not the pending-remount flag, so it can start while a structural remount is pending. What that does:
+- The plan is read from the live Yjs document, which already has the peer's structural change, so deletes of ghost `celldata` keys use current coordinates and `skipIfPersistable` re-checks each cell at write time. Its own transactions are local, so the observer ignores them.
+- It also mutates the engine's in-memory sheets and mirrors migrated format ranges into the engine context. The engine grid is stale then, but it only nulls ghosts and writes values that the remount rebuilds from Yjs; the echo hooks are held back while the remount is pending.
+- Real hazard: the plan is applied in chunks of 2,000 changes with an idle yield between chunks, and the `config.borderInfo` change is a whole-value write planned from the old document. If a peer changed borderInfo (or shifted it with a structural edit) between two chunks, the stale value overwrote it. Compaction runs once per document and revision, so this is rare, but it is a silent overwrite.
+
+**Fix.** `canRunCompaction` (remote apply, pending remount, collab syncing) gates both the start and the re-check inside the run, and the hook receives `structuralRemountPendingRef`. `applyCompactionChangesInChunks` is exported, takes a chunk size, returns whether it finished, and stops when the document's state vector differs from what its previous chunk left; the hook then skips the in-memory marking and the compaction is retried later (the revision is only written by the last change). Tests (`use-celldata-compaction.test.ts`, 7): the gate for each condition; all chunks applied when nothing else writes; a peer write between chunk 1 and 2 stops the run after chunk 1 (two deletes applied, four ghosts left); cancelled runs write nothing. Red run: `canRunCompaction is not a function` (7 of 7 failed).
+
+### K8: this is the open case the spec already lists; accepted for P1 (owner's decision, 2026-10-28)
+
+A cell edit keeps the structural remount deferred (`isEditingCell`, retry every 250 ms). If a peer inserts a row above while the owner is editing a cell, the engine grid is the old one. At commit the typed value is written to Yjs at the engine's old coordinates (`r_c`), which in the new document hold the cell that was `r-1` before the shift, so that cell is overwritten and the owner's intended cell keeps its old value. After the remount the typed text sits where the neighbour was. `shouldSkipEchoWrite` (PR 466 #3) already stops the engine's metadata from overwriting the peer's; the position problem is a different one.
+
+The spec section 3 says this is out of scope: "Insert or delete a row while a collaborator edits a cell below it: one of the two changes is lost" is listed under what needs part 2 (relative positions). Options, none fully safe in P1:
+1. Accept and document (recommended). Costs one overwritten neighbour in a rare race.
+2. Infer the shift from the remote celldata key moves and move the commit with it. Needs a reliable way to read the shift from the Yjs events; ambiguous with empty rows. A mistake writes to a wrong cell silently.
+3. Compare the engine's pre-edit value with Yjs and skip the write on a mismatch. A false positive (computed fields differ) would drop legitimate edits. Not recommended.
+4. Hold the commit and apply the remount first. The target cell is still unknown after the remount.
+
+**Totals:** 63 files, 522 tests pass (495 before: +18, +2, +7); `tsc --noEmit` clean.
 

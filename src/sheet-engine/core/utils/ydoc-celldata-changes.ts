@@ -253,7 +253,17 @@ export function snapshotFormulaTexts(ctx: Context): FormulaTextSnapshot {
   const out: FormulaTextSnapshot = new Map();
   (ctx.luckysheetfile ?? []).forEach((sheet: any) => {
     const { data } = sheet;
-    if (!data || sheet.id == null) return;
+    if (sheet.id == null) return;
+    if (!data) {
+      // A tab that is not hydrated keeps its cells in celldata (K6).
+      if (!Array.isArray(sheet.celldata)) return;
+      const celldataTexts = new Map<string, string>();
+      sheet.celldata.forEach((entry: any) => {
+        if (entry?.v?.f) celldataTexts.set(`${entry.r}_${entry.c}`, entry.v.f);
+      });
+      if (celldataTexts.size > 0) out.set(String(sheet.id), celldataTexts);
+      return;
+    }
     const texts = new Map<string, string>();
     for (let r = 0; r < data.length; r += 1) {
       const row = data[r];
@@ -287,14 +297,21 @@ export function emitRewrittenFormulasToYdoc(
   const changes: CelldataYdocChange[] = [];
   (ctx.luckysheetfile ?? []).forEach((sheet: any) => {
     const texts = before.get(String(sheet.id));
-    if (!texts || !sheet.data) return;
+    if (!texts || (!sheet.data && !Array.isArray(sheet.celldata))) return;
     const isEdited = String(sheet.id) === String(editedSheetId);
+    const celldataByKey = sheet.data
+      ? null
+      : new Map<string, any>(
+          sheet.celldata.map((entry: any) => [`${entry?.r}_${entry?.c}`, entry]),
+        );
     texts.forEach((oldF, key) => {
       const sep = key.indexOf('_');
       const r = Number(key.slice(0, sep));
       const c = Number(key.slice(sep + 1));
       if (isEdited && (r >= editedFromR || c >= editedFromC)) return;
-      const cell = sheet.data[r]?.[c];
+      const cell = sheet.data
+        ? sheet.data[r]?.[c]
+        : celldataByKey!.get(key)?.v;
       if (!cell?.f || cell.f === oldF) return;
       changes.push({
         sheetId: String(sheet.id),
