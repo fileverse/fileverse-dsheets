@@ -15,6 +15,8 @@ import { hasPartMC, isRealNum } from '../modules/validation';
 import { getBorderInfoCompute } from '../modules/border';
 import { expandRowsAndColumns, storeSheetParamALL } from '../modules/sheet';
 import { jfrefreshgrid } from '../modules/refresh';
+import { execFunctionGroup } from '../modules/formula';
+import { isFormulaEvalPending } from '../modules/formula-async-eval';
 import { CFSplitRange, saveHyperlink, spillSortResult } from '../modules';
 import {
   calculateRangeCellSize,
@@ -270,9 +272,15 @@ function postPasteCut(
     target.curDataVerification;
 
   ctx.formulaCache.execFunctionExist.reverse();
+  // Run the pass the list was built for: formulas that read the source or the
+  // target recalculate, and the pass clears the list. Left set, the next
+  // commit anywhere used it as its edited cells and skipped its own
+  // dependents (PR 466 N6).
   // @ts-ignore
-  // execFunctionGroup(ctx, null, null, null, null, target.curData);
-  ctx.formulaCache.execFunctionGlobalData = null;
+  execFunctionGroup(ctx, null, null, null, null, target.curData);
+  if (!isFormulaEvalPending(ctx)) {
+    ctx.formulaCache.execFunctionGlobalData = null;
+  }
 
   // const index = getSheetIndex(ctx, ctx.currentSheetId);
   // const file = ctx.luckysheetfile[index];

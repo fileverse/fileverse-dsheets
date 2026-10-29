@@ -2,6 +2,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { defaultContext } from '../context';
 import { loadLocale } from '../locale';
+import { updateCell } from '../modules/cell';
+import {
+  groupValuesRefresh,
+  runFormulaEvalChunk,
+} from '../modules/formula';
 import { pasteHandler, pasteHandlerOfCutPaste } from './paste-internals';
 
 const makeCtx = () => {
@@ -124,5 +129,69 @@ describe('cut-paste moves the calc chain entry', () => {
   it('a paste onto the cut cell itself keeps its entry once', () => {
     const ctx = cutPaste([0, 1], [0, 1]);
     expect(chainKeys(ctx)).toEqual(['0_1']);
+  });
+});
+
+// PR 466 round 4 (N6): postPasteCut left the source and target cells in
+// formulaCache.execFunctionExist, so the next commit anywhere recalculated
+// those instead of its own dependents.
+describe('the first commit after a cut-paste recalculates its own dependents', () => {
+  // Formula values are written by deferred chunks; run them to completion.
+  const settle = (ctx: any) => {
+    while (ctx.formulaAsyncEval) {
+      if (runFormulaEvalChunk(ctx, ctx.formulaAsyncEval, 50)) {
+        ctx.formulaAsyncEval = null;
+        ctx.isFormulaCalculating = false;
+      }
+    }
+    groupValuesRefresh(ctx);
+  };
+  const setup = () => {
+    const ctx = makeCtx();
+    const data = ctx.luckysheetfile[0].data;
+    data[0][0] = { v: 5, m: '5' };
+    data[5][0] = { v: 5, m: '5' };
+    data[0][1] = { v: 10, m: '10', f: '=A1*2' };
+    data[5][1] = { v: 10, m: '10', f: '=A6*2' };
+    data[0][2] = { v: 11, m: '11', f: '=B1+1' };
+    ctx.luckysheetfile[0].calcChain = [
+      { r: 0, c: 1, id: 's1' },
+      { r: 5, c: 1, id: 's1' },
+      { r: 0, c: 2, id: 's1' },
+    ];
+    ctx.luckysheet_select_save = [
+      { row: [3, 3], column: [3, 3], row_focus: 3, column_focus: 3 },
+    ];
+    pasteHandlerOfCutPaste(ctx, {
+      copyRange: [{ row: [0, 0], column: [1, 1] }],
+      dataSheetId: 's1',
+      HasMC: false,
+      RowlChange: false,
+    } as any);
+    return ctx;
+  };
+
+  it('leaves no edited-cell list behind', () => {
+    expect(setup().formulaCache.execFunctionExist).toBeUndefined();
+  });
+
+  it('a commit to an unrelated precedent updates its formula', () => {
+    const ctx = setup();
+    updateCell(ctx, 5, 0, null, 50);
+    settle(ctx);
+    expect(ctx.luckysheetfile[0].data[5][1].v).toBe(100);
+  });
+
+  it('a commit to the moved formula\'s precedent updates it at its new place', () => {
+    const ctx = setup();
+    updateCell(ctx, 0, 0, null, 7);
+    settle(ctx);
+    expect(ctx.luckysheetfile[0].data[3][3].v).toBe(14);
+  });
+
+  it('a formula that read the cut cell is recalculated by the paste itself', () => {
+    const ctx = setup();
+    settle(ctx);
+    expect(ctx.luckysheetfile[0].data[0][2].v).toBe(1);
   });
 });

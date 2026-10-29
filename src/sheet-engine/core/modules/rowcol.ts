@@ -246,6 +246,14 @@ const markCellRefError = (cell: Cell) => {
   }
 };
 
+/**
+ * Rewrite the cross-tab formulas of a tab that is not loaded (K6). History
+ * records an in-place edit of an array by position, so a rewrite of single
+ * entries could not be undone once the array changed (a peer's cell, the tab
+ * loading): it threw, or put the text on another cell, and never reached Yjs
+ * (PR 466 N1). The array is replaced as a whole instead, and only when an
+ * entry changed. Only a formula that contains `!` can name another tab.
+ */
 const rewriteFormulasInCelldata = (
   sheet: Sheet,
   mode: 'add' | 'del',
@@ -256,16 +264,21 @@ const rewriteFormulasInCelldata = (
   editedTab: string,
 ) => {
   if (!Array.isArray(sheet.celldata)) return;
-  sheet.celldata.forEach((entry: any) => {
-    const cell = entry?.v;
-    if (!cell?.f) return;
-    const newF = `=${functionStrChange(cell.f, mode, rc, orient, stindex, step, {
+  let changed = false;
+  const next = sheet.celldata.map((entry: any) => {
+    const f = entry?.v?.f;
+    if (typeof f !== 'string' || !f.includes('!')) return entry;
+    const newF = `=${functionStrChange(f, mode, rc, orient, stindex, step, {
       editedTab,
       formulaTab: sheet.name,
     })}`;
-    cell.f = newF;
+    if (newF === f) return entry;
+    changed = true;
+    const cell = { ...entry.v, f: newF };
     if (newF.includes('#REF!')) markCellRefError(cell);
+    return { ...entry, v: cell };
   });
+  if (changed) sheet.celldata = next;
 };
 
 const rewriteFormulasByScanningSheet = (
@@ -335,8 +348,6 @@ export function insertRowCol(
   changeSelection: boolean = true,
 ) {
   let { count, id } = op;
-  // Formulas shift and are rewritten without being evaluated (C8).
-  ctx.formulaCache.markDepGraphIncomplete();
   const { type, index, direction, templateSourceRows, templateSourceColumns } =
     op;
   id = id || ctx.currentSheetId;
@@ -421,6 +432,10 @@ export function insertRowCol(
   if (type === 'column' && d[0] && d[0].length + count >= 1000) {
     throw new Error('maxExceeded');
   }
+
+  // Formulas shift and are rewritten without being evaluated (C8). Only once
+  // the edit is certain: a refused insert changes nothing (PR 466 N9).
+  ctx.formulaCache.markDepGraphIncomplete();
 
   const insertSnapBounds = getInsertRowColSnapshotBounds(
     type,
@@ -1817,8 +1832,6 @@ export function deleteRowCol(
   const { type } = op;
   let { start, end, id } = op;
   id = id || ctx.currentSheetId;
-  // Formulas shift and are rewritten without being evaluated (C8).
-  ctx.formulaCache.markDepGraphIncomplete();
 
   // if (
   //   type == "row" &&
@@ -1867,6 +1880,10 @@ export function deleteRowCol(
 
   const d = file.data;
   if (!d) return;
+
+  // Formulas shift and are rewritten without being evaluated (C8). Only once
+  // the edit is certain: a refused delete changes nothing (PR 466 N9).
+  ctx.formulaCache.markDepGraphIncomplete();
 
   if (start < 0) {
     start = 0;

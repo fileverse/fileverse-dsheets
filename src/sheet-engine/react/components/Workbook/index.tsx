@@ -94,6 +94,7 @@ import {
   type RestoredCell,
 } from '@sheet-engine/core/modules/history-calc-chain';
 import { gridSizeChangesFromPatches } from '@sheet-engine/core/modules/history-grid-size';
+import { celldataArrayChanges } from '@sheet-engine/core/modules/history-celldata';
 import React, {
   useMemo,
   useState,
@@ -508,6 +509,17 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
                 }
               }
             }
+            return;
+          }
+
+          // A structural edit on another tab rewrote this unloaded tab's
+          // cross-tab formulas as one replacement of its celldata (N1).
+          if (root === 'celldata' && path.length === 3) {
+            celldataArrayChanges(
+              sheetId,
+              sheetBefore?.celldata,
+              sheetAfter?.celldata,
+            ).forEach(upsert);
             return;
           }
 
