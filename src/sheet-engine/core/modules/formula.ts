@@ -21,6 +21,12 @@ import {
 } from './cell';
 import { error, detectErrorFromValue, isNumericCellType } from './validation';
 import { locale } from '../locale';
+import {
+  FormulaArrowMode,
+  FormulaArrowOverride,
+  isTextChangingKeyCode,
+  resolveArrowMode,
+} from './formula-arrow-mode';
 import { getRangeColor } from './color';
 import { colLocation, mousePosition, rowLocation } from './location';
 import {
@@ -335,6 +341,15 @@ export class FormulaCache {
   // Keyboard-only gate: when opening an existing formula cell, block keyboard
   // range navigation until the formula text is manually edited.
   keyboardRangeSelectionLock?: boolean;
+
+  // Sticky F2 choice for the current edit session (see formula-arrow-mode.ts).
+  // null/undefined = automatic. Cleared when the edit session ends.
+  arrowOverride?: FormulaArrowOverride;
+
+  // false when the session opened on an existing formula (F2 / double-click /
+  // formula bar): arrows move the caret until the user presses F2.
+  // undefined = true.
+  arrowAutoAllowed?: boolean;
 
   /** True after arrow/Shift+arrow moved `func_selectedrange` without updating yellow selection. */
   formulaKeyboardRefSync?: boolean;
@@ -4351,6 +4366,8 @@ export function isBareCellOrRangeOnlyFormula(formulaText: string): boolean {
 export function suppressFormulaRangeSelectionForInitialEdit(ctx: Context) {
   ctx.formulaCache.rangeSelectionActive = false;
   ctx.formulaCache.keyboardRangeSelectionLock = true;
+  ctx.formulaCache.arrowAutoAllowed = false;
+  ctx.formulaCache.arrowOverride = null;
   ctx.formulaCache.rangestart = false;
   ctx.formulaCache.rangedrag_column_start = false;
   ctx.formulaCache.rangedrag_row_start = false;
@@ -4573,6 +4590,10 @@ export function handleFormulaInput(
     if (ctx.formulaCache.rangeSelectionActive === true) {
       if (isBackspaceOrDelete || isAlphaNumeric) {
         markRangeSelectionDirty(ctx);
+      } else if (isTextChangingKeyCode(kcode)) {
+        // Operator / comma / space etc: the arrow-driven reference is finished.
+        // The next mode is derived from the caret position (e.g. `+` -> READY).
+        ctx.formulaCache.rangeSelectionActive = null;
       }
     }
 
@@ -5300,75 +5321,65 @@ export function israngeseleciton(ctx: Context, istooltip?: boolean) {
   return false;
 }
 
-// Single source of truth for whether the caret is currently in a
-// "formula reference selection" flow (i.e., where range tokens should be
-// inserted/updated by keyboard/mouse navigation).
+/** Caret offset inside `editor` (same space as `textContent`), or null when the selection is elsewhere. */
+function getCaretOffsetInEditor(editor: HTMLElement): number | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return null;
+  if (!editor.contains(sel.anchorNode)) return null;
+  const pre = document.createRange();
+  pre.selectNodeContents(editor);
+  const r = sel.getRangeAt(0);
+  pre.setEnd(r.endContainer, r.endOffset);
+  return normalizeFormulaBoundaryText(pre.toString()).length;
+}
+
+/**
+ * Single source of truth for what an arrow key does while editing.
+ * Thin ctx/DOM adapter over the pure `resolveArrowMode`.
+ */
+export function getFormulaArrowMode(ctx: Context): FormulaArrowMode {
+  const editing = ctx.luckysheetCellUpdate.length > 0;
+  const editor = editing ? getActiveFormulaEditorElement(ctx) : null;
+  if (!editing || !editor) {
+    return resolveArrowMode({
+      editing: editing && !!editor,
+      text: '',
+      caretOffset: null,
+      override: null,
+      autoAllowed: true,
+      refActive: false,
+    });
+  }
+
+  const text = normalizeFormulaBoundaryText(editor.textContent || '');
+  const caretOffset = getCaretOffsetInEditor(editor);
+  const fc = ctx.formulaCache;
+
+  const dragging =
+    !!fc.rangestart || !!fc.rangedrag_column_start || !!fc.rangedrag_row_start;
+  // A reference the keyboard/mouse just inserted stays "active" while the caret
+  // is still on it (or focus has left the editor, e.g. after a sheet-tab switch).
+  const refActive =
+    dragging ||
+    (fc.rangeSelectionActive === true &&
+      (caretOffset === null ||
+        getFormulaRangeIndexAtCaret(editor) !== null ||
+        isBareCellOrRangeOnlyFormula(text)));
+
+  return resolveArrowMode({
+    editing: true,
+    text,
+    caretOffset,
+    override: fc.arrowOverride ?? null,
+    autoAllowed: fc.arrowAutoAllowed !== false,
+    refActive,
+  });
+}
+
+/** True while arrows should drive a cell reference (READY or ACTIVE). */
 export function isFormulaReferenceInputMode(ctx: Context): boolean {
-  const editor = getActiveFormulaEditorElement(ctx);
-  const inputText = (editor?.innerText || '').trim();
-  const hasActiveRangeDrag =
-    !!ctx.formulaCache.rangestart ||
-    !!ctx.formulaCache.rangedrag_column_start ||
-    !!ctx.formulaCache.rangedrag_row_start;
-  const caretAtValidInsertionPoint =
-    !!editor && isCaretAtValidFormulaRangeInsertionPoint(editor);
-
-  const refFlowActive =
-    hasActiveRangeDrag || ctx.formulaCache.rangeSelectionActive === true;
-
-  if (!inputText.startsWith('=')) {
-    return false;
-  }
-
-  // If a range was just inserted (kbd/mouse) and the caret is still on that
-  // managed range span, keep ref-input mode so arrow keys keep extending the
-  // range (e.g. `=A2` → arrow → `=A3`). This mirrors main's `refFlowActive`
-  // short-circuit and bypasses the bare-cell pattern check below for actively
-  // managed tokens. Dirty edits clear `rangeSelectionActive`, so this does not
-  // re-enable navigation after the user manually edited a token.
-  if (
-    ctx.formulaCache.rangeSelectionActive === true &&
-    editor &&
-    getFormulaRangeIndexAtCaret(editor as HTMLDivElement) !== null
-  ) {
-    return true;
-  }
-
-  // Same for bare `=A1` / `=Sheet2!A1` when the insert is still clean but the
-  // caret is no longer inside the span (e.g. after a sheet-tab switch).
-  if (
-    ctx.formulaCache.rangeSelectionActive === true &&
-    isBareCellOrRangeOnlyFormula(inputText)
-  ) {
-    return true;
-  }
-
-  // While user is still typing a function/identifier right after "="
-  // (e.g. "=SUM" or "=kjnskfv"), do not treat it as range-reference mode.
-  // Range-reference mode should start at insertion points such as "(" or ",".
-  if (/^=\s*[A-Za-z_][A-Za-z0-9_]*$/.test(inputText)) {
-    return false;
-  }
-
-  // Dirty/manual-edit mode is sticky for the current edit session: do not
-  // auto-recover range mode just because caret reaches a syntactically valid slot.
-  if (ctx.formulaCache.rangeSelectionActive === false) {
-    return false;
-  }
-
-  // During active mouse drag/resize keep range mode on; for non-drag keyboard
-  // states, still require caret to be at a valid insertion point.
-  if (refFlowActive) {
-    if (hasActiveRangeDrag) return true;
-    return caretAtValidInsertionPoint;
-  }
-
-  // Priority: valid caret entry point should reopen reference mode first.
-  if (caretAtValidInsertionPoint) {
-    return true;
-  }
-
-  return israngeseleciton(ctx);
+  const mode = getFormulaArrowMode(ctx);
+  return mode === 'REFERENCE_READY' || mode === 'REFERENCE_ACTIVE';
 }
 
 export function maybeRecoverDirtyRangeSelection(ctx: Context): boolean {
