@@ -6,7 +6,7 @@ Written 2026-10-28 on `maitra/stabilize-package` (185 files, about 20,000 lines 
 
 ## 1. Recommended before merge (status updated 2026-10-28, same day, after analysis)
 
-**K6, K7, K9 are fixed or hardened with tests (uncommitted), K11 is closed as not a bug, K8 is accepted for P1 as a documented limitation (owner's decision, 2026-10-28).** See the results doc section "K6, K7, K9, K11, K8". The table below is the original list.
+**K6, K7, K9 are fixed or hardened with tests (committed in `9f614a5`), K11 is closed as not a bug, K8 is accepted for P1 as a documented limitation (owner's decision, 2026-10-28).** See the results doc section "K6, K7, K9, K11, K8". The table below is the original list.
 
 Chosen for silent wrong values or lost edits, not for performance.
 
@@ -22,7 +22,7 @@ Chosen for silent wrong values or lost edits, not for performance.
 
 | ID | Note |
 |---|---|
-| K17 | In a room with about 10 editors the dependency graph can reset almost continuously, so commits keep taking the full pass (the target scenario of the spec). Needs the spec's "update only changed edges" follow-up. |
+| K17 | **Fixed 2026-10-29 in `7847262`.** A collaborator's formula keeps the graph complete (its cell's edges are replaced from its text) and a remote calcChain update is diffed instead of resetting the indexes. Not run in a room with two clients. |
 | K18 | The completeness flag is cleared by format-only operations and undo. Narrow the conditions. |
 | K12 | Warm-up orphan entry and a chain removal without an epoch bump: trace both. |
 | K10 | `remoteUpdateRef.current = false` set directly in `editor-workbook.tsx`, overriding the depth-derived guard (pre-existing). Route through the guard helpers. |
@@ -61,6 +61,14 @@ Browser targets of spec section 2 that no run has produced: commit-to-paint on 1
 - 2026-10-28, after the K6 to K11 work: statuses in section 1 updated; `NEXT.md`, the plan, the spec status table, the audit doc, `e-items-prep.md` and the results doc brought in line.
 
 
-## Update 2026-10-28 (uncommitted)
+## Update 2026-10-28 (committed in `f0c7334`)
 
 Two spec deviations from the audit are closed: C8 now builds its index from formula text (`formula-dep-text.ts`, no evaluation), and B3 holds the remote-apply guard while a remount is deferred. K16 is closed; K8 stays accepted. Unit suite 64 files, 554 tests; `tsc` clean. Not browser-checked after these two changes.
+
+## Update 2026-10-29
+
+- **C8 spec changes** (committed in `7847262`): a wide formula (range over 10,000 cells) joins a commit's walk only when its range holds the edited cell or a formula cell the walk reaches (it keeps its ranges in `wideRangesByFormula`; one whose ranges cannot be read from its text joins every walk). A collaborator's formula keeps `depGraphComplete`, and `setSheetCalcChain` diffs the chain. K17 is closed. Node figures: commit outside 5 wide ranges 21.8 ms to 0.13 ms; commit after a remote formula, 500 formulas 4.19 ms to 0.024 ms and 2,000 formulas 15.6 ms to 0.031 ms (the second "before" is an emulation).
+- **PR 466 round 4** (ten new comments N1 to N10 on `f0c7334`): all fixed. `b046b97` (N2 warm-up reads unloaded tabs from celldata, N4 digit-only tab names, N5 backslash in strings, N8 accented tab names), `5f0cb23` (N1 unloaded-tab rewrite replayable by undo and redo, N9 refused edit keeps the graph, N6 cut-paste pass), `24fabfc` (N3 hover predicate for drag states, N7 comment key follows the box, N10 compaction retry). Details: `pr-466-review.md` sections 12 to 16.
+- Unit suite 66 files, 618 tests; `tsc` clean.
+- **Section 2 now:** K18, K12, K10, K29, K28 (K17 done). New limits from this work are K56 to K61 in `KNOWN-ISSUES.md`.
+- **Still not done:** the whole-branch diff review, the browser targets of spec section 6, two-window QA (K39, K43, K57, K60, K61), and the app side (dsheets.new).

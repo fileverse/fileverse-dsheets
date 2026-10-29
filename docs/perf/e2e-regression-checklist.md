@@ -296,6 +296,25 @@ Use a sheet of about 100 rows with a dropdown column, fills and a comment on one
 
 Report any case where a control shows a stale state (for example Bold not following the selection), which would point at a context key the E2 ignore list should not skip.
 
+### 1.23 C8 spec changes and PR 466 round 4 [N1 to N10, Tasks after G7]
+
+Use a workbook with formulas on two tabs (`A` and `B`, with `B` holding `=A!B5`) and one large range formula such as `=SUM(A1:A20000)` on a third tab. None of these cases has been run in a browser (`KNOWN-ISSUES.md` K57, K60, K61).
+
+1. With formulas on tabs A and B, switch to tab A, then edit a cell nothing refers to (type, press Enter) → the edit commits without delay and no new red console error appears. Leave the sheet 5 seconds, repeat → still no delay. [N2]
+2. Type `=2025!A1` style formulas on tabs named `2025` and `2026` (`=2025!A1+2026!A1`), then change 2025's A1 → the sum updates. [N4]
+3. In a formula, type `=A1&"\"&B1`, then change B1 → the result follows B1. [N5]
+4. Name a tab `Étude`, write `=Étude!A1*2` on another tab, change `Étude`'s A1 → the formula updates. [N8]
+5. On tab A insert two rows above row 5 while tab B (not the active tab) reads `A!B5` → B's formula reads `A!B7`. Press Ctrl+Z on A → B's formula reads `A!B5` again, no error in the console, and a second window sees the same text. Press Ctrl+Y → `A!B7` again. [N1]
+6. Repeat 5, but a collaborator edits another cell on B between the insert and the undo → B's other cell may show the old value in your window until the next sync (`KNOWN-ISSUES.md` K56); note what you see. [N1]
+7. Drag-select downward past the last visible row and keep the pointer below the grid → the sheet keeps scrolling on every pointer move. [N3]
+8. Drag a column border across several columns → the guide line follows the pointer smoothly. Repeat with a row border, the fill handle, a row header, a column header and a freeze line. [N3]
+9. Try to insert a row into a row set read-only, and insert past 10,000 rows → both are refused, and an unrelated edit afterwards is still instant. [N9]
+10. `A1=5`, `B1 =A1*2`, `C1 =B1+1`, `A6=5`, `B6 =A6*2`. Cut B1, paste at D4 → C1 shows 1 at once. Set A6 to 50 → B6 shows 100. Set A1 to 7 → D4 shows 14. [N6]
+11. Pin a comment open, drag it to a new place, then resize it → it stays where you put it, also after a collaborator moves another pinned comment; a collaborator's move of yours shows up in your window. [N7]
+12. Open a sheet with collaboration still syncing and leave it → compaction starts after sync finishes, without a reload (check the console for `[DSheet] Compaction failed`, which must not appear). [N10]
+13. In a room, window A types a formula in a cell; window B then edits an unrelated cell → B's edit is instant, and the formula in A shows in B with A's value. [C8 spec change, K61]
+14. Window A pastes or types several formulas quickly while B edits an unrelated cell → B stays responsive during the whole burst. [C8 spec change, K61]
+
 ---
 
 ## 2. Owner ↔ Collaborator

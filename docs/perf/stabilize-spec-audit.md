@@ -61,3 +61,13 @@ Section 1 item 2 (E1–E6) is done and committed (`8b639d1`, `756e442`, `e081c39
 ## Update 2026-10-28
 
 C8 and B3 now follow the ticket text. C8: the warm-up builds the index from formula text (`formula-dep-text.ts`), with its own tokenizer, no `execfunction` call and no other tab loaded; tests pin edge parity with `execfunction` and the INDEX, space, `Q1-2026!A1` and named-range cases. B3: the remote-apply guard begins when a remount becomes pending, is held while it is deferred, and ends after paint. Section 2 items 1 and 4 are closed. Not yet browser-checked after this change. Unit suite 64 files, 554 tests; `tsc` clean.
+
+
+## Update 2026-10-29
+
+- **Spec text added the same day, now implemented** (committed in `7847262`): (1) a wide formula joins the walk only when its range, read from its text, holds the edited cell or any formula cell the walk reaches, a named-range formula when its name covers either, and one whose ranges cannot be read joins every walk; (2) a collaborator's formula keeps `depGraphComplete` (the cell's edges are replaced from its text, a value that is no longer a formula drops them) and `setSheetCalcChain` diffs the chain instead of resetting the indexes, resetting only when the diff cannot be computed. Deviation that remains: named-range formulas join through the edited cell by the existing text scan, not through a reached formula cell, unless the name's range is wide or has cell edges (`KNOWN-ISSUES.md` K59).
+- **Section 2 now:** items 1 (C8 index) and 4 (B3 guard) are closed (2026-10-28, `f0c7334`). Items 2, 5, 6 and 7 are unchanged. Item 3 is closed since 2026-10-27.
+- **Section 1** items 8 and 9 are unchanged: no 198k commit-to-paint, scroll p95, Profiler pass or real 10,000-cell paste event was measured; the app side is outside this repo.
+- **PR 466 round 4** found gaps in the code that implements this spec's C8 and K6 rewrite: the warm-up aborted with a tab that has no grid (N2), the text reader differed from `execfunction` on digit-only tab names, backslashes and accented tab names (N4, N5, N8), and history could not replay the rewrite of an unloaded tab (N1). All fixed in `b046b97` and `5f0cb23`; see `pr-466-review.md` sections 12 to 16.
+- Unit suite 66 files, 618 tests; `tsc` clean. Not browser-checked.
+

@@ -18,7 +18,7 @@ Evidence labels used below:
 - **Not checked**: not verified in this session.
 - **Reviewer figure**: a number taken from the review comment, not re-measured here.
 
-Sections 1 to 8 describe the review as validated on 2026-10-28 before any fix. All 18 comments were fixed afterwards in three rounds (must-fix #1 to #6, should-fix #7 to #14, low #15 to #18); see sections 9 to 11. Fix designs in the sections above are the proposals that were made; they are labeled [Inference] where they rest on reasoning rather than a run.
+Sections 1 to 8 describe the review as validated on 2026-10-28 before any fix. All 18 comments were fixed afterwards in three rounds (must-fix #1 to #6, should-fix #7 to #14, low #15 to #18); see sections 9 to 11. A fourth round of ten comments (N1 to N10, on `f0c7334`, 2026-10-29) was validated in section 12 and fixed in sections 13 to 15; the commits are listed at the end of this file. Fix designs in the sections above are the proposals that were made; they are labeled [Inference] where they rest on reasoning rather than a run.
 
 ## 2. Verdict summary
 
@@ -272,7 +272,7 @@ In `editor-context.tsx` `watchFormatGate(...)` calls `setFormatLocked(true)`. Th
 
 ## 7. Proposed test cases (do X, expect Y)
 
-These are proposals; none have been written.
+These were proposals when section 12 was written; the tests that came from them are listed per fix in sections 13 to 15.
 
 1. Merge A1:D1, `A2 =B5`, `C2 =SUM(B1:B10)`, insert a row at index 2. Peer Yjs doc formulas equal the engine's (`=B6`, `=SUM(B1:B11)`). Failing before the fix (Run).
 2. A11:A16 all `=$B$5`, insert a row at index 3. Peer shows `=$B$6` in all six. Failing before the fix (Run).
@@ -363,9 +363,9 @@ Side effects to know about:
 
 All 18 inline review comments are now fixed. Still open and outside the review: K8 (position of a commit during a deferred remount), the remaining parts of K6 (sheets with no calcChain, unhydrated sheets), the dead y-indexeddb `'error'` listeners, and `rebuildLocalStore` dropping rows the live doc never loaded.
 
-## 12. Fourth round: ten new comments on `f0c7334` (validated 2026-10-29, no fix yet)
+## 12. Fourth round: ten new comments on `f0c7334` (validated 2026-10-29; fixed, see sections 13 to 15)
 
-Reviewer: nadeem-fileverse, posted 2026-10-29 on `f0c7334`. Read through the GitHub REST API (`/pulls/466/comments`). Each comment was checked against the code at HEAD; the claims that could be run were run in temporary Vitest files, which were deleted afterwards (working tree unchanged except this doc). Evidence labels as in section 1.
+Reviewer: nadeem-fileverse, posted 2026-10-29 on `f0c7334`. Read through the GitHub REST API (`/pulls/466/comments`). Each comment was checked against the code at HEAD; the claims that could be run were run in temporary Vitest files, which were deleted afterwards (working tree unchanged except this doc). Evidence labels as in section 1. This section records the state before any fix; the fixes and their evidence are in sections 13 to 15.
 
 | # | Severity | File:line | Topic | Verdict | Evidence |
 |---|---|---|---|---|---|
@@ -392,7 +392,7 @@ Reviewer: nadeem-fileverse, posted 2026-10-29 on `f0c7334`. Read through the Git
 - **N3.** Read: `mouse.ts:3821-3850` runs `mouseRender` for `luckysheet_scroll_status`, `select_status`, `rows_selected_status`, `cols_selected_status`, `cell_selected_move`, `cell_selected_extend`, `cols_change_size`, `rows_change_size`; `isHoverInteractionActive` lists only `luckysheet_cell_selected_move`. The reviewer's counts (2 of 8 moves; `[true,false,false,false,false]` below the grid) were not re-run. The freeze-line and formula range drag states named in the comment were not traced.
 - **N4.** Run, tabs `Sheet1`, `2025`, `2026`, formula `=2025!A1+2026!A1` in Sheet1 B6-ish cell: the text reader records `s1:0:0` only; `execfunction` records `s2:0:0` and `s3:0:0`. Cause (Read): the loop treats a leading digit as a number before trying a tab prefix, except for the `1:3` row-range case.
 - **N5.** Run: `=A1&"\"&B1` text reader `{A1}`, engine `{A1,B1}`. `=IF(A1="x\",B1,C1)` text reader `{A1}`, engine `{A1,B1,C1}`. Cause (Read, `formula-dep-text.ts:213`): `i += s[i] === '\\' ? 2 : 1`. The engine escapes only `""`.
-- **N6.** Read: `postPasteCut` fills `execFunctionExist` with source and target cells (`paste-internals.ts:144-165`), its `execFunctionGroup` call is commented out (`:274`), and `execFunctionGroup` builds its edited-cell set from that list when it is set (`formula.ts:2698-2704`). Run: A1=5, A6=5, B1 `=A1*2`, B6 `=A6*2`, cut B1 to D4, then `updateCell(A6, 50)`: B6 stays 10 (want 100). The first commit is consumed by the leftover list, as the comment says. Not reproduced: a following `updateCell(A1, 7)` also left D4 at 10 in this harness (the comment says the second commit works). Not investigated; [Unverified] whether that is the harness (the fixture has no running formula-pass setup) or a second bug.
+- **N6.** Read: `postPasteCut` fills `execFunctionExist` with source and target cells (`paste-internals.ts:144-165`), its `execFunctionGroup` call is commented out (`:274`), and `execFunctionGroup` builds its edited-cell set from that list when it is set (`formula.ts:2698-2704`). Run: A1=5, A6=5, B1 `=A1*2`, B6 `=A6*2`, cut B1 to D4, then `updateCell(A6, 50)`: B6 stays 10 (want 100). The first commit is consumed by the leftover list, as the comment says. Not reproduced then: a following `updateCell(A1, 7)` also left D4 at 10 in this harness (the comment says the second commit works). Explained later (section 15): the harness had no `settle` step for the deferred formula chunks, so it was the harness, not a second bug.
 - **N7.** Read: `shownCommentsKey` joins `sheetId` and `r_c` of each shown cell only, so a move or resize that changes only `ps` leaves the key equal. The effect that applies `showComments` is gated on this key (E5). Not run in a mounted component.
 - **N8.** Run, tabs `Sheet1`, `Étude`, formula `=Étude!A1*2`: text reader records no dependency and marks the formula wide; `execfunction` records `s2:0:0`, not wide. Cause (Read): the token-start test is `/[A-Za-z0-9_$.']/`.
 - **N9.** Read: `insertRowCol` calls `markDepGraphIncomplete()` at `:339`; the `readOnly` throws are at `:395-413` and `maxExceeded` at `:417-423`, and `if (!d) return` is at `:362`. The same pattern is in `deleteRowCol` (`:1821` before the throws at `:1850-1865`). Not run.
@@ -410,7 +410,7 @@ Reviewer: nadeem-fileverse, posted 2026-10-29 on `f0c7334`. Read through the Git
 3. N3 (extend `isHoverInteractionActive`).
 4. N6, N7, then N9, N10.
 
-### Proposed tests (none written)
+### Proposed tests (written in sections 13 to 15)
 
 1. N1: unloaded tab B, insert on A, undo then redo: engine and Yjs agree, no throw, also after B is loaded and after a peer edit to B.
 2. N2: two formula tabs, one without a grid: warm-up completes, `depGraphComplete` true, commit to an unreferenced cell takes the narrow path.
@@ -420,3 +420,80 @@ Reviewer: nadeem-fileverse, posted 2026-10-29 on `f0c7334`. Read through the Git
 6. N7: moving a shown comment changes the key.
 7. N9: a refused insert (read-only row, max rows) leaves `depGraphComplete` true.
 8. N10: a stopped run is retried.
+
+## 13. Fourth round, first fixes: N2, N4, N5, N8 (2026-10-29, committed in `b046b97`)
+
+Unit suite after this group: 64 files, 576 tests pass (567 before); `tsc --noEmit` clean. No browser check.
+
+| # | Status | Change | Tests |
+|---|---|---|---|
+| N2 | Fixed | The warm-up no longer needs every formula tab to have a grid. A tab without one is read from its `celldata` (`createFormulaTextReader` in `formula-warmup.ts`, indexed once per slice and once at merge). A formula whose cell is not in `celldata` yet is recorded as always-run, and the merge check uses the same reader, so a cell that changed since it was read is marked always-run too. Nothing is loaded. | 3 in `formula-warmup.test.ts` (the old "leaves the flag false while a tab is sparse" test was rewritten); all 3 failed against the unchanged source. |
+| N4 | Fixed | A leading digit run followed by `name!` is a tab prefix, not a number (`2026!A1`). Plain numbers and the `2:3` row range are unchanged. | `=2025!A1+2026!A1` and `=SUM(2025!A1:A2)` compared with `execfunction`'s edges; both failed before. |
+| N5 | Fixed | A backslash inside a string is a plain character; only the closing quote ends the string (a doubled quote closes and reopens, so it needs no case). | `=A1&"\"&B1` and `=IF(A1="x\",B1,C1)` compared with `execfunction`; both failed before. |
+| N8 | Fixed | The token start and the boundary test accept `À-ʯ`, the same range bare tab names allow in `sheet-name-ref.ts`. | `=Étude!A1*2` and `=SUM(Étude!A1:A2)+B1` compared with `execfunction`; both failed before. |
+
+Numbers (Node, 4000 x 25 tab, N formulas `SUM(A:T)` on Sheet1, one formula on a demoted Sheet2 that reads Sheet1; median of 15 commits to an unreferenced cell; before = the unchanged `formula-warmup.ts`, after = the fix, same file and fixture):
+
+| Formulas | Before | After |
+|---|---|---|
+| 500 | warm-up `aborted`, flag false, 4.45 ms | `complete`, flag true, 0.069 ms |
+| 2,000 | `aborted`, flag false, 15.45 ms | `complete`, flag true, 0.054 ms |
+
+Limits:
+
+- The reviewer's figures (6.7 / 18.9 / 46.2 ms flag off) are for their own sheet and were not re-measured.
+- `getAllFunctionGroup` returns chain entries of tabs with no grid; the commit path then skips evaluating them, as before. A tab that is loaded later has no size recorded in `depGraphSheetSizes`, so a commit to it with no dependents takes the full pass once and restarts the warm-up. Not run in a browser.
+- The N4 fix reads `2026!A1` as a tab reference even if no such tab exists; the reference then resolves to nothing and the formula is marked always-run, as for any unresolved tab.
+
+All ten round-4 comments are fixed once section 15 is read; nothing from round 4 is open.
+
+## 14. Fourth round, second group: N3 and N1 (2026-10-29, N1 committed in `5f0cb23`, N3 in `24fabfc`)
+
+Unit suite after this group: 65 files, 598 tests pass (576 before); `tsc --noEmit` clean. No browser check.
+
+| # | Status | Change | Tests |
+|---|---|---|---|
+| N3 | Fixed | `isHoverInteractionActive` also returns true for `luckysheet_scroll_status`, `select_status`, `rows_selected_status`, `cols_selected_status`, `cell_selected_extend`, `cols_change_size`, `rows_change_size` (the eight states `handleOverlayMouseMove` runs `mouseRender` for, with the one already listed) and for `luckysheet_cols_freeze_drag` / `rows_freeze_drag`, which `mouseRender` handles. The formula range resize/move drags the comment names sit in a commented-out block of `mouse.ts` (`rangeResize` / `rangeMove`), so they are not live and are not in the list. | 10 in `hover-tracker.test.ts`, all failed before: nine flags, and five moves below the grid during a drag-select all processed (the comment's `[true, false, false, false, false]`). |
+| N1 | Fixed (engine and Yjs write); the user-facing undo path is not run | `rewriteFormulasInCelldata` (`rowcol.ts`) replaces a not-loaded tab's `celldata` as a whole array, and only when a formula changed, instead of editing `v.f` in place. History therefore records one replacement (`luckysheetfile/<i>/celldata`), which undo and redo replay whatever happened to the array meanwhile. Only formulas that contain `!` are visited. `emitYjsFromPatches` (`Workbook/index.tsx`) handles that patch: `celldataArrayChanges` (`history-celldata.ts`) writes the cross-tab formulas that differ between the two arrays, by cell key. | 8 engine tests in `rowcol-unloaded-history.test.ts` (3 failed before: patch addressed by position, throw after the tab loaded, text on the wrong cell after a peer removed an earlier entry) and 4 for `celldataArrayChanges`. |
+
+Limits and side effects.
+
+- Chosen over the comment's two options: loading the tab first would put the hydration into the history entry (a whole-grid `data` patch, which `planHistoryPatches` treats as coarse and which the Yjs write skips on undo), and keying history by `r`/`c` would need a second patch format.
+- Undo or redo replaces the unloaded tab's whole `celldata` in memory. A cell a peer changed on that tab since the edit is reverted locally until the next sync. It is not written to Yjs, unless it is itself a cross-tab formula (it contains `!`), in which case the old text is written back over the peer's.
+- The `emitYjsFromPatches` branch has no test (it lives in the Workbook component; vitest has no React renderer). Only `celldataArrayChanges` and the engine behaviour are tested. Not run in a browser or with two clients.
+- The comment's cost figures (455 ms for 5,000 formulas, 778 ms with three unloaded tabs) were not reproduced as a gain from this change. Same fixture before and after (insert at the top of a 9,990 x 26 tab, tabs with 5,000 formulas that do not contain `!`, median of 5): 1 tab 213 ms to 220 ms, 3 tabs 268 ms to 251 ms. The time is mostly the edited tab's own work; the `!` filter is not shown to matter here, so no speed-up is claimed.
+- The `handleUndo` pop-before-`setContext` claim in the comment was not run.
+
+Round 4 is complete after section 15.
+
+## 15. Fourth round, last group: N6, N7, N9, N10 (2026-10-29, N6 and N9 committed in `5f0cb23`, N7 and N10 in `24fabfc`)
+
+Unit suite after this group: 66 files, 618 tests pass (598 before); `tsc --noEmit` clean. No browser check. All ten round-4 comments are now fixed.
+
+| # | Status | Change | Tests |
+|---|---|---|---|
+| N6 | Fixed | `postPasteCut` (`paste-internals.ts`) runs the `execFunctionGroup` pass it had commented out, right after building the source and target list, so formulas that read the source or the target recalculate and the pass clears the list. Left set, the next commit anywhere used the list as its edited cells and skipped its own dependents. Mirrors `jfrefresh`'s `runExecFunction`. | 4 in `paste-dep-graph.test.ts`; all 4 failed against the unchanged `paste-internals.ts`: list left behind, B6 stays 10 after A6 is set to 50, D4 stays 10 after A1 is set to 7, C1 (`=B1+1`, reads the cut cell) stays 11. |
+| N7 | Fixed | `collectShownCommentCells` adds a `sig` (`left:top:width:height:text` of `ps`) to each shown cell and `shownCommentsKey` includes it, so moving or resizing a pinned box, or a peer editing its text, changes the key and `showComments` runs. | 6 in `shown-comments.test.ts` (5 failed before: moved right, down, wider, taller, text changed; one for an unchanged box). The existing collect test was adjusted for the extra field. |
+| N9 | Fixed | `insertRowCol` clears `depGraphComplete` only after the `readOnly` and `maxExceeded` checks; `deleteRowCol` after its `readOnly` checks and the missing-grid return. A refused edit no longer restarts the warm-up. | 6 in `rowcol-refused-edit.test.ts` (4 failed before: read-only insert, past the row limit, unknown tab, read-only delete; two guard that a successful insert and delete still clear the flag). |
+| N10 | Fixed | `createCompactionRetrier` (`use-celldata-compaction.ts`): a run that was refused by the gate or stopped because the document changed asks for another run after `COMPACTION_RETRY_MS` (30 s), up to `COMPACTION_MAX_RETRIES` (10). The hook's run is now an `attempt()` returning `done` or `retry`; the retry goes back through the idle scheduler, and the effect cleanup cancels the timer. | 4 in `use-celldata-compaction.test.ts` (all failed before: the function did not exist). The hook wiring has no test (no React renderer). |
+
+Notes.
+
+- The N6 comment says the second commit after a cut-paste works; I first saw a second commit leave D4 at 10 and called it unexplained (section 12). The cause was my harness: formula values are written by deferred chunks and the test had no `settle` step. With `settle`, the first commit fails without the fix and passes with it. A second commit was not tested separately.
+- N6 runs a formula pass at every cut-paste; its cost was not measured (pass over the chain with the source and target cells as edited cells).
+- N10: a retry every 30 s for up to five minutes while collaboration is syncing or a remote apply is running; after that the compaction waits for the next open as before.
+- N7: the key now holds the comment text of every shown box; with many pinned comments the string grows, one entry each.
+
+## 16. Commits for the fixes
+
+| Round | Items | Commit |
+|---|---|---|
+| 1 | #1 to #6 | `a7abbed` |
+| 2 | #7 to #14 | `a5dcd88` |
+| 3 | #15 to #18 | `291c398` |
+| C8 spec changes (wide formulas join the walk only when affected; a collaborator's formula keeps `depGraphComplete`; chain diff in `setSheetCalcChain`) | spec change of 2026-10-29, closes K17 | `7847262` |
+| 4 | N2, N4, N5, N8 | `b046b97` |
+| 4 | N1, N9, N6 | `5f0cb23` |
+| 4 | N3, N7, N10 | `24fabfc` |
+
+Unit suite at the end: 66 files, 618 tests pass; `tsc --noEmit` clean. No browser check and no two-client check of any round-4 change or of the C8 spec changes.

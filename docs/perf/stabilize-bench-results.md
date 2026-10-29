@@ -1215,7 +1215,7 @@ Per scroll tick, `Toolbar`, `SheetTab`, `SheetItem`, `ContextMenu`, `FilterMenu`
 
 **Not covered.** A real clipboard paste; the function picker in the UI; a host that moves the Workbook between documents (the listener is bound for the Workbook's lifetime).
 
-## K6, K7, K9, K11, K8: analysis and fixes (2026-10-28, not committed)
+## K6, K7, K9, K11, K8: analysis and fixes (2026-10-28, committed in 9f614a5)
 
 Found by reading the code and running tests; nothing here was browser-checked.
 
@@ -1258,7 +1258,7 @@ The spec section 3 says this is out of scope: "Insert or delete a row while a co
 
 
 
-## C8 warm-up from formula text, and the B3 guard (2026-10-28, not committed)
+## C8 warm-up from formula text, and the B3 guard (2026-10-28, committed in f0c7334)
 
 The ticket text (TEC-3277, updated) asks for the C8 index to be "built from the formula text, without evaluating anything", and for B3 to keep the pending flag and guard depth while a remount is deferred. Both earlier versions deviated; both now follow the ticket.
 
@@ -1286,7 +1286,7 @@ Known difference from `execfunction`: for a range wider than 10,000 cells on ano
 
 Full `npm run test:unit`: 64 files, 554 tests pass. `tsc --noEmit -p .`: no errors.
 
-## C8 spec changes: wide formulas join the walk only when affected; a collaborator's formula keeps the graph complete (2026-10-29, not committed)
+## C8 spec changes: wide formulas join the walk only when affected; a collaborator's formula keeps the graph complete (2026-10-29, committed in 7847262)
 
 Two C8 changes added to the spec on 2026-10-29 (recorded in `dsheet-stabilize-spec.md`).
 
@@ -1315,3 +1315,18 @@ Limits.
 - A commit inside a wide range still pays for that formula (195 ms for 5 formulas over 104k cells in the earlier run).
 - Not run: a room with two clients, the warm-up restart behaviour after a remote chain update, or any browser check.
 - Named-range formulas still use the existing scan for the edited cell only; they do not yet join through a reached formula cell unless the name's range is wide (then `wideRangesByFormula` covers it) or has cell edges (then the walk covers it).
+
+### PR 466 round 4: N2 (warm-up with a tab that has no grid), 2026-10-29, committed in b046b97
+
+See `pr-466-review.md` section 13. Commit to an unreferenced cell, 4000 x 25 tab with N `SUM(A:T)` formulas plus one formula on a demoted second tab: 500 formulas 4.45 ms (warm-up aborted, flag false) to 0.069 ms (complete); 2,000 formulas 15.45 ms to 0.054 ms. Same fixture, before = unchanged `formula-warmup.ts`. Reviewer's figures not re-measured.
+
+### PR 466 round 4: N3 and N1 (2026-10-29, N1 committed in 5f0cb23, N3 in 24fabfc)
+
+See `pr-466-review.md` section 14. N3: five drag-select moves below the grid, processed 1 of 5 before, 5 of 5 after (unit test, not a timing). N1: no timing gain shown. Insert at the top of a 9,990 x 26 tab, other tabs unloaded with 5,000 formulas each that do not contain `!`, median of 5 runs: one tab 213 ms before, 220 ms after; three tabs 268 ms before, 251 ms after (run-to-run noise is of that size).
+
+### PR 466 round 4: N6, N7, N9, N10 (2026-10-29, N6 and N9 committed in 5f0cb23, N7 and N10 in 24fabfc)
+
+Correctness fixes with repro tests, no timing (see `pr-466-review.md` section 15). Failing run against the unchanged source, then passing run: N6 4 of 4 failed (leftover edited-cell list; B6 stays 10 after A6=50; D4 stays 10 after A1=7; C1 stays 11 after the cut), N7 5 of 6 failed, N9 4 of 6 failed, N10 4 of 4 failed (the retrier did not exist). The cost of the formula pass N6 now runs at every cut-paste was not measured.
+
+Unit suite at the end of round 4: 66 files, 618 tests pass; `tsc --noEmit` clean.
+

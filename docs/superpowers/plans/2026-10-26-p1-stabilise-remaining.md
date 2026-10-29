@@ -6,7 +6,7 @@
 
 **Spec:** `docs/perf/dsheet-stabilize-spec.md` (section 4 has each item's root cause and fix). Fingerprint: `docs/perf/content-fingerprint-spec.md`.
 
-## Status (2026-10-26, updated 2026-10-28: G7 done)
+## Status (2026-10-26, updated 2026-10-28: G7 done; 2026-10-29: C8 spec changes and PR 466 round 4)
 
 | Group | Tasks | State | Commits |
 |---|---|---|---|
@@ -18,7 +18,7 @@
 | G5 | Task 6 (D3), Task 7 (D5) | done, committed: Task 6 `4d181b5`, Task 7 `4603bd9`; docs `0c55ba4` | |
 | G6 | Task 8 (F) | done, committed: Task 8 `71d758d`; docs `4122b95` | |
 | G7 | Tasks 9–14 (E1–E6) | done, committed | `453c02c` (counter, baseline), `8b639d1` (E1, E5, E6), `756e442` (E3), `e081c39` (E2), `96d9ab0` (E4) |
-| end | final whole-branch review; triage deferred minors and open findings below | triage done (`docs/perf/final-review.md`); K6, K7, K9 fixed and K11 closed (uncommitted), K8 accepted; the whole-branch diff review has not been done | |
+| end | final whole-branch review; triage deferred minors and open findings below | triage done (`docs/perf/final-review.md`); K6, K7, K9 fixed and K11 closed (`9f614a5`), K8 accepted, K17 fixed (`7847262`), PR 466 rounds 1 to 4 fixed (`a7abbed`, `a5dcd88`, `291c398`, `b046b97`, `5f0cb23`, `24fabfc`); the whole-branch diff review has not been done | |
 
 Unit suite at G3: 39 files, 318 tests passing; `tsc` clean on touched files. Remaining count: 10 plan tasks (6, 7, 8, 9–14) plus Tasks 16 and 17 = 12, plus the final review.
 
@@ -45,7 +45,7 @@ Bench scenario numbers: S9–S15 are all used (S13 = Task 8).
 2. **G5 done** (Task 6 `4d181b5`, Task 7 `4603bd9`, docs `0c55ba4`). Unit suite 43 files, 334 tests; tsc clean. Package APIs for D3/D5; app side lives in dsheets.new, outside this repo.
 3. **G6 done** (Task 8, F, S13; `71d758d`, docs `4122b95`). Unit suite 44 files, 346 tests; tsc clean.
 4. **G7 done** (Tasks 9–14, E1–E6; see the Status table for hashes). Plan deviations are in `stabilize-bench-results.md`: E2 uses an ignore list of scroll keys instead of per-component field lists, E3 keeps `generateAPIs` and gives the host a delegating stable handle, E5's one-update target is blocked by the `Sheet` offsets effect (G1 of the follow-ups spec), E4 leaves `getToolbarItem` deps unchanged.
-5. **Final review:** triage in `docs/perf/final-review.md`; K6, K7, K9 fixed and K11 closed on 2026-10-28 (uncommitted at the time of writing; unit suite 63 files, 522 tests; tsc clean); K8 accepted for P1. Still open: the whole-branch diff review, the browser targets of spec section 6, two-window QA, the app side.
+5. **Final review:** triage in `docs/perf/final-review.md`; K6, K7, K9 fixed and K11 closed on 2026-10-28 (committed in `9f614a5`); K8 accepted for P1; K17 fixed and the C8 spec changes in `7847262` (2026-10-29); PR 466 round 4 (N1 to N10) fixed in `b046b97`, `5f0cb23`, `24fabfc`. Unit suite 66 files, 618 tests; tsc clean. Still open: the whole-branch diff review, the browser targets of spec section 6, two-window QA, the app side.
 
 ## Global Constraints
 

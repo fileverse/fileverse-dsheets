@@ -15,7 +15,7 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | **B5** | done | 8b18a94; case rule fixed in Task 17 (782aacd) | Shipped case-insensitive; Task 17 made the comparison exact and case-sensitive, as this spec says. |
 | C1, C3 | done | 7a1a19e | |
 | C2, C6, C7 | done | 03fc133, 4ef4fd4, 9290e13 | |
-| **C8** | done | fb80dfc, a324b38 | Warm-up after open builds the index from formula text (`formula-dep-text.ts`), without evaluating anything (2026-10-28); shadow indexes merged at completion. |
+| **C8** | done | fb80dfc, a324b38; text index `f0c7334`; 2026-10-29 spec changes `7847262`; warm-up and tokenizer fixes `b046b97` | Warm-up after open builds the index from formula text (`formula-dep-text.ts`), without evaluating anything (2026-10-28); shadow indexes merged at completion. 2026-10-29: a wide formula joins a commit's walk only when its range (kept in `wideRangesByFormula`) holds the edited cell or a formula cell the walk reaches, and one with no readable range joins every walk; a collaborator's formula keeps `depGraphComplete` (its cell's edges are replaced from its text) and a remote calcChain update is diffed (A4, `setSheetCalcChain`). PR 466 round 4: the warm-up reads a tab with no grid from `celldata`; digit-only, accented and backslash-in-string cases match `execfunction`. Node numbers in the results doc. Not run in a room with two clients. |
 | **C4, C5** | done | 29843e6 | C5 browser timing: 10k single-line cells 1,827 ms to 49 ms median. |
 | July narrowing bug (commit 1611aee, not a spec item) | done (Task 16, 627aeda) | | Commit-path narrowing waits for a complete graph; flag-false sheets run the full list per commit (S15: 0.21 ms to 3.9 ms at 500 formulas). |
 | D3 (package side) | done, committed `4d181b5` (Task 6) | | `rebuildLocalStore()` on the editor handle; results doc "D3 (package side)". App side (call it instead of delete-and-remount, `onIndexedDbError`) is in dsheets.new. |
@@ -26,7 +26,9 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | `fingerprintFromUpdate` (2026-10-27 fix) | done | d96a8bd | Now builds a temporary document and scans its delete set, as A1 says; the `Y.decodeUpdate` version undercounted GC structs in raw rows (test T9b: 2 against 22). S5: 34.9 ms to 60.8 ms. See results doc. |
 | D0–D2, D4, D6 (app side, dsheets.new) | not in this repo | | See NEXT.md. |
 
-Former open finding, fixed (K1 and K2, `037248b`; gaps closed in `a7abbed`): formula text rewritten by a row insert was not carried to a second client in the same room. It bears on B5 and on part 2's removal of the rewrite. Remaining: K6 (inactive or unhydrated tabs), K8. Details in `docs/perf/NEXT.md`.
+Former open finding, fixed (K1 and K2, `037248b`; gaps closed in `a7abbed`): formula text rewritten by a row insert was not carried to a second client in the same room. It bears on B5 and on part 2's removal of the rewrite. K6 (inactive or unhydrated tabs) was fixed in `9f614a5`; K8 is accepted for P1 (the part 2 case above). Details in `docs/perf/NEXT.md`.
+
+PR 466 review: all 18 first-round comments (`a7abbed`, `a5dcd88`, `291c398`) and the ten round-4 comments (`b046b97`, `5f0cb23`, `24fabfc`) are fixed; see `docs/perf/pr-466-review.md`. Unit suite 66 files, 618 tests (2026-10-29). Open: the whole-branch diff review, the browser targets of section 6, two-window QA, and the app side.
 
 Line numbers refer to fileverse-dsheet origin/main 9411d95 (package 4.1.21), dsheets.new origin/staging db44e94 and ddocs.new origin/staging 62723dca, except where a line is marked `origin/main` for ddocs.new.
 
