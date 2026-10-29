@@ -1285,3 +1285,33 @@ Known difference from `execfunction`: for a range wider than 10,000 cells on ano
 **B3.** `scheduleStructuralRemount` begins the guard when a remount becomes pending (no remount pending before), keeps it while the timer is deferred by a cell edit, and ends it once after paint; `cancelStructuralRemount` releases it. The typed cell is still written: the commit-time write and the `afterUpdateCell` write do not check the guard; `handleChange`, `guardRemoteEcho` and the data-block work do. Tests in `remote-apply-guard.test.ts` updated (24): depth stays 1 while deferred, returns to 0 after the remount, cancel releases it, a new event after a fired remount opens a second guard while the first waits for paint. Before/after numbers do not apply (no timing change). Not browser-checked.
 
 Full `npm run test:unit`: 64 files, 554 tests pass. `tsc --noEmit -p .`: no errors.
+
+## C8 spec changes: wide formulas join the walk only when affected; a collaborator's formula keeps the graph complete (2026-10-29, not committed)
+
+Two C8 changes added to the spec on 2026-10-29 (recorded in `dsheet-stabilize-spec.md`).
+
+**Code.**
+
+- `formula-transitive-deps.ts`: `collectTransitiveFormulaDependents` takes an optional `WideFormulaIndex`. A wide formula joins when one of its ranges holds the edited cell or any formula cell the walk reaches; one with no readable range joins every walk. No rectangle index; a linear check against the wide formulas still pending.
+- `formula.ts`: `formulaCache.wideRangesByFormula` (formula key to its ranges), recorded by `execfunction` (both over-cap sites) and dropped with the other wide state; the commit path no longer copies `formulasWithWideRangeDeps` into the seed set. An unresolved sheet reference or INDIRECT/OFFSET leaves a wide formula without ranges (joins every walk). `dropDependencyEdges` and `mergeFormulaDeps` are exported.
+- `formula-dep-text.ts`: `collectFormulaTextDeps` also returns `wideRanges` (`[]` not wide, `null` wide but unreadable). `formula-warmup.ts` carries them through the shadow indexes into the real ones.
+- `formula-edge-update.ts` (new): `setFormulaEdgesFromText` replaces one cell's edges from its text or drops them; `markFormulaEdgesUnknown` makes an entry whose cell is not here yet run on every commit.
+- `api/cell.ts`: `registerUnevaluatedFormula` replaces the cell's edges instead of clearing the flag; `setSheetCalcChain` diffs old and new chain (removed: drop edges; added: edges from the cell's text, or unknown; unchanged: untouched) and resets the indexes only when an entry has no numeric `r` and `c`.
+
+**Tests.** Package unit suite 64 files, 567 tests pass (554 before); `tsc --noEmit` clean. New or rewritten: 6 in `formula.wide-seed.test.ts` (4 failed before: the 3 unit tests of the new parameter and the timing test at 20.79 ms; the two engine tests, Z1 through A5 and an unrelated commit, passed before and pin the behaviour), 3 in `formula-dep-text.test.ts` (all failed before), 8 in `remote-apply.test.ts` (7 failed before), 2 in `formula.dep-graph.test.ts` rewritten (they asserted the old flag clearing).
+
+**Numbers (Node, same method before and after, median of 5 or 15 commits).**
+
+| Scenario | Before | After |
+|---|---|---|
+| Commit outside every wide range, 5 formulas `SUM(A1:Z4000)` (104k cells each), 20,010 x 30 fixture | 21.8 ms (20.9, 21.1, 21.8, 22.8, 23.0) | 0.13 ms (0.058 to 0.134) |
+| Commit to an unreferenced cell after a collaborator's formula arrives, 500 formulas on 4,000 x 26 | 4.19 ms (flag cleared, emulated by `markDepGraphIncomplete` after the same remote call) | 0.024 ms (flag stays true) |
+| Same, 2,000 formulas | 15.6 ms | 0.031 ms |
+
+Limits.
+
+- The first row's "before" is the failing run of the new timing test on the unchanged commit path. An emulation (clearing the ranges so every wide formula joins) did not reproduce the cost in the warm-up fixture (0.072 ms), so it is not used.
+- The second row's "before" is an emulation, not the old code. The reviewer's 18.9 ms at 2,000 formulas is for a different sheet; not re-measured.
+- A commit inside a wide range still pays for that formula (195 ms for 5 formulas over 104k cells in the earlier run).
+- Not run: a room with two clients, the warm-up restart behaviour after a remote chain update, or any browser check.
+- Named-range formulas still use the existing scan for the edited cell only; they do not yet join through a reached formula cell unless the name's range is wide (then `wideRangesByFormula` covers it) or has cell edges (then the walk covers it).

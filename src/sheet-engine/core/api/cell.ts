@@ -17,6 +17,10 @@ import { CommonOptions, getSheet } from './common';
 import { SHEET_NOT_FOUND } from './errors';
 import { shouldPersistCelldataCell } from '../utils/cell-persist-utils';
 import { getSheetIndex } from '../utils';
+import {
+  markFormulaEdgesUnknown,
+  setFormulaEdgesFromText,
+} from '../modules/formula-edge-update';
 // @ts-ignore
 import SSF from '../modules/ssf';
 
@@ -270,12 +274,11 @@ function remoteFormulaText(value: any): string | null {
 }
 
 /**
- * Keep a remote formula in the calc chain without running it. Its recorded
- * dependencies (if any) may be for another formula, so the graph is no longer
- * complete (C8). Not when the cell already held the same formula and was
- * already in the chain: a peer's recomputed value for it changes nothing the
- * graph records. (A peer recomputing a formula we also hold is common in
- * collaboration; clearing the flag each time kept commits on the full pass.)
+ * Keep a remote formula in the calc chain without running it, and replace the
+ * cell's dependency edges with the ones its text names (C8), so
+ * `depGraphComplete` stays on. Not when the cell already held the same
+ * formula and was already in the chain: a peer's recomputed value for it
+ * changes nothing the graph records.
  */
 function registerUnevaluatedFormula(
   ctx: Context,
@@ -293,7 +296,9 @@ function registerUnevaluatedFormula(
       (calc) => calc?.r === row && calc.c === column && calc.id === sheetId,
     );
   insertUpdateFunctionGroup(ctx, row, column, sheetId);
-  if (!alreadyRegistered) ctx.formulaCache.markDepGraphIncomplete();
+  if (!alreadyRegistered) {
+    setFormulaEdgesFromText(ctx, row, column, sheetId, newFormula);
+  }
 }
 
 export function applyRemoteCellValue(
@@ -390,11 +395,24 @@ export function applyRemoteCellValue(
   }
 }
 
+const chainEntryKey = (entry: any, sheetId: string): string | null =>
+  entry != null &&
+  typeof entry === 'object' &&
+  Number.isFinite(entry.r) &&
+  Number.isFinite(entry.c)
+    ? `${entry.id ?? sheetId}:${entry.r}:${entry.c}`
+    : null;
+
 /**
- * Replace a sheet's formula list with the collaborator's value from Yjs and
- * reset the formula dependency indexes to a fresh mount's state (A4). This
- * is what the grid rebuild it replaces produced, without the rebuild. The
+ * Replace a sheet's formula list with the collaborator's value from Yjs (A4).
+ * This is what the grid rebuild it replaces produced, without the rebuild. The
  * caller runs it with noHistory.
+ *
+ * The dependency edges follow the change (C8): an entry that left the chain
+ * loses its edges, one that joined gets the edges its cell's text names (or
+ * runs on every commit until its cell arrives), and the rest are left alone, so
+ * `depGraphComplete` stays on. When the two chains can't be compared the
+ * indexes reset to a fresh mount's state.
  */
 export function setSheetCalcChain(
   ctx: Context,
@@ -402,12 +420,43 @@ export function setSheetCalcChain(
   options: CommonOptions = {},
 ) {
   const sheet = getSheet(ctx, options);
+  const sheetId = sheet.id as string;
+  const previous = sheet.calcChain ?? [];
   // The entries come from Yjs, which hands out the objects it stores. Immer
   // deep-freezes whatever is assigned to a draft, so the engine gets copies.
-  sheet.calcChain = (calcChain ?? []).map((entry) =>
+  const next = (calcChain ?? []).map((entry) =>
     entry != null && typeof entry === 'object' ? { ...entry } : entry,
   );
-  resetFormulaDependencyIndexes(ctx);
+  sheet.calcChain = next;
+
+  const previousKeys = new Map<string, any>();
+  const nextKeys = new Map<string, any>();
+  let comparable = sheetId != null;
+  previous.forEach((entry) => {
+    const key = chainEntryKey(entry, sheetId);
+    if (key == null) comparable = false;
+    else previousKeys.set(key, entry);
+  });
+  next.forEach((entry) => {
+    const key = chainEntryKey(entry, sheetId);
+    if (key == null) comparable = false;
+    else nextKeys.set(key, entry);
+  });
+  if (!comparable) {
+    resetFormulaDependencyIndexes(ctx);
+    return;
+  }
+  previousKeys.forEach((entry, key) => {
+    if (nextKeys.has(key)) return;
+    setFormulaEdgesFromText(ctx, entry.r, entry.c, entry.id ?? sheetId, null);
+  });
+  nextKeys.forEach((entry, key) => {
+    if (previousKeys.has(key)) return;
+    const id = entry.id ?? sheetId;
+    const f = formulaBeforeRemote(sheet, entry.r, entry.c);
+    if (f != null) setFormulaEdgesFromText(ctx, entry.r, entry.c, id, f);
+    else markFormulaEdgesUnknown(ctx, entry.r, entry.c, id);
+  });
 }
 
 export type RemoteCellChange = { r: number; c: number; v: unknown };

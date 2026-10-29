@@ -254,14 +254,14 @@ describe('C8 dependency-graph completeness flag', () => {
     expect(reads.has(`${SPECIALS.offset.r}_${SPECIAL_COL}`)).toBe(true);
   });
 
-  it('a remote formula batch clears the flag, so a commit still updates that formula', () => {
+  it('a remote formula batch keeps the flag, and a commit still updates that formula', () => {
     const { ctx } = makeFixture({ runtimeRefs: false });
     forceFullPass(ctx);
     // Arrives with the peer's value and is registered without being evaluated.
     applyRemoteCells(ctx, [{ r: 5, c: 29, v: { f: '=AC1*2', v: 0, m: '0' } }], {
       id: 's1',
     });
-    expect(ctx.formulaCache.depGraphComplete).toBe(false);
+    expect(ctx.formulaCache.depGraphComplete).toBe(true);
     commit(ctx, 0, 28, 21); // AC1
     expect(ctx.luckysheetfile[0].data[5][29].v).toBe(42);
   });
@@ -337,15 +337,15 @@ describe('C8 dependency-graph completeness flag', () => {
     expect(reads.size).toBe(503);
   });
 
-  it('setSheetCalcChain clears the flag; the next commit takes the full pass', () => {
+  it('setSheetCalcChain with an unchanged chain keeps the flag; the next commit takes the narrow path', () => {
     const { ctx, reads, resetCounters } = makeFixture({ runtimeRefs: false });
     forceFullPass(ctx);
     setSheetCalcChain(ctx, ctx.luckysheetfile[0].calcChain.slice(), {
       id: 's1',
     });
-    expect(ctx.formulaCache.depGraphComplete).toBe(false);
+    expect(ctx.formulaCache.depGraphComplete).toBe(true);
     resetCounters();
     commit(ctx, UNREFERENCED[0], UNREFERENCED[1], 'typed');
-    expect(reads.size).toBe(503);
+    expect(reads.size).toBe(0);
   });
 });

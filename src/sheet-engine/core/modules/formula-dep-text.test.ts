@@ -96,6 +96,38 @@ describe('collectFormulaTextDeps (C8)', () => {
     expect(fromText(ctx, f, 50, 20)).toEqual(recorded(ctx, f, 50, 20));
   });
 
+  // C8 spec change (2026-10-29): a wide formula keeps its ranges.
+  it('returns the ranges of a wide formula, as execfunction records them', () => {
+    const ctx = makeCtx();
+    const f = '=SUM(A1:Z1000)+B1';
+    const text = collectFormulaTextDeps(ctx, f, 's1', 50, 20);
+    expect(text.wide).toBe(true);
+    expect(text.wideRanges).toEqual([
+      { sheetId: 's1', startRow: 0, endRow: 999, startCol: 0, endCol: 25 },
+    ]);
+    execfunction(ctx, f, 50, 20, 's1', undefined, false, true);
+    expect(ctx.formulaCache.wideRangesByFormula.get('s1:50:20')).toEqual(
+      text.wideRanges,
+    );
+  });
+
+  it('gives no ranges for a wide formula whose ranges cannot be read from its text', () => {
+    const ctx = makeCtx();
+    expect(collectFormulaTextDeps(ctx, '=Missing!A1', 's1', 9, 9).wideRanges).toBeNull();
+    expect(collectFormulaTextDeps(ctx, '=OFFSET(A1,1,0)', 's1', 9, 9).wideRanges).toBeNull();
+    expect(
+      collectFormulaTextDeps(ctx, '=SUM(A1:Z1000)+Missing!A1', 's1', 9, 9).wideRanges,
+    ).toBeNull();
+    execfunction(ctx, '=Missing!A1', 9, 9, 's1', undefined, false, true);
+    expect(ctx.formulaCache.formulasWithWideRangeDeps.has('s1:9:9')).toBe(true);
+    expect(ctx.formulaCache.wideRangesByFormula.has('s1:9:9')).toBe(false);
+  });
+
+  it('gives an empty list for a formula that is not wide', () => {
+    const ctx = makeCtx();
+    expect(collectFormulaTextDeps(ctx, '=A1+B1', 's1', 9, 9).wideRanges).toEqual([]);
+  });
+
   it('records the origin itself for a very large range that holds it', () => {
     const ctx = makeCtx();
     const f = '=SUM(A1:Z1000)';

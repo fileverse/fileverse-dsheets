@@ -47,7 +47,10 @@ import {
   sliceRangeFragmentForOrigin,
   type RangePassCacheEntry,
 } from './formula-range-cache';
-import { collectTransitiveFormulaDependents } from './formula-transitive-deps';
+import {
+  collectTransitiveFormulaDependents,
+  type WideRange,
+} from './formula-transitive-deps';
 import type { SnapshotEvalOutput } from './formula-snapshot-eval';
 import { resolveDefinedNameForFormula } from './namedRanges';
 
@@ -375,6 +378,15 @@ export class FormulaCache {
   formulasWithWideRangeDeps: Set<string>;
 
   /**
+   * The ranges of the wide formulas whose ranges could be read, by formula
+   * key. A wide formula joins a commit's walk only when one of these holds the
+   * edited cell or a formula cell the walk reaches. A key in
+   * `formulasWithWideRangeDeps` with no entry here (an unresolved tab, an
+   * unreadable range) joins every walk.
+   */
+  wideRangesByFormula: Map<string, WideRange[]>;
+
+  /**
    * True once a full pass has evaluated every formula in the chain since the
    * indexes were last reset, so `revDepsByCell` lists every dependent of every
    * cell (C8). While true, a commit to a cell with no dependents runs no
@@ -403,6 +415,10 @@ export class FormulaCache {
     originKey: string;
     deps: Set<string>;
     hasWideRangeDep: boolean;
+    /** Ranges over the cap, in the order they were read. */
+    wideRanges: WideRange[];
+    /** A wide dependency whose range can't be bounded (unresolved tab). */
+    wideUnreadable: boolean;
   };
 
   /** Step 2: per execFunctionGroup pass cache for materialized range reads. */
@@ -419,6 +435,7 @@ export class FormulaCache {
     this.depsByCell = new Map();
     this.revDepsByCell = new Map();
     this.formulasWithWideRangeDeps = new Set();
+    this.wideRangesByFormula = new Map();
     this.markDepGraphIncomplete();
   }
 
@@ -457,6 +474,7 @@ export class FormulaCache {
     const markUnresolvedSheetRef = () => {
       if (that.activeDepCollection) {
         that.activeDepCollection.hasWideRangeDep = true;
+        that.activeDepCollection.wideUnreadable = true;
       }
     };
 
@@ -470,6 +488,7 @@ export class FormulaCache {
     this.depsByCell = new Map();
     this.revDepsByCell = new Map();
     this.formulasWithWideRangeDeps = new Set();
+    this.wideRangesByFormula = new Map();
     this.depGraphComplete = false;
     this.depGraphEpoch = 0;
     this.depGraphSheetSizes = new Map();
@@ -556,6 +575,13 @@ export class FormulaCache {
             }
           } else {
             that.activeDepCollection.hasWideRangeDep = true;
+            that.activeDepCollection.wideRanges.push({
+              sheetId: id,
+              startRow,
+              endRow,
+              startCol,
+              endCol,
+            });
             if (originInRange) {
               // Still record self-in-range to detect circular refs.
               recordDep(toCellKey(id, originRow, originCol));
@@ -706,6 +732,13 @@ export class FormulaCache {
           }
         } else {
           that.activeDepCollection.hasWideRangeDep = true;
+          that.activeDepCollection.wideRanges.push({
+            sheetId: id,
+            startRow,
+            endRow,
+            startCol,
+            endCol,
+          });
           if (originInRange) {
             recordDep(toCellKey(id, originRow, originCol));
           }
@@ -1527,10 +1560,21 @@ export function getAllFunctionGroup(ctx: Context) {
   return ret;
 }
 
+const wideFormulaIndex = (ctx: Context) => ({
+  keys: ctx.formulaCache.formulasWithWideRangeDeps,
+  ranges: ctx.formulaCache.wideRangesByFormula,
+});
+
 /** Remove the dependency edges recorded for a cell that is no longer a formula. */
-function dropDependencyEdges(ctx: Context, r: number, c: number, id: string) {
+export function dropDependencyEdges(
+  ctx: Context,
+  r: number,
+  c: number,
+  id: string,
+) {
   const originKey = `${id}:${r}:${c}`;
   ctx.formulaCache.formulasWithWideRangeDeps.delete(originKey);
+  ctx.formulaCache.wideRangesByFormula.delete(originKey);
   const prevDeps = ctx.formulaCache?.depsByCell?.get(originKey);
   if (prevDeps) {
     prevDeps.forEach((depKey) => {
@@ -1944,16 +1988,21 @@ export function execfunction(
   const originKey = `${sheetId}:${r}:${c}`;
   const deps = new Set<string>();
   ctx.formulaCache.formulasWithWideRangeDeps.delete(originKey);
+  ctx.formulaCache.wideRangesByFormula.delete(originKey);
   ctx.formulaCache.activeDepCollection = {
     originKey,
     deps,
     hasWideRangeDep: false,
+    wideRanges: [],
+    wideUnreadable: false,
   };
 
   ctx.formulaCache.parser.context = ctx;
   const parserExpression = normalizeDateArithmeticForParser(txt.substring(1));
   let parsedResponse: { error: any; result: any };
   let hasWideRangeDep = false;
+  let wideRanges: WideRange[] = [];
+  let wideUnreadable = false;
   try {
     parsedResponse = ctx.formulaCache.parser.parse(parserExpression, {
       sheetId,
@@ -1963,10 +2012,18 @@ export function execfunction(
   } finally {
     hasWideRangeDep =
       ctx.formulaCache.activeDepCollection?.hasWideRangeDep ?? false;
+    wideRanges = ctx.formulaCache.activeDepCollection?.wideRanges ?? [];
+    wideUnreadable =
+      ctx.formulaCache.activeDepCollection?.wideUnreadable ?? false;
     ctx.formulaCache.activeDepCollection = null;
   }
-  if (hasWideRangeDep || RUNTIME_REFERENCE_RE.test(txt)) {
+  const runtimeReference = RUNTIME_REFERENCE_RE.test(txt);
+  if (hasWideRangeDep || runtimeReference) {
     ctx.formulaCache.formulasWithWideRangeDeps.add(originKey);
+    // INDIRECT and OFFSET resolve their reference at run time: unbounded.
+    if (!wideUnreadable && !runtimeReference && wideRanges.length > 0) {
+      ctx.formulaCache.wideRangesByFormula.set(originKey, wideRanges);
+    }
   }
 
   // Update dependency graph for this formula cell.
@@ -2363,7 +2420,7 @@ function evalFormulaCellInGroup(
   );
 }
 
-function mergeFormulaDeps(
+export function mergeFormulaDeps(
   ctx: Context,
   originKey: string,
   deps: Iterable<string>,
@@ -2447,6 +2504,7 @@ export function applyWorkerFormulaChunkResults(
     mergeFormulaDeps(ctx, formulaCellKey, result.deps);
     if (result.unresolvedSheetRef) {
       ctx.formulaCache.formulasWithWideRangeDeps.add(formulaCellKey);
+      ctx.formulaCache.wideRangesByFormula.delete(formulaCellKey);
     }
 
     if (result.isError) {
@@ -2625,13 +2683,12 @@ export function execFunctionGroup(
     // Narrow only on a complete graph: a formula that was never evaluated has
     // no recorded edges, so a partial graph would leave it off the run list
     // and its value stale (Task 16). Otherwise run the full list.
-    // Formulas that always run: very large ranges record no edges, and a
-    // formula naming a range that covers the edited cell has no cell edges.
-    // They seed the same walk as the edited cell, so a formula reading their
-    // result is reached too (C8).
-    const alwaysRun = new Set<string>(
-      ctx.formulaCache.formulasWithWideRangeDeps,
-    );
+    // Formulas that always run: a formula naming a range that covers the edited
+    // cell has no cell edges. It seeds the same walk as the edited cell, so a
+    // formula reading its result is reached too. Formulas over very large
+    // ranges record no edges either; they join the walk when their range holds
+    // the edited cell or a formula cell it reaches (C8).
+    const alwaysRun = new Set<string>();
     // Named-range-only formulas (no cell edges): if the edited cell sits inside
     // a defined name, include calc-chain formulas that mention that name.
     const coveringNames = (ctx.definedNames || []).filter(
@@ -2669,6 +2726,7 @@ export function execFunctionGroup(
       originKey,
       ctx.formulaCache.revDepsByCell,
       alwaysRun,
+      wideFormulaIndex(ctx),
     );
     if (dependents.size > 0) {
       calcChainsToProcess = calcChains.filter((cell) =>
@@ -2997,7 +3055,8 @@ export function execFunctionGroup(
     const depDependents = collectTransitiveFormulaDependents(
       originKey,
       ctx.formulaCache.revDepsByCell,
-      ctx.formulaCache.formulasWithWideRangeDeps,
+      [],
+      wideFormulaIndex(ctx),
     );
     if (depDependents.size > 0) {
       const alreadyQueued = new Set(

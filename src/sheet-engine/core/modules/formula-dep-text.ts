@@ -10,10 +10,11 @@
  * It never reads another tab's cells, so it hydrates nothing: a whole-row or
  * whole-column reference into a tab that has no grid yet is marked wide.
  */
-import { Context } from '../context';
-import { getSheetIdByName } from '../utils';
-import { resolveDefinedNameForFormula } from './namedRanges';
-import { RUNTIME_REFERENCE_RE } from './formula';
+import { Context } from "../context";
+import { getSheetIdByName } from "../utils";
+import { resolveDefinedNameForFormula } from "./namedRanges";
+import { RUNTIME_REFERENCE_RE } from "./formula";
+import type { WideRange } from "./formula-transitive-deps";
 
 /** Same cap as `execfunction` (MAX_RANGE_DEPS in formula.ts). */
 export const MAX_TEXT_RANGE_DEPS = 10_000;
@@ -21,8 +22,15 @@ export const MAX_TEXT_RANGE_DEPS = 10_000;
 export type FormulaTextDeps = {
   /** `${sheetId}:${r}:${c}` of every cell the formula reads. */
   deps: Set<string>;
-  /** Too wide or unresolvable to list: the formula runs on every commit. */
+  /** Too wide or unresolvable to list. */
   wide: boolean;
+  /**
+   * The ranges that made it wide, as `execfunction` records them. `null` when
+   * the formula is wide but its ranges can't be read from its text (an
+   * unresolved tab, INDIRECT, OFFSET, a whole row or column of a tab with no
+   * grid): it joins every commit's walk. `[]` when it is not wide.
+   */
+  wideRanges: WideRange[] | null;
 };
 
 const SIMPLE_PREFIX = /^[A-Za-z0-9_À-ʯ]+!/;
@@ -95,7 +103,7 @@ function matchRef(s: string, i: number, oddNames: string[]): Ref | null {
     j += prefix.length;
   }
   const m = REF_PART.exec(s.slice(j, j + 64));
-  if (!m || (m[2] === '' && m[4] === '')) return null;
+  if (!m || (m[2] === "" && m[4] === "")) return null;
   return { sheet, letters: m[2], digits: m[4], end: j + m[0].length };
 }
 
@@ -111,9 +119,12 @@ export function collectFormulaTextDeps(
   c: number,
 ): FormulaTextDeps {
   const deps = new Set<string>();
-  let wide = RUNTIME_REFERENCE_RE.test(f);
+  const runtimeReference = RUNTIME_REFERENCE_RE.test(f);
+  let wide = runtimeReference;
+  let wideUnreadable = runtimeReference;
+  const wideRanges: WideRange[] = [];
   const originKey = `${sheetId}:${r}:${c}`;
-  const s = (f.startsWith('=') ? f.slice(1) : f)
+  const s = (f.startsWith("=") ? f.slice(1) : f)
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'");
 
@@ -121,14 +132,18 @@ export function collectFormulaTextDeps(
     .map((file) => file.name)
     .filter(
       (name): name is string =>
-        typeof name === 'string' && !!name && !SIMPLE_NAME_CHARS.test(name),
+        typeof name === "string" && !!name && !SIMPLE_NAME_CHARS.test(name),
     )
     .sort((a, b) => b.length - a.length);
 
   const resolveSheet = (name: string | null): string | null => {
     if (name == null) return sheetId;
     const id = getSheetIdByName(ctx, name) ?? null;
-    if (id == null) wide = true; // a later add or rename can resolve it
+    if (id == null) {
+      // A later add or rename can resolve it.
+      wide = true;
+      wideUnreadable = true;
+    }
     return id;
   };
 
@@ -154,6 +169,13 @@ export function collectFormulaTextDeps(
       }
     } else {
       wide = true;
+      wideRanges.push({
+        sheetId: id,
+        startRow,
+        endRow,
+        startCol,
+        endCol,
+      });
       if (originInRange) deps.add(originKey);
     }
   };
@@ -179,6 +201,7 @@ export function collectFormulaTextDeps(
       const data = ctx.luckysheetfile.find((file) => file.id === id)?.data;
       if (!data?.length || (emptyCol && !data[0])) {
         wide = true;
+        wideUnreadable = true;
         return;
       }
       if (emptyRow) {
@@ -210,17 +233,17 @@ export function collectFormulaTextDeps(
     const ch = s[i];
     if (ch === '"') {
       i += 1;
-      while (i < s.length && s[i] !== '"') i += s[i] === '\\' ? 2 : 1;
+      while (i < s.length && s[i] !== '"') i += s[i] === "\\" ? 2 : 1;
       i += 1;
       continue;
     }
-    if (ch === '#') {
+    if (ch === "#") {
       const e = ERROR_TOKEN.exec(s.slice(i, i + 32));
       i += e ? e[0].length : 1;
       continue;
     }
-    if (ch === '[') {
-      const close = s.lastIndexOf(']');
+    if (ch === "[") {
+      const close = s.lastIndexOf("]");
       i = close > i ? close + 1 : i + 1;
       continue;
     }
@@ -291,5 +314,9 @@ export function collectFormulaTextDeps(
     }
     i = ref.end;
   }
-  return { deps, wide };
+  return {
+    deps,
+    wide,
+    wideRanges: !wide ? [] : wideUnreadable ? null : wideRanges,
+  };
 }

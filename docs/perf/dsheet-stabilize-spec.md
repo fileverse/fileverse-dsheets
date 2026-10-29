@@ -161,7 +161,7 @@ The observer (`editor/hooks/use-editor-data.tsx:396-693`) currently sends any `[
 New batch type for that path. It is applied through a new `WorkbookInstance.setSheetCalcChain(chain, { id })`, which:
 
 - replaces that sheet's engine calcChain with the Yjs value, `noHistory`;
-- resets the formula dependency indexes (`formulaCache.depsByCell`, `revDepsByCell`, `formulasWithWideRangeDeps`, plus `invalidateSheetsRequiredDenseCache()`) to the state a fresh mount has.
+- diffs the old and new chain and updates only the entries that changed in the formula dependency indexes (`formulaCache.depsByCell`, `revDepsByCell`, `formulasWithWideRangeDeps`, `wideRangesByFormula`, plus `invalidateSheetsRequiredDenseCache()`): an entry that left the chain loses its edges; one that joined gets the edges its cell's text names (read with `collectFormulaTextDeps`), or runs on every commit until its cell arrives. It resets them to the state a fresh mount has only when the diff can't be computed (a chain entry without `r` and `c`).
 
 The result matches what the rebuild produced, without the rebuild.
 
@@ -290,7 +290,7 @@ The graph is filled only as formulas are evaluated, so right after open it is em
 
 Only a forced pass (`isForce`) evaluates every formula: `recalculateAllFormulas` after an import, and the row and column drag rebuild. A normal pass evaluates only the formulas whose references hit the changed cells, plus their dependents (`:2810-2818`). Nothing runs a forced pass on open, so a flag that waits for one would stay false for the whole session.
 
-**Change:** a `depGraphComplete` flag in `formulaCache`, set once the reverse index covers every formula in the chain. After open, in idle time, the index is built from the formula text, without evaluating anything. Ranges up to 10,000 cells add edges and wider ones go to `formulasWithWideRangeDeps`, as `execfunction` records them. Until it finishes, commits take today's path.
+**Change:** a `depGraphComplete` flag in `formulaCache`, set once the reverse index covers every formula in the chain. After open, in idle time, the index is built from the formula text, without evaluating anything. Ranges up to 10,000 cells add edges and wider ones go to `formulasWithWideRangeDeps`, as `execfunction` records them, together with their ranges (`wideRangesByFormula`, used to decide when they join the walk, below). Until it finishes, commits take today's path.
 
 **The index needs its own reference tokenizer.** The parse the normal pass runs for every formula (`:2591-2819`) is not the one `execfunction` records from (`recordDep`, `:395-399`, called from `callCellValue`, `callRangeValue` and `callVariable`, `:414-640`), and it misses references:
 
@@ -304,16 +304,15 @@ The same misses are an existing bug. Right after open, while the graph is empty,
 - Checked against what `execfunction` records: same-tab cells and ranges, quoted tab names and named ranges give the same edges. Tab names match exactly, case-sensitive.
 - **Rejected:** a forced pass on open. It would re-run network and time-dependent formulas (data blocks, prices, `NOW`) on every open and write their results.
 
-**When the flag turns false.** Whenever the indexes are reset (mount, A4, structural changes) and whenever a formula enters the chain without going through `execfunction`:
+**When the flag turns false.** Whenever the indexes are reset (mount, A4, structural changes) and whenever a formula enters the chain locally without going through `execfunction`:
 
-- a remote cell batch (`api/cell.ts:248-329` only registers it);
 - an HTML-table paste (formula cells are written raw and never added to the chain, `paste-internals.ts:519`);
 - a cut-paste, which moves formula cells without updating the chain or evaluating them (an existing bug).
 
-Copy-paste and the text pastes evaluate their formulas (`execfunction` at `:1859`, `handleFormulaOnPaste`, `handleFormulaStringPaste`) and leave the flag as it is. While it is true and the edited cell has no dependents, the pass is skipped.
+A collaborator's formula leaves the flag as it is: a remote cell batch (`api/cell.ts` `registerUnevaluatedFormula`) reads the formula text with the C8 tokenizer and replaces that cell's edges, and a value that is no longer a formula drops them. Copy-paste and the text pastes evaluate their formulas (`execfunction` at `:1859`, `handleFormulaOnPaste`, `handleFormulaStringPaste`) and leave the flag as it is. While it is true and the edited cell has no dependents, the pass is skipped.
 
 - A formula committed locally records its own dependencies when it is evaluated (`execfunction`, `formula.ts:1805-1852`), so local formula edits keep the graph complete.
-- **Very large ranges and named ranges.** Formulas over very large ranges (over 10,000 cells, `MAX_RANGE_DEPS`, `:478`, `:628`) record no edges on the main thread and are added to every commit's dependents (`:2478-2480`); so are formulas using a named range that covers the edited cell (`:2481-2513`). Both are added after the transitive walk (`collectTransitiveFormulaDependents`, `:2474`), so once the graph has entries their own dependents are never reached. With `B1 = SUM(A1:Z1000)` and `C1 = B1*2`, editing A5 recalculates B1 and leaves C1 stale (read from the code; an existing bug). C8 fixes it: one walk, seeded with the edited cell and those formulas. Formulas evaluated in the formula worker record an edge per cell instead, with no cap (`formula-snapshot-eval.ts:172-181`); the index follows the main-thread rule.
+- **Very large ranges and named ranges.** Formulas over very large ranges (over 10,000 cells, `MAX_RANGE_DEPS`, `:478`, `:628`) record no edges on the main thread and are added to every commit's dependents (`:2478-2480`); so are formulas using a named range that covers the edited cell (`:2481-2513`). Both are added after the transitive walk (`collectTransitiveFormulaDependents`, `:2474`), so once the graph has entries their own dependents are never reached. With `B1 = SUM(A1:Z1000)` and `C1 = B1*2`, editing A5 recalculates B1 and leaves C1 stale (read from the code; an existing bug). C8 fixes it: one walk, seeded with the edited cell. A wide formula joins the walk when its range (read from its text) contains the edited cell or any formula cell the walk reaches, and a named-range formula when its name covers either; a wide formula whose ranges can't be read from its text joins every walk. Checking only the edited cell is not enough: with `B1 = SUM(A1:A20000)`, `A5 = Z1*2` and `C1 = B1*2`, editing Z1 must reach B1 through A5. Seeding every wide formula on every commit is too slow: on PR #466 at f0c7334, 5 formulas over more than 10,000 cells on a 4,000 x 25 tab made every commit take 100 to 136 ms with the flag on, against 0.3 to 1.2 ms without them. Formulas evaluated in the formula worker record an edge per cell instead, with no cap (`formula-snapshot-eval.ts:172-181`); the index follows the main-thread rule.
 - **References resolved while a formula runs.** INDIRECT and OFFSET aren't in the engine's function library (`@fileverse-dev/formulajs` 4.4.55), so they give `#NAME?` and record nothing. INDEX's range argument is recorded whole. So the graph misses nothing today; the C8 tests pin it, and adding INDIRECT or OFFSET later means recording what they resolve to.
 
 ### D. App save and publish (dsheets.new)

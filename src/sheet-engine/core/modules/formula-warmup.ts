@@ -14,6 +14,7 @@
 import { Context } from '../context';
 import { getcellFormula } from './cell';
 import { collectFormulaTextDeps } from './formula-dep-text';
+import type { WideRange } from './formula-transitive-deps';
 import {
   finishFullFormulaPass,
   FormulaCache,
@@ -52,6 +53,7 @@ type ShadowIndexes = {
   depsByCell: Map<string, Set<string>>;
   revDepsByCell: Map<string, Set<string>>;
   formulasWithWideRangeDeps: Set<string>;
+  wideRangesByFormula: Map<string, WideRange[]>;
   /** The text each shadow entry was read from, by entry key. */
   evaluatedFormula: Map<string, { f: string; entry: ChainEntry }>;
 };
@@ -92,10 +94,12 @@ function mergeShadowIndexes(
       });
       shadow.depsByCell.delete(key);
       shadow.formulasWithWideRangeDeps.add(key);
+      shadow.wideRangesByFormula.delete(key);
     });
     formulaCache.depsByCell = shadow.depsByCell;
     formulaCache.revDepsByCell = shadow.revDepsByCell;
     formulaCache.formulasWithWideRangeDeps = shadow.formulasWithWideRangeDeps;
+    formulaCache.wideRangesByFormula = shadow.wideRangesByFormula;
     invalidateSheetsRequiredDenseCache();
     return;
   }
@@ -119,14 +123,19 @@ function mergeShadowIndexes(
     });
     if (shadow.formulasWithWideRangeDeps.has(key)) {
       formulasWithWideRangeDeps.add(key);
+      const ranges = shadow.wideRangesByFormula.get(key);
+      if (ranges) formulaCache.wideRangesByFormula.set(key, ranges);
+      else formulaCache.wideRangesByFormula.delete(key);
     } else {
       formulasWithWideRangeDeps.delete(key);
+      formulaCache.wideRangesByFormula.delete(key);
     }
   });
   stale.forEach((key) => {
     // A commit that re-evaluated it since the start recorded its own edges.
     if (depsByCell.get(key) === depsAtStart.get(key)) {
       formulasWithWideRangeDeps.add(key);
+      formulaCache.wideRangesByFormula.delete(key);
     }
   });
   invalidateSheetsRequiredDenseCache();
@@ -159,7 +168,7 @@ function runSlice(
     if (f == null) continue;
     read += 1;
     shadow.evaluatedFormula.set(entry.key, { f, entry });
-    const { deps, wide } = collectFormulaTextDeps(
+    const { deps, wide, wideRanges } = collectFormulaTextDeps(
       ctx,
       f,
       entry.id,
@@ -172,7 +181,10 @@ function runSlice(
       rev.add(entry.key);
       shadow.revDepsByCell.set(depKey, rev);
     });
-    if (wide) shadow.formulasWithWideRangeDeps.add(entry.key);
+    if (wide) {
+      shadow.formulasWithWideRangeDeps.add(entry.key);
+      if (wideRanges) shadow.wideRangesByFormula.set(entry.key, wideRanges);
+    }
   }
   return i;
 }
@@ -218,6 +230,7 @@ export function warmFormulaDependencyGraph(
       depsByCell: new Map(),
       revDepsByCell: new Map(),
       formulasWithWideRangeDeps: new Set(),
+      wideRangesByFormula: new Map(),
       evaluatedFormula: new Map(),
     };
     let next = 0;
