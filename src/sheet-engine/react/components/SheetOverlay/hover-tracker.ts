@@ -64,7 +64,11 @@ export function createHoverTracker({
 /**
  * True when `handleOverlayMouseMove` or `overShowLinkCard` do something that
  * depends on more than the hovered cell: a comment box, image, cell or dialog
- * drag, or a popup that must see the pointer leave it.
+ * drag, a popup that must see the pointer leave it, or one of the drag states
+ * after which `handleOverlayMouseMove` runs `mouseRender` on every move
+ * (`luckysheet_scroll_status` is set by every drag start). Outside the grid
+ * every position maps to "no cell", so auto-scroll and the resize guide need
+ * each move.
  */
 export function isHoverInteractionActive(
   ctx: Context,
@@ -78,6 +82,15 @@ export function isHoverInteractionActive(
     globalCache?.searchDialog?.moveProps ||
     globalCache?.linkCard?.rangeSelectionModal ||
     ctx.luckysheet_cell_selected_move ||
+    ctx.luckysheet_scroll_status ||
+    ctx.luckysheet_select_status ||
+    ctx.luckysheet_rows_selected_status ||
+    ctx.luckysheet_cols_selected_status ||
+    ctx.luckysheet_cell_selected_extend ||
+    ctx.luckysheet_cols_change_size ||
+    ctx.luckysheet_rows_change_size ||
+    ctx.luckysheet_cols_freeze_drag ||
+    ctx.luckysheet_rows_freeze_drag ||
     ctx.hoveredCommentBox ||
     ctx.editingCommentBox ||
     ctx.hoverErrorBox ||

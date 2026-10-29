@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import {
   applyCompactionChangesInChunks,
   canRunCompaction,
+  createCompactionRetrier,
 } from './use-celldata-compaction';
 import { planYdocCompaction } from '../utils/compact-committed-celldata';
 
@@ -148,5 +149,56 @@ describe('applyCompactionChangesInChunks', () => {
     );
     expect(done).toBe(false);
     expect(celldataKeys(doc)).toHaveLength(GHOSTS + 1);
+  });
+});
+
+// PR 466 round 4 (N10): a run that was refused (gate closed) or stopped (the
+// document changed between chunks) is tried again later, not once per open.
+describe('createCompactionRetrier', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const setup = (results: Array<'done' | 'retry'>, maxRetries?: number) => {
+    vi.useFakeTimers();
+    const attempt = vi.fn(async () => results.shift() ?? 'done');
+    const retry = vi.fn();
+    const retrier = createCompactionRetrier({
+      attempt,
+      retry,
+      delayMs: 1_000,
+      maxRetries,
+    });
+    return { attempt, retry, retrier };
+  };
+
+  it('does not schedule anything after a finished run', async () => {
+    const { retry, retrier } = setup(['done']);
+    await retrier.run();
+    vi.advanceTimersByTime(60_000);
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it('asks for another run after the delay when a run must be retried', async () => {
+    const { retry, retrier } = setup(['retry']);
+    await retrier.run();
+    expect(retry).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1_000);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after the maximum number of retries', async () => {
+    const { retry, retrier } = setup(['retry', 'retry', 'retry', 'retry'], 2);
+    for (let i = 0; i < 4; i += 1) {
+      await retrier.run();
+      vi.advanceTimersByTime(1_000);
+    }
+    expect(retry).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancel clears the pending retry', async () => {
+    const { retry, retrier } = setup(['retry']);
+    await retrier.run();
+    retrier.cancel();
+    vi.advanceTimersByTime(10_000);
+    expect(retry).not.toHaveBeenCalled();
   });
 });

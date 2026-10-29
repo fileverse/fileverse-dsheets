@@ -16,6 +16,10 @@ import { shouldSkipEchoWrite } from '../utils/remote-apply-guard';
 
 /** Wait for editor + IDB sync, then a quiet window before scanning. */
 const SETTLE_MS = 4_000;
+/** Wait before a refused or stopped run is tried again. */
+export const COMPACTION_RETRY_MS = 30_000;
+/** Tries after the first run; the compaction is also retried on a later open. */
+export const COMPACTION_MAX_RETRIES = 10;
 /** Max deletes per Yjs transaction — yield between chunks on huge sheets. */
 const DELETE_CHUNK_SIZE = 2_000;
 
@@ -47,6 +51,47 @@ export function canRunCompaction(
   collabSyncing: boolean,
 ): boolean {
   return !shouldSkipEchoWrite(refs) && !collabSyncing;
+}
+
+/**
+ * Runs `attempt` and, when it asks for a retry (the gate was closed, or a run
+ * stopped because the document changed), calls `retry` after `delayMs`, up to
+ * `maxRetries` times. Without it a refused run waited for the next open, so
+ * compaction made one chunk of progress per open (PR 466 N10).
+ */
+export function createCompactionRetrier({
+  attempt,
+  retry,
+  delayMs = COMPACTION_RETRY_MS,
+  maxRetries = COMPACTION_MAX_RETRIES,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+}: {
+  attempt: () => Promise<'done' | 'retry'>;
+  retry: () => void;
+  delayMs?: number;
+  maxRetries?: number;
+  setTimer?: (cb: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimer?: (handle: ReturnType<typeof setTimeout>) => void;
+}) {
+  let retries = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return {
+    async run() {
+      const outcome = await attempt();
+      if (outcome === 'retry' && retries < maxRetries) {
+        retries += 1;
+        timer = setTimer(() => {
+          timer = null;
+          retry();
+        }, delayMs);
+      }
+    },
+    cancel() {
+      if (timer != null) clearTimer(timer);
+      timer = null;
+    },
+  };
 }
 
 const sameVector = (a: Uint8Array, b: Uint8Array) =>
@@ -135,70 +180,80 @@ export function useCelldataCompaction({
 
     const isCancelled = () => cancelled;
 
-    const runCompaction = () => {
-      if (cancelled || runningRef.current) return;
+    const attempt = async (): Promise<'done' | 'retry'> => {
+      if (cancelled || runningRef.current) return 'done';
       if (
         !canRunCompaction(
           { remoteUpdateRef, structuralRemountPendingRef },
           collabSyncing,
         )
       ) {
-        return;
+        return 'retry';
       }
 
       const liveYdoc = ydocRef.current;
-      if (!liveYdoc || hasSheetCompactionCompleted(liveYdoc, dsheetId)) return;
+      if (!liveYdoc || hasSheetCompactionCompleted(liveYdoc, dsheetId)) {
+        return 'done';
+      }
 
       runningRef.current = true;
-
-      void (async () => {
-        try {
-          if (
-            isCancelled() ||
-            !canRunCompaction(
-              { remoteUpdateRef, structuralRemountPendingRef },
-              collabSyncing,
-            )
-          ) {
-            return;
-          }
-
-          const plan = planYdocCompaction(liveYdoc, dsheetId);
-          const revChange = buildCompactionRevChange(liveYdoc, dsheetId);
-          const changes = revChange
-            ? [...plan.changes, revChange]
-            : plan.changes;
-
-          if (changes.length === 0) return;
-
-          compactInMemorySheets(currentDataRef.current);
-
-          const finished = await applyCompactionChangesInChunks(
-            liveYdoc,
-            dsheetId,
-            changes,
-            handleOnChangePortalUpdate,
-            isCancelled,
-            sheetEditorRef,
-          );
-
-          // Cancelled, or the document changed under a multi-chunk run: the
-          // compaction is not complete and is retried later.
-          if (isCancelled() || !finished) return;
-
-          markCompactionRevInMemory(currentDataRef.current);
-          const workbook = sheetEditorRef.current?.getWorkbookContext?.()
-            ?.luckysheetfile;
-          if (workbook) {
-            compactInMemorySheets(workbook);
-            markCompactionRevInMemory(workbook);
-          }
-        } catch (err) {
-          console.warn('[DSheet] Compaction failed:', err);
-        } finally {
-          runningRef.current = false;
+      try {
+        if (
+          isCancelled() ||
+          !canRunCompaction(
+            { remoteUpdateRef, structuralRemountPendingRef },
+            collabSyncing,
+          )
+        ) {
+          return isCancelled() ? 'done' : 'retry';
         }
-      })();
+
+        const plan = planYdocCompaction(liveYdoc, dsheetId);
+        const revChange = buildCompactionRevChange(liveYdoc, dsheetId);
+        const changes = revChange
+          ? [...plan.changes, revChange]
+          : plan.changes;
+
+        if (changes.length === 0) return 'done';
+
+        compactInMemorySheets(currentDataRef.current);
+
+        const finished = await applyCompactionChangesInChunks(
+          liveYdoc,
+          dsheetId,
+          changes,
+          handleOnChangePortalUpdate,
+          isCancelled,
+          sheetEditorRef,
+        );
+
+        // Cancelled, or the document changed under a multi-chunk run: the
+        // compaction is not complete and is tried again later.
+        if (isCancelled()) return 'done';
+        if (!finished) return 'retry';
+
+        markCompactionRevInMemory(currentDataRef.current);
+        const workbook = sheetEditorRef.current?.getWorkbookContext?.()
+          ?.luckysheetfile;
+        if (workbook) {
+          compactInMemorySheets(workbook);
+          markCompactionRevInMemory(workbook);
+        }
+        return 'done';
+      } catch (err) {
+        console.warn('[DSheet] Compaction failed:', err);
+        return 'done';
+      } finally {
+        runningRef.current = false;
+      }
+    };
+
+    const retrier = createCompactionRetrier({
+      attempt,
+      retry: () => scheduleAfterIdle(),
+    });
+    const runCompaction = () => {
+      void retrier.run();
     };
 
     const scheduleAfterIdle = () => {
@@ -228,6 +283,7 @@ export function useCelldataCompaction({
 
     return () => {
       cancelled = true;
+      retrier.cancel();
       if (settleTimer != null) window.clearTimeout(settleTimer);
       if (idleId != null && typeof window.cancelIdleCallback === 'function') {
         window.cancelIdleCallback(idleId);

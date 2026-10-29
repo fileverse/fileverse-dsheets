@@ -120,7 +120,37 @@ describe('isHoverInteractionActive', () => {
     ['editing comment popup open', { editingCommentBox: { rc: '1_1' } }, {}],
     ['hover error popup open', { hoverErrorBox: { row_column: '1_1' } }, {}],
     ['link card shown', { linkCard: { r: 1, c: 1 } }, {}],
+    // PR 466 round 4 (N3): handleOverlayMouseMove runs mouseRender on every
+    // move in these states (mouse.ts, the chain after the commented block).
+    ['a drag in progress (scroll status)', { luckysheet_scroll_status: true }, {}],
+    ['drag-select', { luckysheet_select_status: true }, {}],
+    ['row header drag', { luckysheet_rows_selected_status: true }, {}],
+    ['column header drag', { luckysheet_cols_selected_status: true }, {}],
+    ['fill handle drag', { luckysheet_cell_selected_extend: true }, {}],
+    ['column resize', { luckysheet_cols_change_size: true }, {}],
+    ['row resize', { luckysheet_rows_change_size: true }, {}],
+    ['column freeze line drag', { luckysheet_cols_freeze_drag: true }, {}],
+    ['row freeze line drag', { luckysheet_rows_freeze_drag: true }, {}],
   ])('is true for %s', (_name, ctx, globalCache) => {
     expect(isHoverInteractionActive(ctx as any, globalCache as any)).toBe(true);
+  });
+});
+
+describe('moves outside the grid during a drag (N3)', () => {
+  it('processes every move below the grid while drag-selecting', () => {
+    const frames: (() => void)[] = [];
+    const ctx: any = { luckysheet_select_status: true, luckysheet_scroll_status: true };
+    const tracker = createHoverTracker({
+      getRect: () => RECT,
+      locate: (x, y) => locate(x, y),
+      isInteracting: () => isHoverInteractionActive(ctx, {} as any),
+      requestFrame: (cb) => {
+        frames.push(cb);
+      },
+    });
+    const results = [0, 1, 2, 3, 4].map((i) =>
+      tracker.shouldProcess(move(300, 700 + i * 10)),
+    );
+    expect(results).toEqual([true, true, true, true, true]);
   });
 });
