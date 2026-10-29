@@ -510,7 +510,9 @@ describe('warmFormulaDependencyGraph (C8 warm-up)', () => {
     ).toBe(true);
   });
 
-  it('leaves the flag false while a tab holding formulas is sparse', async () => {
+  // PR 466 round 4 (N2): a tab with no grid is read from celldata, so a
+  // workbook with formulas on two tabs still completes.
+  it('completes while a tab holding formulas is sparse, reading its formulas from celldata', async () => {
     const { ctx } = makeFixture();
     ctx.luckysheetfile.push({
       id: 's2',
@@ -521,9 +523,55 @@ describe('warmFormulaDependencyGraph (C8 warm-up)', () => {
       config: {},
       calcChain: [{ r: 0, c: 0, id: 's2' }],
     });
-    expect(await startWarmup(ctx).drain()).toBe('aborted');
-    expect(ctx.formulaCache.depGraphComplete).toBe(false);
+    expect(await startWarmup(ctx).drain()).toBe('complete');
+    expect(ctx.formulaCache.depGraphComplete).toBe(true);
     expect(ctx.luckysheetfile[1].data).toBeUndefined();
+    expect(ctx.formulaCache.revDepsByCell.get('s1:0:28')?.has('s2:0:0')).toBe(
+      true,
+    );
+    expect(ctx.formulaCache.formulasWithWideRangeDeps.has('s2:0:0')).toBe(false);
+  });
+
+  it('keeps a sparse tab formula it cannot read on every commit', async () => {
+    const { ctx } = makeFixture();
+    ctx.luckysheetfile.push({
+      id: 's2',
+      name: 'Sheet2',
+      order: 1,
+      status: 0,
+      celldata: [],
+      config: {},
+      calcChain: [{ r: 0, c: 0, id: 's2' }],
+    });
+    expect(await startWarmup(ctx).drain()).toBe('complete');
+    expect(ctx.formulaCache.formulasWithWideRangeDeps.has('s2:0:0')).toBe(true);
+  });
+
+  it('a sparse tab formula the cell no longer holds when the walk ends runs on every commit', async () => {
+    const { ctx } = makeFixture();
+    const sheet2: any = {
+      id: 's2',
+      name: 'Sheet2',
+      order: 1,
+      status: 0,
+      celldata: [
+        { r: 0, c: 0, v: { f: '=Sheet1!AC1', v: 0, m: '0' } },
+        { r: 0, c: 1, v: { f: '=Sheet1!AC1', v: 0, m: '0' } },
+      ],
+      config: {},
+      calcChain: [
+        { r: 0, c: 0, id: 's2' },
+        { r: 0, c: 1, id: 's2' },
+      ],
+    };
+    ctx.luckysheetfile.push(sheet2);
+    const run = startWarmup(ctx, 0.0001); // one formula per slice
+    // 100 formulas on Sheet1, then the first one on Sheet2.
+    for (let i = 0; i < FORMULAS + 1; i += 1) run.step();
+    sheet2.celldata[0].v.f = '=Sheet1!AC2';
+    expect(await run.drain()).toBe('complete');
+    expect(ctx.formulaCache.formulasWithWideRangeDeps.has('s2:0:0')).toBe(true);
+    expect(ctx.formulaCache.formulasWithWideRangeDeps.has('s2:0:1')).toBe(false);
   });
 
   it('records the arguments of a network function without calling it', async () => {

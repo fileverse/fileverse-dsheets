@@ -37,11 +37,35 @@ export type FormulaWarmupOptions = {
   isCancelled?: () => boolean;
 };
 
-/** Same condition as a forced pass (C8): every tab holding formulas is dense. */
-const formulaTabsDense = (ctx: Context) =>
-  ctx.luckysheetfile.every((file) => !file.calcChain?.length || file.data);
-
 type ChainEntry = { r: number; c: number; id: string; key: string };
+
+/**
+ * The formula text of a chain entry. A tab with a grid is read from the grid;
+ * a tab without one (demoted, not loaded yet) from its `celldata`, so the walk
+ * needs no grid and loads nothing (PR 466 N2). Each tab's `celldata` is
+ * indexed once per reader.
+ */
+function createFormulaTextReader(ctx: Context) {
+  const celldataByTab = new Map<string, Map<string, string>>();
+  const fromCelldata = (id: string) => {
+    let index = celldataByTab.get(id);
+    if (!index) {
+      index = new Map();
+      const sheet = ctx.luckysheetfile.find((file) => file.id === id);
+      sheet?.celldata?.forEach((entry: any) => {
+        const f = entry?.v?.f;
+        if (f != null) index!.set(`${entry.r}_${entry.c}`, String(f));
+      });
+      celldataByTab.set(id, index);
+    }
+    return index;
+  };
+  return (entry: ChainEntry): string | null => {
+    const sheet = ctx.luckysheetfile.find((file) => file.id === entry.id);
+    if (sheet?.data) return getcellFormula(ctx, entry.r, entry.c, entry.id);
+    return fromCelldata(entry.id).get(`${entry.r}_${entry.c}`) ?? null;
+  };
+}
 
 /**
  * Dependency indexes the warm-up records into. The real ones in
@@ -75,8 +99,9 @@ function mergeShadowIndexes(
   // commit: its new text's edges are unknown, and the completed graph would
   // otherwise never find it as a dependent.
   const stale = new Set<string>();
+  const readFormula = createFormulaTextReader(ctx);
   shadow.evaluatedFormula.forEach(({ f, entry }, key) => {
-    if (getcellFormula(ctx, entry.r, entry.c, entry.id) !== f) stale.add(key);
+    if (readFormula(entry) !== f) stale.add(key);
   });
   const { depsByCell, revDepsByCell, formulasWithWideRangeDeps } = formulaCache;
   if (
@@ -152,6 +177,7 @@ function runSlice(
   depsAtStart: Map<string, Set<string> | undefined>,
   shadow: ShadowIndexes,
   budgetMs: number,
+  readFormula: (entry: ChainEntry) => string | null,
 ): number {
   const t0 = performance.now();
   const realDeps = ctx.formulaCache.depsByCell;
@@ -164,8 +190,16 @@ function runSlice(
     // Re-evaluated since the warm-up started (a commit, a deferred pass):
     // its dependencies come from text at least as new as this context's.
     if (realDeps.get(entry.key) !== depsAtStart.get(entry.key)) continue;
-    const f = getcellFormula(ctx, entry.r, entry.c, entry.id);
-    if (f == null) continue;
+    const f = readFormula(entry);
+    if (f == null) {
+      // No text to read on a tab with no grid (its celldata does not hold the
+      // cell yet): the edges are unknown, so the formula runs on every commit.
+      if (!ctx.luckysheetfile.find((file) => file.id === entry.id)?.data) {
+        shadow.depsByCell.set(entry.key, new Set());
+        shadow.formulasWithWideRangeDeps.add(entry.key);
+      }
+      continue;
+    }
     read += 1;
     shadow.evaluatedFormula.set(entry.key, { f, entry });
     const { deps, wide, wideRanges } = collectFormulaTextDeps(
@@ -192,7 +226,8 @@ function runSlice(
 /**
  * Walk the calc chain in slices and read every formula's references, then
  * mark the graph complete (C8). Resolves 'aborted' if the graph is cleared
- * while it runs, a tab holding formulas is sparse, or `isCancelled` says so.
+ * while it runs or `isCancelled` says so. A tab with no grid is read from its
+ * `celldata`.
  *
  * Pass a getter to read the latest context in each slice (the Workbook does);
  * a plain context is used as is.
@@ -210,7 +245,7 @@ export function warmFormulaDependencyGraph(
 
   return new Promise((resolve, reject) => {
     // No sheets yet: the data that arrives later is not an evaluated formula.
-    if (!startCtx.luckysheetfile?.length || !formulaTabsDense(startCtx)) {
+    if (!startCtx.luckysheetfile?.length) {
       resolve('aborted');
       return;
     }
@@ -241,8 +276,7 @@ export function warmFormulaDependencyGraph(
         if (
           opts.isCancelled?.() ||
           ctx.formulaCache !== formulaCache ||
-          formulaCache.depGraphEpoch !== epoch ||
-          !formulaTabsDense(ctx)
+          formulaCache.depGraphEpoch !== epoch
         ) {
           resolve('aborted');
           return;
@@ -252,7 +286,15 @@ export function warmFormulaDependencyGraph(
           opts.schedule(slice);
           return;
         }
-        next = runSlice(ctx, entries, next, depsAtStart, shadow, budgetMs);
+        next = runSlice(
+          ctx,
+          entries,
+          next,
+          depsAtStart,
+          shadow,
+          budgetMs,
+          createFormulaTextReader(ctx),
+        );
         if (next < entries.length) {
           opts.schedule(slice);
           return;

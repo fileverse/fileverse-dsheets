@@ -10,11 +10,11 @@
  * It never reads another tab's cells, so it hydrates nothing: a whole-row or
  * whole-column reference into a tab that has no grid yet is marked wide.
  */
-import { Context } from "../context";
-import { getSheetIdByName } from "../utils";
-import { resolveDefinedNameForFormula } from "./namedRanges";
-import { RUNTIME_REFERENCE_RE } from "./formula";
-import type { WideRange } from "./formula-transitive-deps";
+import { Context } from '../context';
+import { getSheetIdByName } from '../utils';
+import { resolveDefinedNameForFormula } from './namedRanges';
+import { RUNTIME_REFERENCE_RE } from './formula';
+import type { WideRange } from './formula-transitive-deps';
 
 /** Same cap as `execfunction` (MAX_RANGE_DEPS in formula.ts). */
 export const MAX_TEXT_RANGE_DEPS = 10_000;
@@ -64,7 +64,7 @@ type Ref = {
 };
 
 const isBoundary = (s: string, i: number) =>
-  i === 0 || !/[A-Za-z0-9_$.]/.test(s[i - 1]);
+  i === 0 || !/[A-Za-z0-9_$.À-ʯ]/.test(s[i - 1]);
 
 /** The tab name and length of a `name!` prefix at `i`, or null. */
 function matchPrefix(
@@ -103,7 +103,7 @@ function matchRef(s: string, i: number, oddNames: string[]): Ref | null {
     j += prefix.length;
   }
   const m = REF_PART.exec(s.slice(j, j + 64));
-  if (!m || (m[2] === "" && m[4] === "")) return null;
+  if (!m || (m[2] === '' && m[4] === '')) return null;
   return { sheet, letters: m[2], digits: m[4], end: j + m[0].length };
 }
 
@@ -124,7 +124,7 @@ export function collectFormulaTextDeps(
   let wideUnreadable = runtimeReference;
   const wideRanges: WideRange[] = [];
   const originKey = `${sheetId}:${r}:${c}`;
-  const s = (f.startsWith("=") ? f.slice(1) : f)
+  const s = (f.startsWith('=') ? f.slice(1) : f)
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'");
 
@@ -132,7 +132,7 @@ export function collectFormulaTextDeps(
     .map((file) => file.name)
     .filter(
       (name): name is string =>
-        typeof name === "string" && !!name && !SIMPLE_NAME_CHARS.test(name),
+        typeof name === 'string' && !!name && !SIMPLE_NAME_CHARS.test(name),
     )
     .sort((a, b) => b.length - a.length);
 
@@ -233,22 +233,23 @@ export function collectFormulaTextDeps(
     const ch = s[i];
     if (ch === '"') {
       i += 1;
-      while (i < s.length && s[i] !== '"') i += s[i] === "\\" ? 2 : 1;
+      // Only a doubled quote escapes a quote; a backslash is a plain character.
+      while (i < s.length && s[i] !== '"') i += 1;
       i += 1;
       continue;
     }
-    if (ch === "#") {
+    if (ch === '#') {
       const e = ERROR_TOKEN.exec(s.slice(i, i + 32));
       i += e ? e[0].length : 1;
       continue;
     }
-    if (ch === "[") {
-      const close = s.lastIndexOf("]");
+    if (ch === '[') {
+      const close = s.lastIndexOf(']');
       i = close > i ? close + 1 : i + 1;
       continue;
     }
     const startsToken =
-      /[A-Za-z0-9_$.']/.test(ch) && (ch === "'" || isBoundary(s, i));
+      /[A-Za-z0-9_$.'À-ʯ]/.test(ch) && (ch === "'" || isBoundary(s, i));
     if (!startsToken) {
       i += 1;
       continue;
@@ -260,7 +261,9 @@ export function collectFormulaTextDeps(
         numRef != null &&
         !numRef.letters &&
         /^\s*:/.test(s.slice(numRef.end, numRef.end + 8));
-      if (!isRowRange) {
+      // A tab named only with digits (`2026!A1`) is a tab prefix, not a number.
+      const isTabPrefix = numRef?.sheet != null;
+      if (!isRowRange && !isTabPrefix) {
         const n = NUMBER.exec(s.slice(i, i + 40));
         i += n ? n[0].length : 1;
         continue;

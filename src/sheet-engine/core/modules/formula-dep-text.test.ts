@@ -96,6 +96,32 @@ describe('collectFormulaTextDeps (C8)', () => {
     expect(fromText(ctx, f, 50, 20)).toEqual(recorded(ctx, f, 50, 20));
   });
 
+  // PR 466 round 4 (N4, N5, N8): the text reader agrees with the engine on
+  // digit-only tab names, backslashes in strings and accented tab names.
+  it.each([
+    '=2025!A1+2026!A1',
+    '=SUM(2025!A1:A2)',
+    '=A1&"\\"&B1',
+    '=IF(A1="x\\",B1,C1)',
+    '=Étude!A1*2',
+    '=SUM(Étude!A1:A2)+B1',
+  ])('gives the edges execfunction records for %s (tab names 2025, 2026, Étude)', (f) => {
+    const ctx = makeCtx([
+      { id: 's4', name: '2025' },
+      { id: 's5', name: '2026' },
+      { id: 's6', name: 'Étude' },
+    ]);
+    const expected = recorded(ctx, f, 50, 20);
+    expect(expected.deps.length).toBeGreaterThan(0);
+    expect(fromText(ctx, f, 50, 20)).toEqual(expected);
+  });
+
+  it('still reads a plain number and a row range', () => {
+    const ctx = makeCtx([{ id: 's4', name: '2025' }]);
+    expect(fromText(ctx, '=A1+2025', 9, 9).deps).toEqual(['s1:0:0']);
+    expect(fromText(ctx, '=SUM(2:3)', 9, 9)).toEqual(recorded(ctx, '=SUM(2:3)', 9, 9));
+  });
+
   // C8 spec change (2026-10-29): a wide formula keeps its ranges.
   it('returns the ranges of a wide formula, as execfunction records them', () => {
     const ctx = makeCtx();
