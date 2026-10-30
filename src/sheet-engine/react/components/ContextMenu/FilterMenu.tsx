@@ -12,7 +12,6 @@ import {
 } from '@sheet-engine/core';
 import React, {
   useCallback,
-  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -28,7 +27,7 @@ import {
   LucideIcon,
   TextField,
 } from '@fileverse/ui';
-import WorkbookContext from '../../context';
+import { useWorkbookContextIgnoringScroll } from '../../context/use-workbook-store';
 import Menu from './Menu';
 import SVGIcon from '../SVGIcon';
 import { useAlert } from '../../hooks/useAlert';
@@ -156,7 +155,8 @@ const DateSelectTree: React.FC<{
 };
 
 const FilterMenu: React.FC = () => {
-  const { context, setContext, settings, refs } = useContext(WorkbookContext);
+  const { context, setContext, settings, refs } =
+    useWorkbookContextIgnoringScroll();
   const containerRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<Context>(context);
   const byColorMenuRef = useRef<HTMLDivElement>(null);
@@ -880,4 +880,4 @@ const FilterMenu: React.FC = () => {
   );
 };
 
-export default FilterMenu;
+export default React.memo(FilterMenu);

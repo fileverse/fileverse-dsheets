@@ -1,0 +1,13 @@
+{
+  "label": "before-c4",
+  "date": "2026-10-26T11:09:52.433Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S10 scan per selection change (dataToCelldata + some)": {
+    "median": 36.017,
+    "p95": 55.882,
+    "min": 32.5235,
+    "runs": 15
+  },
+  "S10 scans per selection change": 1
+}

@@ -24,7 +24,7 @@ export const useSyncManager = (config: SyncManagerConfig) => {
   const manager = managerRef.current;
 
   // Keep refs fresh on every render to prevent stale closures
-  manager.updateRefs(config.services, config.callbacks, config.onLocalUpdate);
+  manager.updateRefs(config.services, config.callbacks, config.onRemoteApplied);
 
   const isConnected = manager.isConnected;
   const awareness = manager.awareness;

@@ -1,0 +1,290 @@
+# P1 Stabilise (TEC-3277): remaining package items
+
+> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax.
+
+**Goal:** Finish the package side of P1 Stabilize on `maitra/stabilize-package`. Done on this branch: A1–A5, B1, B2, B3, B4, B5, B6, C1–C8 (incl. the C8 warm-up). Remaining: the July narrowing bug (Task 16, new), D3 and D5 package APIs, F, E1–E6, then a final whole-branch review. Status as of 2026-10-26; see Status and Next below.
+
+**Spec:** `docs/perf/dsheet-stabilize-spec.md` (section 4 has each item's root cause and fix). Fingerprint: `docs/perf/content-fingerprint-spec.md`.
+
+## Status (2026-10-26, updated 2026-10-28: G7 done; 2026-10-29: C8 spec changes and PR 466 round 4)
+
+| Group | Tasks | State | Commits |
+|---|---|---|---|
+| G1 | Task 1 (C8) | committed | fb80dfc |
+| G1b | Task 15 (C8 warm-up, added at the user's request) | committed | a324b38 |
+| G2 | Tasks 2+3 (C4, C5) | committed | 29843e6 |
+| G3 | Task 4 (B3), Task 5 (B5) | committed, browser-checked | 1587101 (B3), 8b18a94 (B5), f2f0972 (results doc) |
+| G4 | Task 17 (B5 case rule fix), Task 16 (July narrowing bug) | done, committed: Task 17 `782aacd`, Task 16 `627aeda` | |
+| G5 | Task 6 (D3), Task 7 (D5) | done, committed: Task 6 `4d181b5`, Task 7 `4603bd9`; docs `0c55ba4` | |
+| G6 | Task 8 (F) | done, committed: Task 8 `71d758d`; docs `4122b95` | |
+| G7 | Tasks 9–14 (E1–E6) | done, committed | `453c02c` (counter, baseline), `8b639d1` (E1, E5, E6), `756e442` (E3), `e081c39` (E2), `96d9ab0` (E4) |
+| end | final whole-branch review; triage deferred minors and open findings below | triage done (`docs/perf/final-review.md`); K6, K7, K9 fixed and K11 closed (`9f614a5`), K8 accepted, K17 fixed (`7847262`), PR 466 rounds 1 to 4 fixed (`a7abbed`, `a5dcd88`, `291c398`, `b046b97`, `5f0cb23`, `24fabfc`); the whole-branch diff review has not been done | |
+
+Unit suite at G3: 39 files, 318 tests passing; `tsc` clean on touched files. Remaining count: 10 plan tasks (6, 7, 8, 9–14) plus Tasks 16 and 17 = 12, plus the final review.
+
+Bench scenario numbers: S9–S15 are all used (S13 = Task 8).
+
+**Rulings that changed the plan**
+- C8 ships as specified, then a warm-up (Task 15) was added so the flag turns true after open. The warm-up builds shadow indexes and merges them at completion, so a partial graph never narrows commits.
+- B3: the brief said "keep guard depth" while deferring. That held the remote-apply guard across the whole edit and would drop the commit's `onChange`. The guard now begins once right before the remount (B1's single begin kept) and is not held while deferred. Spec section B3 updated to match.
+- B5: the brief case `'Q1 2026'!B2:B9` "shifts both ends" holds only for insert index ≤ 1; at index 2 only the end moves. Tests assert both.
+- Browser checks use the demo with `window.__dsheetRef`; the built-in browser has no `prompt()`, so a second tab joins a room by reloading from the stored `dsheet-collabConfig`.
+
+**Spec conflict found while updating docs (must fix first).** The spec, revised 2026-10-26, says B5 compares tab prefixes exactly and case-sensitively, because the engine resolves names that way (`getSheetIdByName` uses `===`). The plan text for Task 5 said case-insensitive, and that is what shipped (8b18a94: `sameTabName` in `formula.ts`, test "compares the tab name case-insensitively"). The spec is the binding authority, so the shipped rule is wrong: `='a'!B5` on a tab named `A` is shifted by the insert, but the engine cannot resolve `'a'` (the browser check showed `#ERROR`), so a case-mismatched reference that never pointed at the edited tab is being shifted. Fixed by Task 17.
+
+**Open findings carried (triage at the final review unless promoted to a task).** Full list with evidence: `docs/perf/KNOWN-ISSUES.md`.
+1. July narrowing bug (commit 1611aee): promoted to Task 16.
+2. NEW, unverified whether pre-existing: formula text rewritten by a row insert is not carried to a second client in the same room (inserting tab has `=B7`, `=A!B7`; peer keeps `=B5`, `=A!B5`). Candidate follow-up task; see `docs/perf/NEXT.md`.
+3. After the same insert the peer had 84 rows against 86 on the inserting tab. Not investigated.
+4. Deferred minors: banner shows the previous sheet's cached result up to ~1 s after a sheet switch; single-line row height uses `fs` as pixels with `DEFAULT_FONT_SIZE`; a removed-cell stale key stays in `formulasWithWideRangeDeps`; no mounted-React test for the Workbook banner effect; B3 local commit during the deferral writes at stale coordinates, `use-celldata-compaction.ts` may run in that window; B5 sheets with no calcChain or unhydrated are skipped when rewriting cross-tab formulas, `#REF!` marking differs between current-sheet and other-sheet branches, tests lack an apostrophe-in-string case; C8 minors listed in the ledger (`.superpowers/sdd/2026-10-26-p1-stabilise-remaining/progress.md`, git-ignored).
+5. Measured but not part of a task: C5 10k-cell single-line sizing in the browser, median 1,827 ms before, 49 ms after (5.5 ms warm). Full paste (clipboard parse, Yjs write, render) is not measured.
+
+## Next
+
+1. **G4 done** (Task 17 `782aacd`, Task 16 `627aeda`). Unit suite 40 files, 321 tests; tsc clean.
+2. **G5 done** (Task 6 `4d181b5`, Task 7 `4603bd9`, docs `0c55ba4`). Unit suite 43 files, 334 tests; tsc clean. Package APIs for D3/D5; app side lives in dsheets.new, outside this repo.
+3. **G6 done** (Task 8, F, S13; `71d758d`, docs `4122b95`). Unit suite 44 files, 346 tests; tsc clean.
+4. **G7 done** (Tasks 9–14, E1–E6; see the Status table for hashes). Plan deviations are in `stabilize-bench-results.md`: E2 uses an ignore list of scroll keys instead of per-component field lists, E3 keeps `generateAPIs` and gives the host a delegating stable handle, E5's one-update target is blocked by the `Sheet` offsets effect (G1 of the follow-ups spec), E4 leaves `getToolbarItem` deps unchanged.
+5. **Final review:** triage in `docs/perf/final-review.md`; K6, K7, K9 fixed and K11 closed on 2026-10-28 (committed in `9f614a5`); K8 accepted for P1; K17 fixed and the C8 spec changes in `7847262` (2026-10-29); PR 466 round 4 (N1 to N10) fixed in `b046b97`, `5f0cb23`, `24fabfc`. Unit suite 66 files, 618 tests; tsc clean. Still open: the whole-branch diff review, the browser targets of spec section 6, two-window QA, the app side.
+
+6. **PR 466 round 5** (2026-10-30, not committed): N1 twice and K60 fixed; unit suite 68 files, 638 tests; tsc clean. `docs/perf/pr-466-review.md` section 17. Round 6 (re-check at `531d235`, not committed): detection shares the rewrite's test, keyboard deletes pass the op; 648 tests; section 18.
+
+## Global Constraints
+
+- **Never commit, stage or stash.** Leave changes in the working tree. The user commits after each group.
+- **Before and after numbers for every change**, measured the same way.
+  - Performance items: add a scenario to the existing harness `docs/perf/bench/stabilize-bench.ts` (scenarios S1–S8 exist; new ones start at S9). Run `npx vite-node docs/perf/bench/stabilize-bench.ts -- before-<item>` **before** changing package code, then `-- after-<item>` after. Results land in `docs/perf/bench/results/<label>.json`.
+  - Correctness items: the repro test's failing run (before) and passing run (after), with the output quoted.
+  - Add a section per item to `docs/perf/stabilize-bench-results.md`, in the style of the existing sections (table of Before/After, "What changed", "Tests", "Not covered").
+- Follow this branch's existing patterns: tests sit next to the code (e.g. `src/sheet-engine/core/modules/engine-hot-spots.test.ts` builds an engine context with `defaultContext(...)`); caches are bypassed inside Immer drafts, as C2/C6/C7 do.
+- No Yjs schema change. `SURGICAL_CELL_LIMIT` stays `50`. No new dependencies. vitest runs in Node (no jsdom).
+- Unit tests: `npm run test:unit`; one file with `npx vitest run <path>`. Type check: `npx tsc --noEmit -p .` (no new errors in touched files).
+- Line numbers in the spec refer to 9411d95; locate code by function name.
+
+## Groups (the controller stops after each group for the user to check and commit)
+
+1. **G1:** Task 1 (C8), then Task 15 (C8 warm-up). Done.
+2. **G2:** Task 2 (C4), Task 3 (C5). Done.
+3. **G3:** Task 4 (B3), Task 5 (B5). Done.
+4. **G4:** Task 16 (July narrowing bug). Next.
+5. **G5:** Task 6 (D3 `rebuildLocalStore`), Task 7 (D5 `appendDsheetUpdate`)
+6. **G6:** Task 8 (F format gate)
+7. **G7:** Tasks 9–14 (E1–E6)
+
+---
+
+### Task 1: No formula pass for a cell nothing depends on (C8) — DONE, committed fb80dfc
+
+**Files:** Modify `src/sheet-engine/core/modules/formula.ts` (`FormulaCache`; the narrowing block in `execFunctionGroup`; the end of a full pass; every place the dependency indexes are reset, including the A4 path in `src/sheet-engine/core/api/cell.ts` / `Workbook/api.ts` `setSheetCalcChain`). Test: `src/sheet-engine/core/modules/formula.dep-graph.test.ts`. Bench: S9 in `docs/perf/bench/stabilize-bench.ts`.
+
+**Interfaces:** Produces `FormulaCache.depGraphComplete: boolean` (default `false`) and `resetFormulaDependencyIndexes(ctx: Context): void`. That function clears `depsByCell`, `revDepsByCell` and `formulasWithWideRangeDeps`, calls `invalidateSheetsRequiredDenseCache()` and sets the flag `false`. Reuse an existing reset helper if A4 already added one; don't duplicate it.
+
+- [ ] **Precondition:** read how INDIRECT, OFFSET and INDEX resolve references at run time (special handling in `formula.ts`; the spec cites `:1046-1048` and `:2604-2607`). Record whether those references reach `depsByCell`. If not, add those formulas' keys to `formulasWithWideRangeDeps` when evaluated, so they always run.
+- [ ] **Before:** add S9 to the harness (4000×25 values, 500 `=SUM(A{r}:T{r})` formulas, graph warm after one full pass; measure one commit to an unreferenced cell through the engine's real commit path, and record the number of formulas processed). Run `-- before-c8`.
+- [ ] **Failing tests** (fixture: 20 rows of A–T values, 500 `SUM` row formulas plus one each of INDIRECT, OFFSET, INDEX, a named range and a whole-column range):
+  - after one forced full pass the flag is `true`;
+  - a commit to an unreferenced cell processes zero formulas;
+  - a commit to a referenced cell gives a grid deep-equal to a forced full pass;
+  - a commit to a cell read only through INDIRECT/OFFSET/INDEX, or a named range, still updates that formula;
+  - `resetFormulaDependencyIndexes` (and `setSheetCalcChain`) set the flag `false`, and the next commit takes the full pass.
+- [ ] **Implement:**
+  - set the flag at the end of a full pass;
+  - clear it on index reset, after structural changes, and when a formula enters the chain without being evaluated (paste, remote cell batch);
+  - skip the pass when the flag is `true` and the dependents set, after the wide-range and named-range additions, is empty.
+- [ ] Tests pass; `npm run test:unit`; type check.
+- [ ] **After:** `-- after-c8`; write the C8 results section (formulas processed and time, before vs after).
+
+### Task 15: C8 warm-up, a dependency-only pass after open (added 2026-10-26 at the user's request) — DONE, committed a324b38
+
+**Why:** C8 only skips when `depGraphComplete` is true, and today that flag is set only by forced full passes: `recalculateAllFormulas` after XLSX import, and row/column drag. Opening a sheet runs none, so in a normal session C8 rarely applies. The normal commit path can't fill the graph, because it evaluates only text-matched formulas.
+
+**Files:** create `src/sheet-engine/core/modules/formula-warmup.ts`; wire it in `src/sheet-engine/react/components/Workbook/index.tsx`. Test: `formula-warmup.test.ts`. Bench: S14 in `docs/perf/bench/stabilize-bench.ts`.
+
+**Interfaces:**
+- `warmFormulaDependencyGraph(ctx: Context, opts: { budgetMs: number; schedule: (cb: () => void) => void; isCancelled?: () => boolean }): Promise<'complete' | 'aborted'>`
+  - Walks the calc chain in chunks of at most `budgetMs` (default `8`) per scheduled slice.
+  - Evaluates each formula only so that `execfunction` records its dependencies (`depsByCell`, `revDepsByCell`, `formulasWithWideRangeDeps`, the unresolved-sheet flag), and discards the result.
+  - Captures `depGraphEpoch` at the start and calls the existing `finishFullFormulaPass(ctx, epoch)` at the end, so a graph cleared mid-warm-up never counts.
+- `scheduleFormulaWarmup(getCtx: () => Context): { trigger(): void; dispose(): void }`
+  - Runs after the workbook's data is ready on mount.
+  - Runs again, debounced `2000` ms, after each `markDepGraphIncomplete()`.
+  - Runs only while `document.visibilityState === 'visible'`.
+  - Uses `requestIdleCallback` with a `setTimeout` fallback.
+
+**Hard requirements (from the spec's non-goals):**
+- No Yjs writes and no `updateCellYdoc` / `groupValuesRefresh` pushes: computed values in Yjs don't change.
+- No `setContext` or Immer update, so no re-render per chunk and no undo entries.
+- Grid cell values are unchanged, including volatile formulas (`NOW`, `RAND`).
+- The A1 signal stays quiet: `userEdited` stays false and `onContentChange` doesn't fire because of the warm-up.
+- The calc chain isn't changed (no `insertUpdateFunctionGroup` side effects).
+- If `execfunction` writes scratch fields on the frozen context, run against a shallow mutable copy for those fields, as needed.
+- How the graph is built is unchanged: reuse `execfunction`'s existing recording.
+- The C8 guard that every tab holding formulas must be dense stays as it is. Sheets whose formulas sit on inactive (sparse) tabs keep the flag false, and this limitation is documented.
+
+- [ ] **Audit first:** list every side effect of `execfunction` and its callees when called for a chain entry (state writes, chain edits, error markers, hooks), and say in the report how warm-up suppresses each one.
+- [ ] **Before:** S14 on a 4000×25 sheet with 500 `SUM` row formulas:
+  - open the engine context (as S9 does) without a forced pass, commit to an unreferenced cell, and record formulas read (expected 500 today);
+  - repeat with 5,000 formulas;
+  - run `-- before-c8-warmup`.
+- [ ] **Failing tests:**
+  - after `warmFormulaDependencyGraph` the flag is `true` and an unreferenced commit reads 0 formulas;
+  - during warm-up: `updateCellYdoc` is never called, `luckysheetfile` keeps its identity, the undo list is unchanged, every cell `v`/`m` is unchanged (including a `NOW()` cell), and `calcChain` keeps its identity;
+  - `markDepGraphIncomplete()` mid-warm-up gives `'aborted'` (or the flag stays false) and a re-warm is scheduled;
+  - each slice respects `budgetMs` (stub clock);
+  - after warm-up, a commit to a referenced cell gives a grid equal to a forced full pass.
+- [ ] Implement and wire; `npm run test:unit`; type check.
+- [ ] **After:** S14 again:
+  - formulas read after warm-up (expected 0);
+  - total warm-up time and longest slice for 500 and 5,000 formulas;
+  - Yjs updates emitted during warm-up (expected 0).
+
+  Run `-- after-c8-warmup`. Then a browser check in the demo (dev build): open a sheet with formulas, confirm no Yjs `update` event and no `onContentChange` during warm-up, then that a commit to an unreferenced cell skips the pass. Add the results to the C8 section.
+
+### Task 2: Crypto-banner scan on data change, idle (C4) — DONE, committed 29843e6
+
+**Files:**
+- Create `src/sheet-engine/react/components/Workbook/denomination-scan.ts`.
+- Modify `src/sheet-engine/react/components/Workbook/index.tsx`, the effect that scans for BTC/ETH/SOL on every `luckysheet_select_save` change. It becomes an effect on data identity that schedules the scan in `requestIdleCallback` with a `setTimeout` fallback. The selection hook call stays on selection changes. No DOM writes inside `setContext` updaters.
+
+Test: `denomination-scan.test.ts`. Bench: S10.
+
+**Interfaces:** `hasDenominatedCell(data: (Cell | null)[][]): boolean`, which stops at the first hit.
+
+- [ ] **Before:** S10 = today's per-selection-change work on 9,900 × 60 (`dataToCelldata` + `some`), `-- before-c4`.
+- [ ] **Failing test:** `true` when any `v.m` contains BTC, ETH or SOL; `false` otherwise; stops at the first hit (a grid whose later rows throw on access).
+- [ ] Implement and wire; tests; type check.
+- [ ] **After:** S10 measures the selection-change path, expected 0 scans, plus one idle scan per data change; `-- after-c4`; results section.
+
+### Task 3: Paste auto-fit without per-cell layout (C5) — DONE, committed 29843e6
+
+**Files:** Modify `src/sheet-engine/core/paste-helpers/calculate-range-cell-size.tsx`. Test: `calculate-range-cell-size.test.ts`. Bench: S11.
+
+**Interfaces:**
+- `measureSingleLine(font: string, text: string, ctx2d: { measureText(t: string): { width: number }; font: string }): number`, cached by `(font, text)`.
+- The font string comes from the same builder the grid uses to draw cells. Find the function the canvas uses and reuse it; this fixes the wrong-font bug the spec notes (`ff` used as a family name, `fs` used as pixels).
+- Wrapped cells keep DOM measurement, batched so that all writes happen before the first read.
+
+- [ ] **Before:** S11 = 10,000 single-line cells through today's path with a stub element counting `scrollWidth`/`scrollHeight` reads (forced layouts), `-- before-c5`.
+- [ ] **Failing tests:**
+  - a repeat `measureSingleLine` doesn't call `measureText`;
+  - for `ff: 1, fs: 12` the font equals the grid's draw font;
+  - for wrapped cells, all `textContent` writes happen before the first `scrollHeight` read.
+- [ ] Implement; tests; type check.
+- [ ] **After:** S11, expected 0 layout reads for single-line cells; `-- after-c5`; results section. Also record a browser 10k-cell plain-text paste time before and after in the demo (dev build, built-in browser), as the existing B2/B6 browser checks did.
+
+### Task 4: Structural remote change during a cell edit is deferred, not dropped (B3) — DONE, committed 1587101
+
+**Files:** Modify `src/editor/hooks/use-editor-data.tsx` (`scheduleStructuralRemount` timer path); extract a pure scheduler if needed (`src/editor/utils/structural-remount-scheduler.ts`) so it can be tested. Test next to it.
+
+- [ ] **Before:** a test against today's logic (copied into the test as `legacyScheduler` if extraction is needed). With editing active when the timer fires, the remount is skipped and the pending flag cleared. That is the failure: record the failing run.
+- [ ] **Behaviour:** while editing, re-arm the timer (`250` ms) and keep the pending flag and guard depth. Remount once the edit ends; depth returns to 0. Keep B1's single begin per pending remount.
+- [ ] Tests pass (fake timers); `npm run test:unit`; type check.
+- [ ] **After:** passing run quoted. Browser check in the demo with two tabs in one room (as the A4/B2 checks did): start editing a cell on tab B, insert a row on tab A, finish the edit on tab B, and confirm tab B shows the inserted row and the edit is saved. Results section.
+
+### Task 5: Row insert/delete shifts only references to that tab (B5) — DONE, committed 8b18a94
+
+**Files:** Modify `src/sheet-engine/core/modules/formula.ts` (`functionStrChange`, `functionStrChange_range`) and every `functionStrChange(` call site in `src/sheet-engine/core/modules/rowcol.ts`. Test: `formula.str-change.test.ts`.
+
+**Interfaces:** `functionStrChange(txt, type, rc, orient, stindex, step, tabs: { editedTab: string; formulaTab: string })`, with the new argument last.
+
+- [ ] **Failing tests:** insert one row at index 2 on tab `A`:
+  - on tab A, `=B5` → `=B6`;
+  - on tab A, `=C!B5` unchanged;
+  - on tab B, `=B5` unchanged and `=A!B5` → `=A!B6`;
+  - on tab B, `='a'!B5` → `='a'!B6` (case-insensitive);
+  - for tab `Bob's Sheet`, `='Bob''s Sheet'!B5` → `='Bob''s Sheet'!B6`;
+  - `='Q1 2026'!B2:B9` shifts both ends.
+
+  Save the failing run.
+- [ ] **Implement:**
+  - unquote the prefix (strip outer `'`, collapse `''` to `'`);
+  - compare case-insensitively;
+  - a reference with no prefix belongs to `formulaTab`.
+- [ ] Tests; type check. **After:** passing run, plus a demo check (three tabs with cross-tab formulas, insert a row on one tab, confirm the other tabs' formulas are unchanged). Results section.
+
+### Task 17: B5 tab prefixes compare exactly, case-sensitively (spec fix, added 2026-10-26)
+
+**Why.** `docs/perf/dsheet-stabilize-spec.md` section B5 (revised 2026-10-26): prefixes are compared unquoted and exactly, as the engine resolves tab names (case-sensitive, `getSheetIdByName`). Task 5 shipped case-insensitive because the plan text said so.
+
+**Files:** `src/sheet-engine/core/modules/formula.ts` (`sameTabName`), `formula.str-change.test.ts`.
+
+- [ ] **Failing tests (before):** insert one row at index 2 on tab `A`; on tab `B`, `='a'!B5` stays `='a'!B5` (tab `a` is not tab `A`), and `=A!B5` → `=A!B6`. Replace the existing "compares the tab name case-insensitively" test with this one. Record the failing run (the old rule shifts `'a'!B5`).
+- [ ] **Implement:** exact comparison after unquoting; keep the `''` collapse. No other change.
+- [ ] Tests; type check; update the B5 section in `docs/perf/stabilize-bench-results.md` (the case-insensitive row in the browser table and the sentence about `='a'!B5`).
+- [ ] **After:** passing run. Browser check optional (the result table only changes for B4).
+- Review: opus reviewer, diff is tiny.
+
+### Task 16: Commit-path narrowing only when the dependency graph is complete (July narrowing bug, added 2026-10-26)
+
+**Problem.** Commit 1611aee (July) narrows the commit's run list in `execFunctionGroup` (`src/sheet-engine/core/modules/formula.ts`, the block that starts `const { depGraphComplete } = ctx.formulaCache;`) as soon as `revDepsByCell.size > 0`, even while `depGraphComplete` is false. A formula that has never been evaluated has no recorded edges, so once any other edge exists the graph is non-empty and the never-evaluated formula is left out of the run list when its precedent is edited: a stale value. The warm-up (Task 15) closes most cases after open, but not on sheets where `depGraphComplete` never turns true (for example sparse/demoted tabs, which a full pass skips).
+
+**Decision (user, 2026-10-26).** Narrow commits only when `depGraphComplete` is true. When it is false, run the full list as before 1611aee.
+
+**Files:** Modify `src/sheet-engine/core/modules/formula.ts` (the condition `(ctx.formulaCache.revDepsByCell.size > 0 || depGraphComplete)` and anything that relies on the old behaviour). Test: `formula-narrowing.test.ts` next to `engine-hot-spots.test.ts` (build the context the same way). Bench: S15.
+
+- [ ] **Failing test (repro):** context with formula `F1 = A1*2` never evaluated and a second formula that has been evaluated (so `revDepsByCell` is non-empty, `depGraphComplete` false). Edit `A1`; `F1` must hold the new value. Record the failing run on today's code.
+- [ ] **Before:** S15 = commit latency on a large sheet where the flag never turns true (include one sparse tab so a full pass cannot complete the graph): median per single-cell commit, `-- before-narrow`. Also record the same on a sheet where the flag is true (must not change).
+- [ ] **Implement:** narrow only under `depGraphComplete`. Keep the defined-name and wide-range additions inside the narrowed branch. Keep Task 15's shadow-index merge and `markDepGraphIncomplete` paths working.
+- [ ] Tests (existing 318 must pass, incl. the C8 and warm-up tests that assume narrowing after completion); type check.
+- [ ] **After:** failing test now passes; S15 `-- after-narrow`. Expect: flag-false sheets pay a full pass per commit (slower, now correct); flag-true sheets unchanged. State the cost plainly in the results section.
+- [ ] Results section in `docs/perf/stabilize-bench-results.md`; update the C8 section's "Not covered" and spec C8.
+- Review: opus reviewer (formula work).
+
+### Task 6: `rebuildLocalStore` (D3, package side)
+
+**Files:** Create `src/editor/utils/rebuild-indexeddb-store.ts`. Modify `src/editor/hooks/use-editor-sync.tsx`, `src/editor/types.ts` and `src/editor/utils/editor-handle.ts`. Test: `rebuild-indexeddb-store.test.ts` (`fake-indexeddb/auto`).
+
+**Interfaces:**
+- `rebuildIndexedDbStore(dsheetId: string, doc: Y.Doc, current: IndexeddbPersistence | null): Promise<IndexeddbPersistence>`
+- `DSheetEditorHandle.rebuildLocalStore(): Promise<void>`. It destroys the provider, deletes the database, attaches a new provider to the same live `Y.Doc` and awaits `whenSynced`.
+
+- [ ] **Before:** a test of today's heal behaviour (delete the database, reopen a fresh doc). Edits not yet in another store are gone: record it.
+- [ ] **Failing test:** after 50 edits and `rebuildIndexedDbStore`, a fresh doc opened on the same name has the live doc's fingerprint, and the live doc object is unchanged.
+- [ ] Implement and expose on the handle; tests; type check.
+- [ ] **After:** passing run; record the rebuild time on the S4 old sheet. Results section.
+
+### Task 7: `appendDsheetUpdate` (D5, package side)
+
+**Files:** Modify `src/persistence.ts`; export from `src/index.ts`. Test: `src/persistence.append.test.ts`. Bench: S12.
+
+**Interfaces:** `appendDsheetUpdate(dsheetId: string, update: Uint8Array): Promise<void>`. It adds exactly one row to the y-indexeddb `updates` store and never writes a full copy.
+
+- [ ] **Before:** S12 = today's `mergeDsheetContent` on the S4 old sheet with a small remote change (time and bytes written), `-- before-d5`.
+- [ ] **Failing test:** with `delta = Y.diffUpdate(remote, localSV)`, `appendDsheetUpdate` adds one row, and replaying all rows gives the same content as `mergeDsheetContent`.
+- [ ] Implement with the same database and store names `persistence.ts` uses; tests; type check.
+- [ ] **After:** S12 with `appendDsheetUpdate`, `-- after-d5`; expected bytes written equal to the delta size. Results section.
+
+### Task 8: Format gate on `meta.format` (F) — DONE, committed 71d758d (G6)
+
+**Files:** Create `src/editor/utils/format-gate.ts`. Modify `src/editor/contexts/editor-context.tsx` (start after bootstrap; on lock, set read-only and show the prompt with the existing toast or banner) and `src/editor/utils/update-ydoc.ts` (write helpers return early while locked). Test: `format-gate.test.ts`. Bench: S13.
+
+**Interfaces:**
+- `SUPPORTED_FORMAT = 1`
+- `readFormatVersion(doc, dsheetId): number` (missing map or key means 1)
+- `watchFormatGate(doc, dsheetId, onLocked: (format: number) => void): () => void`
+- `isFormatLocked(doc): boolean`
+- Map name `` `${dsheetId}/meta` ``, key `format`. Prompt copy exactly `This sheet was updated. Reload to continue.`
+
+- [ ] **Before:** S13 = open cost (apply the 4000×25 body into a fresh doc with today's listeners), `-- before-f`.
+- [ ] **Failing tests:**
+  - no meta map reads 1 and is not locked;
+  - setting `format: 2` while watched calls `onLocked(2)` once, after which `updateYdocSheetData` writes nothing (state vector unchanged);
+  - a doc that receives `meta.format = 2` through `Y.applyUpdate` from another doc also locks.
+- [ ] Implement; tests; type check.
+- [ ] **After:** S13 with the gate, `-- after-f`, within noise of Before; a demo check that setting `format` to 2 from a second tab locks the first tab. Results section.
+
+### Tasks 9–14: Fewer whole-UI re-renders (E1–E6)
+
+Measured with render counts in the demo (dev build, built-in browser) for one scroll frame, a mouse move within a cell and across a cell boundary, an ArrowDown, a keystroke in the cell editor, and an Enter commit, on a 100-row sheet with dropdowns, borders, fills and 2 CF rules.
+
+- Use a demo-only render counter gated behind a URL flag (`?perfRender=1`) so normal demo use has no overhead.
+- Record Before for all interactions before Task 9 starts.
+
+| Task | Item | Files | Test | Before / After |
+|---|---|---|---|---|
+| 9 | **E1** hover only on change | new `SheetOverlay/hover-tracker.ts`; `SheetOverlay/index.tsx` | `hover-tracker.test.ts`: 3 moves within a cell trigger 1 change; a cross-cell move triggers another; every move triggers one while interacting; `getRect` is called once per frame | renders per within-cell move (expected 0 after) |
+| 10 | **E2** selector store + `React.memo` for Toolbar, SheetTab (+ items), ContextMenu, FilterMenu, SheetTabContextMenu, FunctionList; `React.memo` only for SVGDefines | new `react/context/workbook-store.ts` (`createWorkbookStore`, `useWorkbookSelector` on `useSyncExternalStore`) | store notify / unsubscribe / `selectChanged` tests; each component's selector lists every `context.` field it reads (grep, pasted in the report) | which components render per interaction (expected: none of these on scroll, hover, or a commit outside the selection) |
+| 11 | **E3** stable handle | `Workbook/api.ts` `generateAPIs(contextRef, …)`; `Workbook/index.tsx` `useImperativeHandle` without `context`; update existing tests that call `generateAPIs` | built once, it reads the latest context | host ref-callback calls over 20 scroll frames (expected 0) |
+| 12 | **E4** paste listener bound once; narrow memos | `Workbook/index.tsx` `onPaste` via ref; `Toolbar` `getToolbarItem` deps; `FunctionListButton` memo deps | glue (no unit test) | paste listener re-binds and memo recomputes over 20 scroll frames (temporary counters, removed after) |
+| 13 | **E5** one context update per commit | `NotationBoxes/index.tsx`; `shownCommentsKey(data)` | same key for an unchanged shown set | context updates per commit (expected 1) |
+| 14 | **E6** no forced layout on render | `SheetOverlay/index.tsx`: the two `innerText` reads only while editing | glue | forced layouts from `SheetOverlay` in a 90-frame scroll recording (expected 0) |

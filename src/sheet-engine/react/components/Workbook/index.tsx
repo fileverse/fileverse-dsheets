@@ -24,6 +24,7 @@ import {
   groupValuesRefresh,
   runFormulaEvalChunk,
   applyWorkerFormulaChunkResults,
+  finishFullFormulaPass,
   insertDuneChart,
   getFlowdata,
   api,
@@ -81,11 +82,20 @@ import {
   initFormulaWorkerSnapshot,
   invalidateFormulaWorkerSnapshot,
 } from '@sheet-engine/core/modules/formula-worker-bridge';
+import { scheduleFormulaWarmup } from '@sheet-engine/core/modules/formula-warmup';
 import { syncAndDemoteInactiveFlowdata } from '@sheet-engine/core/api/sheet-flowdata-lifecycle';
 import { ensureSheetFlowdata } from '@sheet-engine/core/api/sheet';
 import { setActiveDraftContext } from '@sheet-engine/core/utils/active-draft-context';
 import { clearRangeValuePassCache } from '@sheet-engine/core/modules/formula-range-cache';
 import { selectionCache } from '@sheet-engine/core/modules/selection';
+import {
+  planHistoryPatches,
+  reregisterRestoredFormulas,
+  type RestoredCell,
+} from '@sheet-engine/core/modules/history-calc-chain';
+import { gridSizeChangesFromPatches } from '@sheet-engine/core/modules/history-grid-size';
+import { celldataArrayChanges } from '@sheet-engine/core/modules/history-celldata';
+import { loadTabsReadingSheet } from '@sheet-engine/core/modules/structural-edit-prep';
 import React, {
   useMemo,
   useState,
@@ -93,6 +103,7 @@ import React, {
   useEffect,
   useRef,
   useImperativeHandle,
+  useLayoutEffect,
 } from 'react';
 import './index.css';
 import produce, {
@@ -104,7 +115,15 @@ import produce, {
 import _ from 'lodash';
 import { getCryptoPrice } from '../../utils/cryptoApi';
 import Sheet from '../Sheet';
-import WorkbookContext, { RefValues, SetContextOptions } from '../../context';
+import WorkbookContext, {
+  RefValues,
+  SetContextOptions,
+  WorkbookStableContext,
+} from '../../context';
+import {
+  createWorkbookStore,
+  WorkbookStore,
+} from '../../context/workbook-store';
 import Toolbar from '../Toolbar';
 import FxEditor from '../FxEditor';
 import QuickSearchBar from '../QuickSearch';
@@ -113,6 +132,8 @@ import ContextMenu from '../ContextMenu';
 import SVGDefines from '../SVGDefines';
 import SheetTabContextMenu from '../ContextMenu/SheetTab';
 import { generateAPIs } from './api';
+import { createStableHandle } from './stable-handle';
+import { applyDenominationBanner, hasDenominatedCell } from './denomination-scan';
 import { ModalProvider } from '../../context/modal';
 import FilterMenu from '../ContextMenu/FilterMenu';
 import SheetList from '../SheetList';
@@ -125,6 +146,26 @@ import {
 // import ConditionRules from "../ConditionFormat/ConditionRules";
 
 enablePatches();
+
+/**
+ * Apply undo/redo patches without restoring `calcChain` from them (A4): the
+ * restored cells are re-registered from their own formulas instead, so a
+ * collaborator's chain entries survive.
+ */
+function applyHistoryPatches(ctx: Context, patches: Patch[]): Context {
+  const plan = planHistoryPatches(patches);
+  const applied = applyPatches(ctx, plan.patches);
+  if (!plan.restored?.length) return applied;
+  const restored: RestoredCell[] = plan.restored;
+  return produce(applied, (draft: Context) => {
+    setActiveDraftContext(draft);
+    try {
+      reregisterRestoredFormulas(draft, restored);
+    } finally {
+      setActiveDraftContext(null);
+    }
+  });
+}
 
 export type WorkbookInstance = ReturnType<typeof generateAPIs>;
 
@@ -472,6 +513,17 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
             return;
           }
 
+          // A structural edit on another tab rewrote this unloaded tab's
+          // cross-tab formulas as one replacement of its celldata (N1).
+          if (root === 'celldata' && path.length === 3) {
+            celldataArrayChanges(
+              sheetId,
+              sheetBefore?.celldata,
+              sheetAfter?.celldata,
+            ).forEach(upsert);
+            return;
+          }
+
           // Map-like objects on sheet keyed by "r_c": ["hyperlink", "0_1"], etc.
           if (typeof root === 'string' && mapFields.has(root)) {
             const key = path[3];
@@ -517,6 +569,8 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
             }
           }
         });
+
+        gridSizeChangesFromPatches(ctxAfter, patches).forEach(upsert);
 
         const changes = Array.from(changeMap.values());
         if (changes.length > 0) updateCellYdoc(changes);
@@ -605,6 +659,10 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           if (options.noHistory) {
             return produce(ctx_, runWithDraft);
           }
+
+          // Tabs a row/column edit will rewrite are loaded first, outside the
+          // recorded change, so undo and redo replay the rewrite cell by cell.
+          ctx_ = loadTabsReadingSheet(ctx_, options);
 
           const [result, patches, inversePatches] = produceWithPatches(
             ctx_,
@@ -702,7 +760,9 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           ctx_ = produce(ctx_, (draft: Context) => {
             ensureFlowdataForDataPatches(draft, history.inversePatches);
           });
-          let newContext = applyPatches(ctx_, history.inversePatches);
+          // Patches restore formulas without evaluating them (C8).
+          ctx_.formulaCache.markDepGraphIncomplete();
+          let newContext = applyHistoryPatches(ctx_, history.inversePatches);
           globalCache.current.redoList.push(history);
           const inversedOptions = inverseRowColOptions(history.options);
           if (inversedOptions?.insertRowColOp) {
@@ -773,7 +833,9 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           ctx_ = produce(ctx_, (draft: Context) => {
             ensureFlowdataForDataPatches(draft, history.patches);
           });
-          let newContext = applyPatches(ctx_, history.patches);
+          // Patches restore formulas without evaluating them (C8).
+          ctx_.formulaCache.markDepGraphIncomplete();
+          let newContext = applyHistoryPatches(ctx_, history.patches);
           const isBorderUndo = history.patches.some(
             (onePatch) =>
               Array.isArray(onePatch.value?.borderInfo) &&
@@ -838,54 +900,33 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       getCryptoPrice('bitcoin', 'usd');
     }, []);
 
+    // Crypto-denomination banner (C4): scan the grid in idle time when the
+    // data identity changes, not on every selection change.
+    const denominationGridData = getFlowdata(context);
+    const lastDenominatedRef = useRef<boolean | null>(null);
     useEffect(() => {
-      setContext((ctx: any) => {
-        const gridData = getFlowdata(ctx);
-        const cellData = api.dataToCelldata(gridData as any);
-        const denominatedUsed = (cellData ?? []).some((cell: any) => {
-          const value = cell?.v?.m?.toString();
-          return (
-            value?.includes('BTC') ||
-            value?.includes('ETH') ||
-            value?.includes('SOL')
-          );
-        });
-        const denoWarn = document.getElementById('denomination-warning');
-        const scrollBar = document.getElementsByClassName(
-          'luckysheet-scrollbar-x',
-        )[0] as HTMLElement;
-        const addRowBar = document.getElementById(
-          'luckysheet-bottom-controll-row',
+      const applyBanner = () => {
+        const denominatedUsed = hasDenominatedCell(
+          (denominationGridData ?? []) as any,
         );
-        if (denominatedUsed && denoWarn) {
-          denoWarn.style.display = 'block';
-          denoWarn.style.left = '0px';
-          if (scrollBar) {
-            scrollBar.setAttribute(
-              'style',
-              'bottom: 36px !important; width: calc(100% - 60px);',
-            );
-          }
-          // Lift add-row bar so its white band sits directly on top of the disclaimer bar (no grid gap).
-          if (addRowBar) {
-            addRowBar.style.bottom = '54px';
-          }
-        } else if (!denominatedUsed && denoWarn) {
-          denoWarn.style.display = 'none';
-          denoWarn.style.left = '-9999px';
-          if (scrollBar) {
-            scrollBar.setAttribute(
-              'style',
-              'bottom: 10px !important; width: calc(100% - 60px);',
-            );
-          }
-          if (addRowBar) {
-            addRowBar.style.bottom = '38px';
-          }
-        }
-        return ctx;
-      });
+        lastDenominatedRef.current = denominatedUsed;
+        applyDenominationBanner(denominatedUsed);
+      };
+      const w = window as any;
+      if (typeof w.requestIdleCallback === 'function') {
+        const handle = w.requestIdleCallback(applyBanner, { timeout: 1000 });
+        return () => w.cancelIdleCallback?.(handle);
+      }
+      const timer = setTimeout(applyBanner, 0);
+      return () => clearTimeout(timer);
+    }, [denominationGridData, context.currentSheetId]);
 
+    useEffect(() => {
+      // The host supplies #denomination-warning and may mount it after the
+      // scan ran: re-apply the last scan result (no scan) on selection change.
+      if (lastDenominatedRef.current != null) {
+        applyDenominationBanner(lastDenominatedRef.current);
+      }
       if (context.luckysheet_select_save != null) {
         mergedSettings.hooks?.afterSelectionChange?.(
           context.currentSheetId,
@@ -915,6 +956,28 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
         refs,
         setContextWithProduce,
       ],
+    );
+
+    // E2: components that must not render on every context update read the
+    // latest context from this store and the rarely changing parts from the
+    // stable value. The store is updated after each commit.
+    const workbookStore = useRef<WorkbookStore<Context> | null>(null);
+    if (workbookStore.current === null) {
+      workbookStore.current = createWorkbookStore(context);
+    }
+    useLayoutEffect(() => {
+      workbookStore.current!.setState(context);
+    }, [context]);
+    const stableValue = useMemo(
+      () => ({
+        store: workbookStore.current!,
+        setContext: setContextWithProduce,
+        settings: mergedSettings,
+        handleUndo,
+        handleRedo,
+        refs,
+      }),
+      [handleRedo, handleUndo, mergedSettings, refs, setContextWithProduce],
     );
 
     useEffect(() => {
@@ -971,6 +1034,30 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
         (sheet) => sheet.id === context?.currentSheetId,
       );
     }, [context?.luckysheetfile, context?.currentSheetId]);
+
+    // C8 warm-up: record every formula's dependencies in idle time once the
+    // data is ready, and again after each markDepGraphIncomplete (debounced),
+    // so a commit to a cell nothing reads can skip the formula pass. It reads
+    // the context through the ref and never calls setContext.
+    const formulaWarmupRef = useRef<ReturnType<
+      typeof scheduleFormulaWarmup
+    > | null>(null);
+    const formulaWarmupTriggeredRef = useRef(false);
+    useEffect(() => {
+      const warmup = scheduleFormulaWarmup(() => contextRef.current);
+      formulaWarmupRef.current = warmup;
+      formulaWarmupTriggeredRef.current = false;
+      return () => {
+        warmup.dispose();
+        formulaWarmupRef.current = null;
+      };
+    }, []);
+    const sheetDataReady = !!currentSheet?.data?.length;
+    useEffect(() => {
+      if (!sheetDataReady || formulaWarmupTriggeredRef.current) return;
+      formulaWarmupTriggeredRef.current = true;
+      formulaWarmupRef.current?.trigger();
+    }, [sheetDataReady]);
 
     useEffect(() => {
       if (context?.hooks?.calcChainChange) {
@@ -1521,27 +1608,35 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           if (e.code === 'KeyR') {
             [st_index, ed_index] = getSelection()[0].row;
             const range = context.luckysheet_select_save;
-            setContextWithProduce((draftCtx) => {
-              deleteRowCol(draftCtx, {
-                type: 'row',
-                start: st_index,
-                end: ed_index,
-                id: context.currentSheetId,
-              });
-              draftCtx.luckysheet_select_save = range;
-            });
+            const deleteRowColOp: SetContextOptions['deleteRowColOp'] = {
+              type: 'row',
+              start: st_index,
+              end: ed_index,
+              id: context.currentSheetId,
+            };
+            setContextWithProduce(
+              (draftCtx) => {
+                deleteRowCol(draftCtx, deleteRowColOp);
+                draftCtx.luckysheet_select_save = range;
+              },
+              { deleteRowColOp },
+            );
           } else {
             [st_index, ed_index] = getSelection()[0].column;
             const range = context.luckysheet_select_save;
-            setContextWithProduce((draftCtx) => {
-              deleteRowCol(draftCtx, {
-                type: 'column',
-                start: st_index,
-                end: ed_index,
-                id: context.currentSheetId,
-              });
-              draftCtx.luckysheet_select_save = range;
-            });
+            const deleteRowColOp: SetContextOptions['deleteRowColOp'] = {
+              type: 'column',
+              start: st_index,
+              end: ed_index,
+              id: context.currentSheetId,
+            };
+            setContextWithProduce(
+              (draftCtx) => {
+                deleteRowCol(draftCtx, deleteRowColOp);
+                draftCtx.luckysheet_select_save = range;
+              },
+              { deleteRowColOp },
+            );
           }
 
           waitingForDelRow = false; // Reset the waiting state
@@ -1760,12 +1855,18 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       setMoreToolbarItems(null);
     }, []);
 
+    // Bound once (E4): onPaste is rebuilt on every context update, so the
+    // listener calls the latest one through a ref instead of being removed and
+    // added again each time.
+    const onPasteRef = useRef(onPaste);
+    onPasteRef.current = onPaste;
     useEffect(() => {
-      document.addEventListener('paste', onPaste);
+      const listener = (e: ClipboardEvent) => onPasteRef.current(e);
+      document.addEventListener('paste', listener);
       return () => {
-        document.removeEventListener('paste', onPaste);
+        document.removeEventListener('paste', listener);
       };
-    }, [onPaste]);
+    }, []);
 
     const isFormulaCalculating = !!context.isFormulaCalculating;
     const formulaAsyncEvalTotal = context.formulaAsyncEval?.total;
@@ -1784,6 +1885,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       const finishJobIfComplete = (draft: Context) => {
         const job = draft.formulaAsyncEval;
         if (!job || job.nextIndex < job.total) return;
+        finishFullFormulaPass(draft, job.fullPassEpoch);
         draft.formulaCache.execFunctionExist = undefined;
         clearRangeValuePassCache(draft.formulaCache);
         draft.formulaCache.execFunctionGlobalData = null;
@@ -1994,9 +2096,13 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       };
     }, [isFormulaCalculating, formulaAsyncEvalTotal, setContextWithProduce]);
 
-    // expose APIs
-    useImperativeHandle(ref, () => {
-      const workbookInstance = generateAPIs(
+    // expose APIs (E3). The api object is rebuilt after every render, as it
+    // was before, but the handle given to the host is built once and calls
+    // the latest api. The host's ref callback therefore runs once per mount
+    // instead of once per context update.
+    const latestApiRef = useRef<WorkbookInstance | null>(null);
+    useLayoutEffect(() => {
+      latestApiRef.current = generateAPIs(
         context,
         setContextWithProduce,
         handleUndo,
@@ -2008,16 +2114,12 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
         globalCache.current,
         refs,
       );
-      workbookInstanceRef.current = workbookInstance;
-      return workbookInstance;
-    }, [
-      context,
-      setContextWithProduce,
-      handleUndo,
-      handleRedo,
-      mergedSettings,
-      globalCache,
-    ]);
+    });
+    useImperativeHandle(ref, () => {
+      const stableHandle = createStableHandle(() => latestApiRef.current!);
+      workbookInstanceRef.current = stableHandle;
+      return stableHandle;
+    }, []);
 
     const i = getSheetIndex(context, context.currentSheetId);
     if (i == null) {
@@ -2030,6 +2132,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
 
     return (
       <WorkbookContext.Provider value={providerValue}>
+        <WorkbookStableContext.Provider value={stableValue}>
         {/* <button onClick={()=>{
           setShow(!show)
           id="placeholder-data-verification placeholder-conditional-format"
@@ -2227,6 +2330,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
             )}
           </div>
         </ModalProvider>
+        </WorkbookStableContext.Provider>
       </WorkbookContext.Provider>
     );
   },

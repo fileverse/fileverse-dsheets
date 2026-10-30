@@ -26,10 +26,11 @@ export const filterYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'filter',
   });
   if (!syncContext) return;
 
-  const newData = (sheetEditorRef.current?.getSheet() as any)?.filter || {};
+  const newData = syncContext.newValue || {};
   const oldData = syncContext.oldSheet.filter || {};
 
   // Order-insensitive deep compare (matches every other metadata updater).

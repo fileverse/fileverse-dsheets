@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { isFormatLocked } from "./format-gate";
 import _ from "lodash";
 import { Sheet } from "@sheet-engine/react";
 import { Cell } from "../../sheet-engine/core/types";
@@ -187,8 +188,10 @@ export const updateYdocSheetData = (
   onCellFormatRangesCommitted?: (
     commits: Array<{ sheetId: string; ranges: CellFormatRange[] }>,
   ) => void,
+  /** Transaction origin; omit for user edits. */
+  origin?: unknown,
 ) => {
-  if (!ydoc || !changes.length) return;
+  if (!ydoc || !changes.length || isFormatLocked(ydoc, dsheetId)) return;
 
   const sheetArray = ydoc.getArray<any>(dsheetId);
   const committedFormatRanges = new Map<string, CellFormatRange[]>();
@@ -589,7 +592,7 @@ export const updateYdocSheetData = (
         skipIfEqual: true,
       });
     }
-  });
+  }, origin);
 
   if (committedFormatRanges.size > 0 && onCellFormatRangesCommitted) {
     onCellFormatRangesCommitted(
@@ -605,121 +608,169 @@ export const updateYdocSheetData = (
   }
 };
 
+/**
+ * Plain snapshot of the sheet array. The returned arrays are new, but cell
+ * objects and other plain values are the Yjs content itself (Y.Map#toJSON
+ * returns stored references): treat them as shared and read-only. Writing
+ * into them changes later encodes of the doc without sending an update.
+ */
+/** Convert one stored sheet key to its plain snapshot value on `obj`. */
+function assignPlainSheetKey(obj: any, key: string, value: any) {
+    // celldata: Y.Map → plain object for Fortune sheet format
+    if (key === "celldata" && value instanceof Y.Map) {
+      obj.celldata = value.toJSON();
+      return;
+    }
+
+    if (key === "calcChain" && value instanceof Y.Map) {
+      const calcChain = value.toJSON();
+      if (Object.keys(calcChain).length === 0) return;
+      obj.calcChain = calcChain;
+      return;
+    }
+
+    if (
+      key === "luckysheet_conditionformat_save" &&
+      value instanceof Y.Array
+    ) {
+      const conditionFormatRules = value.toJSON();
+      if (conditionFormatRules.length === 0) return;
+      obj.luckysheet_conditionformat_save = conditionFormatRules;
+      return;
+    }
+
+    if (key === "dataBlockCalcFunction" && value instanceof Y.Map) {
+      const dataBlockCalcFunction = value.toJSON();
+      if (Object.keys(dataBlockCalcFunction).length === 0) return;
+      obj.dataBlockCalcFunction = dataBlockCalcFunction;
+      return;
+    }
+
+    if (key === "liveQueryList" && value instanceof Y.Map) {
+      const liveQueryList = value.toJSON();
+      if (Object.keys(liveQueryList).length === 0) return;
+      obj.liveQueryList = liveQueryList;
+      return;
+    }
+
+    if (key === "dataVerification" && value instanceof Y.Map) {
+      const dataVerification = value.toJSON();
+      if (Object.keys(dataVerification).length === 0) return;
+      obj.dataVerification = dataVerification;
+      return;
+    }
+
+    if (key === "hyperlink" && value instanceof Y.Map) {
+      const hyperlink = value.toJSON();
+      if (Object.keys(hyperlink).length === 0) return;
+      obj.hyperlink = hyperlink;
+      return;
+    }
+
+    if (key === "conditionRules" && value instanceof Y.Map) {
+      const conditionRules = value.toJSON();
+      if (Object.keys(conditionRules).length === 0) return;
+      obj.conditionRules = conditionRules;
+      return;
+    }
+
+    if (key === "filter_select" && value instanceof Y.Map) {
+      const filterSelect = value.toJSON();
+      if (Object.keys(filterSelect).length === 0) return;
+      obj.filter_select = filterSelect;
+      return;
+    }
+
+    if (key === "filter" && value instanceof Y.Map) {
+      const filter = value.toJSON();
+      if (Object.keys(filter).length === 0) return;
+      obj.filter = filter;
+      return;
+    }
+
+    if (value instanceof Y.Map || value instanceof Y.Array) {
+      obj[key] = value.toJSON();
+    } else {
+      obj[key] = value;
+    }
+}
+
+/** Shape celldata/calcChain as arrays and expand compacted dataVerification. */
+function finishPlainSheet(obj: any) {
+  // Ensure celldata/calcChain are arrays (legacy may have them as objects keyed by r_c)
+  let cellDataArray;
+  cellDataArray = obj.celldata ? Object.values(obj.celldata) : [];
+  obj.celldata = cellDataArray;
+
+  // Drop nullish/malformed slots so formula/flowdata consumers never see them.
+  const calcChainArray = obj.calcChain
+    ? Object.values(obj.calcChain).filter(
+        (entry: any) =>
+          entry != null &&
+          typeof entry.r === 'number' &&
+          typeof entry.c === 'number',
+      )
+    : [];
+  obj.calcChain = calcChainArray;
+  expandSheetDataVerification(obj);
+}
+
+const iterateSheetEntries = (
+  sheetMap: unknown,
+  fn: (value: any, key: string) => void,
+) => {
+  // Handle legacy plain-object sheets (e.g. before migration) so we never call .forEach on a non-Map
+  if (sheetMap instanceof Y.Map) {
+    sheetMap.forEach(fn);
+    return;
+  }
+  Object.entries((sheetMap ?? {}) as Record<string, any>).forEach(
+    ([key, value]) => fn(value, key),
+  );
+};
+
 export function ySheetArrayToPlain(
   // @ts-ignore
   sheetArray: Y.Array<Y.Map>,
 ): Sheet[] {
   return sheetArray.toArray().map((sheetMap) => {
     const obj: any = {};
-
-    // Handle legacy plain-object sheets (e.g. before migration) so we never call .forEach on a non-Map
-    const iterate =
-      sheetMap instanceof Y.Map
-        ? (fn: (value: any, key: string) => void) => {
-            sheetMap.forEach(fn);
-          }
-        : (fn: (value: any, key: string) => void) => {
-            Object.entries(sheetMap as Record<string, any>).forEach(
-              ([key, value]) => fn(value, key),
-            );
-          };
-
-    iterate((value, key) => {
-      // celldata: Y.Map → plain object for Fortune sheet format
-      if (key === "celldata" && value instanceof Y.Map) {
-        obj.celldata = value.toJSON();
-        return;
-      }
-
-      if (key === "calcChain" && value instanceof Y.Map) {
-        const calcChain = value.toJSON();
-        if (Object.keys(calcChain).length === 0) return;
-        obj.calcChain = calcChain;
-        return;
-      }
-
-      if (
-        key === "luckysheet_conditionformat_save" &&
-        value instanceof Y.Array
-      ) {
-        const conditionFormatRules = value.toJSON();
-        if (conditionFormatRules.length === 0) return;
-        obj.luckysheet_conditionformat_save = conditionFormatRules;
-        return;
-      }
-
-      if (key === "dataBlockCalcFunction" && value instanceof Y.Map) {
-        const dataBlockCalcFunction = value.toJSON();
-        if (Object.keys(dataBlockCalcFunction).length === 0) return;
-        obj.dataBlockCalcFunction = dataBlockCalcFunction;
-        return;
-      }
-
-      if (key === "liveQueryList" && value instanceof Y.Map) {
-        const liveQueryList = value.toJSON();
-        if (Object.keys(liveQueryList).length === 0) return;
-        obj.liveQueryList = liveQueryList;
-        return;
-      }
-
-      if (key === "dataVerification" && value instanceof Y.Map) {
-        const dataVerification = value.toJSON();
-        if (Object.keys(dataVerification).length === 0) return;
-        obj.dataVerification = dataVerification;
-        return;
-      }
-
-      if (key === "hyperlink" && value instanceof Y.Map) {
-        const hyperlink = value.toJSON();
-        if (Object.keys(hyperlink).length === 0) return;
-        obj.hyperlink = hyperlink;
-        return;
-      }
-
-      if (key === "conditionRules" && value instanceof Y.Map) {
-        const conditionRules = value.toJSON();
-        if (Object.keys(conditionRules).length === 0) return;
-        obj.conditionRules = conditionRules;
-        return;
-      }
-
-      if (key === "filter_select" && value instanceof Y.Map) {
-        const filterSelect = value.toJSON();
-        if (Object.keys(filterSelect).length === 0) return;
-        obj.filter_select = filterSelect;
-        return;
-      }
-
-      if (key === "filter" && value instanceof Y.Map) {
-        const filter = value.toJSON();
-        if (Object.keys(filter).length === 0) return;
-        obj.filter = filter;
-        return;
-      }
-
-      if (value instanceof Y.Map || value instanceof Y.Array) {
-        obj[key] = value.toJSON();
-      } else {
-        obj[key] = value;
-      }
-    });
-
-    // Ensure celldata/calcChain are arrays (legacy may have them as objects keyed by r_c)
-    let cellDataArray;
-    cellDataArray = obj.celldata ? Object.values(obj.celldata) : [];
-    obj.celldata = cellDataArray;
-
-    // Drop nullish/malformed slots so formula/flowdata consumers never see them.
-    const calcChainArray = obj.calcChain
-      ? Object.values(obj.calcChain).filter(
-          (entry: any) =>
-            entry != null &&
-            typeof entry.r === 'number' &&
-            typeof entry.c === 'number',
-        )
-      : [];
-    obj.calcChain = calcChainArray;
-    expandSheetDataVerification(obj);
+    iterateSheetEntries(sheetMap, (value, key) =>
+      assignPlainSheetKey(obj, key, value),
+    );
+    finishPlainSheet(obj);
     return obj as Sheet;
   });
+}
+
+const readSheetKey = (sheetMap: unknown, key: string) =>
+  sheetMap instanceof Y.Map
+    ? sheetMap.get(key)
+    : (sheetMap as Record<string, any> | null)?.[key];
+
+/**
+ * One field of one sheet, with the same value ySheetArrayToPlain gives for
+ * it, without converting the rest of the workbook (A3). Shared, read-only
+ * semantics as ySheetArrayToPlain.
+ */
+export function readYdocSheetField(
+  ydoc: Y.Doc,
+  dsheetId: string,
+  sheetId: string,
+  field: string,
+): any {
+  const sheetMap = ydoc
+    .getArray<unknown>(dsheetId)
+    .toArray()
+    .find((sheet) => readSheetKey(sheet, "id") === sheetId);
+  if (sheetMap == null) return undefined;
+  const obj: any = {};
+  const keys =
+    field === "dataVerification" ? [field, "dataVerificationDefs"] : [field];
+  keys.forEach((key) => {
+    const value = readSheetKey(sheetMap, key);
+    if (value !== undefined) assignPlainSheetKey(obj, key, value);
+  });
+  finishPlainSheet(obj);
+  return obj[field];
 }

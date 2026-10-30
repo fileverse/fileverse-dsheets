@@ -10,10 +10,12 @@ import {
 
 const methods = (): DSheetEditorMethods => ({
   refreshIndexedDB: vi.fn(async () => undefined),
+  rebuildLocalStore: vi.fn(async () => undefined),
   terminateSession: vi.fn(),
   updateCollaboratorName: vi.fn(),
   updateSessionTitle: vi.fn(),
   navigateToSheet: vi.fn(async () => true),
+  getContentFingerprint: vi.fn(() => null),
 });
 
 describe("DSheetEditorHandle composition", () => {
@@ -28,6 +30,8 @@ describe("DSheetEditorHandle composition", () => {
     expect(ref.current).toBe(workbook);
     expect(callbackRef).toHaveBeenLastCalledWith(workbook);
     await ref.current?.refreshIndexedDB();
+    await ref.current?.rebuildLocalStore();
+    expect(publicMethods.rebuildLocalStore).toHaveBeenCalledOnce();
     ref.current?.terminateSession();
     ref.current?.updateCollaboratorName("Ada");
     ref.current?.updateSessionTitle({

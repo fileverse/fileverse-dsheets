@@ -21,8 +21,12 @@ import {
 import {
   emitCelldataDeletesBeyondGrid,
   emitCelldataRangeDiffToYdoc,
+  createYdocBatch,
+  type YdocChangeSink,
+  emitRewrittenFormulasToYdoc,
   getDeleteRowColSnapshotBounds,
   getInsertRowColSnapshotBounds,
+  snapshotFormulaTexts,
   snapshotPersistedCelldataInRange,
 } from '../utils/ydoc-celldata-changes';
 import {
@@ -175,6 +179,7 @@ const emitCellRangeToYdoc = (
   c1: number,
   c2: number,
   beforePersisted?: Map<string, Cell | string | number | boolean>,
+  sink?: YdocChangeSink,
 ) => {
   emitCelldataRangeDiffToYdoc(
     ctx,
@@ -185,6 +190,7 @@ const emitCellRangeToYdoc = (
     c1,
     c2,
     beforePersisted,
+    sink,
   );
 };
 
@@ -192,9 +198,10 @@ const emitCellFormatRangesToYdoc = (
   ctx: Context,
   sheetId: string,
   ranges: any[] | undefined,
+  sink?: YdocChangeSink,
 ) => {
   if (!ctx?.hooks?.updateCellYdoc) return;
-  ctx.hooks.updateCellYdoc([
+  (sink ?? ctx.hooks.updateCellYdoc)([
     {
       sheetId,
       path: ['config', 'cellFormatRanges'],
@@ -202,6 +209,30 @@ const emitCellFormatRangesToYdoc = (
       type: 'update',
     },
   ]);
+};
+
+// Grid size rides with the structural edit so a peer never sees the moved
+// cells with the old row/column count (K2).
+const emitGridSizeToYdoc = (
+  ctx: Context,
+  sheetId: string,
+  file: Sheet,
+  sink?: YdocChangeSink,
+) => {
+  if (!ctx?.hooks?.updateCellYdoc) return;
+  const changes: any[] = [];
+  if (file.row != null) {
+    changes.push({ sheetId, path: ['row'], value: file.row, type: 'update' });
+  }
+  if (file.column != null) {
+    changes.push({
+      sheetId,
+      path: ['column'],
+      value: file.column,
+      type: 'update',
+    });
+  }
+  if (changes.length > 0) (sink ?? ctx.hooks.updateCellYdoc)(changes);
 };
 
 const markCellRefError = (cell: Cell) => {
@@ -215,6 +246,94 @@ const markCellRefError = (cell: Cell) => {
   }
 };
 
+/**
+ * Rewrite the cross-tab formulas of a tab that is not loaded (K6). History
+ * records an in-place edit of an array by position, so a rewrite of single
+ * entries could not be undone once the array changed (a peer's cell, the tab
+ * loading): it threw, or put the text on another cell, and never reached Yjs
+ * (PR 466 N1). The array is replaced as a whole instead, and only when an
+ * entry changed. Only a formula that contains `!` can name another tab.
+ */
+const rewrittenCelldataFormula = (
+  entry: any,
+  sheet: Sheet,
+  mode: 'add' | 'del',
+  rc: 'row' | 'col',
+  orient: 'lefttop' | 'rightbottom' | null,
+  stindex: number,
+  step: number,
+  editedTab: string,
+): string | null => {
+  const f = entry?.v?.f;
+  if (typeof f !== 'string' || !f.includes('!')) return null;
+  const newF = `=${functionStrChange(f, mode, rc, orient, stindex, step, {
+    editedTab,
+    formulaTab: sheet.name,
+  })}`;
+  return newF === f ? null : newF;
+};
+
+/**
+ * True when the edit would change a cross-tab formula in the tab's celldata.
+ * It is the test the rewrite below applies, so the tabs loaded before an edit
+ * are the ones it would rewrite (PR 466 N1: `=C1-A!B5` names tab A, but the
+ * sheet-name regex reads `C1-A`).
+ */
+export const celldataFormulaWouldChange = (
+  sheet: Sheet,
+  mode: 'add' | 'del',
+  rc: 'row' | 'col',
+  orient: 'lefttop' | 'rightbottom' | null,
+  stindex: number,
+  step: number,
+  editedTab: string,
+) =>
+  Array.isArray(sheet.celldata) &&
+  sheet.celldata.some(
+    (entry: any) =>
+      rewrittenCelldataFormula(
+        entry,
+        sheet,
+        mode,
+        rc,
+        orient,
+        stindex,
+        step,
+        editedTab,
+      ) != null,
+  );
+
+const rewriteFormulasInCelldata = (
+  sheet: Sheet,
+  mode: 'add' | 'del',
+  rc: 'row' | 'col',
+  orient: 'lefttop' | 'rightbottom' | null,
+  stindex: number,
+  step: number,
+  editedTab: string,
+) => {
+  if (!Array.isArray(sheet.celldata)) return;
+  let changed = false;
+  const next = sheet.celldata.map((entry: any) => {
+    const newF = rewrittenCelldataFormula(
+      entry,
+      sheet,
+      mode,
+      rc,
+      orient,
+      stindex,
+      step,
+      editedTab,
+    );
+    if (newF == null) return entry;
+    changed = true;
+    const cell = { ...entry.v, f: newF };
+    if (newF.includes('#REF!')) markCellRefError(cell);
+    return { ...entry, v: cell };
+  });
+  if (changed) sheet.celldata = next;
+};
+
 const rewriteFormulasByScanningSheet = (
   sheet: Sheet,
   calcChain: any[] | null | undefined,
@@ -223,9 +342,15 @@ const rewriteFormulasByScanningSheet = (
   orient: 'lefttop' | 'rightbottom' | null,
   stindex: number,
   step: number,
+  editedTab: string,
 ) => {
   const sheetData = sheet.data;
-  if (!sheetData) return;
+  if (!sheetData) {
+    // Not hydrated: the formulas are in celldata and the calcChain loop could
+    // not reach them (K6).
+    rewriteFormulasInCelldata(sheet, mode, rc, orient, stindex, step, editedTab);
+    return;
+  }
 
   const calcChainSet = new Set<string>();
   (calcChain || []).forEach((item: any) => {
@@ -241,7 +366,10 @@ const rewriteFormulasByScanningSheet = (
       const cell = row[c] as any;
       if (!cell?.f) continue;
       if (calcChainSet.has(`${r}_${c}`)) continue;
-      const newF = `=${functionStrChange(cell.f, mode, rc, orient, stindex, step)}`;
+      const newF = `=${functionStrChange(cell.f, mode, rc, orient, stindex, step, {
+        editedTab,
+        formulaTab: sheet.name,
+      })}`;
       cell.f = newF;
       if (newF.includes('#REF!')) markCellRefError(cell);
     }
@@ -276,6 +404,7 @@ export function insertRowCol(
   const { type, index, direction, templateSourceRows, templateSourceColumns } =
     op;
   id = id || ctx.currentSheetId;
+  const ydocBatch = createYdocBatch(ctx);
 
   // if (
   //   type === "row" &&
@@ -357,6 +486,10 @@ export function insertRowCol(
     throw new Error('maxExceeded');
   }
 
+  // Formulas shift and are rewritten without being evaluated (C8). Only once
+  // the edit is certain: a refused insert changes nothing (PR 466 N9).
+  ctx.formulaCache.markDepGraphIncomplete();
+
   const insertSnapBounds = getInsertRowColSnapshotBounds(
     type,
     index,
@@ -373,6 +506,7 @@ export function insertRowCol(
     insertSnapBounds.c2,
     file.celldata,
   );
+  const formulaTextsBefore = snapshotFormulaTexts(ctx);
 
   const snapRowDv =
     usePerRowTemplates && file.dataVerification != null
@@ -474,13 +608,9 @@ export function insertRowCol(
     SheetIndex < ctx.luckysheetfile.length;
     SheetIndex += 1
   ) {
-    if (
-      _.isNil(ctx.luckysheetfile[SheetIndex].calcChain) ||
-      ctx.luckysheetfile.length === 0
-    ) {
-      continue;
-    }
-    const { calcChain } = ctx.luckysheetfile[SheetIndex];
+    // A tab with no calcChain still holds formulas that can point into the
+    // edited tab: it is not skipped (K6), the scan below finds them.
+    const calcChain = ctx.luckysheetfile[SheetIndex].calcChain ?? [];
     const { data } = ctx.luckysheetfile[SheetIndex];
     for (let i = 0; i < calcChain!.length; i += 1) {
       const calc: any = _.cloneDeep(calcChain![i]);
@@ -497,6 +627,10 @@ export function insertRowCol(
           direction,
           index,
           count,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         if (d[calc_r]?.[calc_c]?.f === calc_funcStr) {
@@ -522,6 +656,10 @@ export function insertRowCol(
           direction,
           index,
           count,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         // Guard: other sheets may have calcChain before data is hydrated.
@@ -537,6 +675,10 @@ export function insertRowCol(
           direction,
           index,
           count,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         if (d[calc_r]?.[calc_c]?.f === calc_funcStr) {
@@ -562,6 +704,10 @@ export function insertRowCol(
           direction,
           index,
           count,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         const otherColCell = data?.[calc_r]?.[calc_c];
@@ -578,6 +724,7 @@ export function insertRowCol(
       direction,
       index,
       count,
+      file.name,
     );
   }
 
@@ -1151,7 +1298,12 @@ export function insertRowCol(
       direction,
     );
     if (!_.isEqual(prevFormatRanges, cfg.cellFormatRanges)) {
-      emitCellFormatRangesToYdoc(ctx, id, cfg.cellFormatRanges);
+      emitCellFormatRangesToYdoc(
+        ctx,
+        id,
+        cfg.cellFormatRanges,
+        ydocBatch.sink,
+      );
     }
 
     const arr = [];
@@ -1415,7 +1567,12 @@ export function insertRowCol(
       direction,
     );
     if (!_.isEqual(prevFormatRangesCol, cfg.cellFormatRanges)) {
-      emitCellFormatRangesToYdoc(ctx, id, cfg.cellFormatRanges);
+      emitCellFormatRangesToYdoc(
+        ctx,
+        id,
+        cfg.cellFormatRanges,
+        ydocBatch.sink,
+      );
     }
 
     for (let i = 0; i < count; i += 1) {
@@ -1602,7 +1759,12 @@ export function insertRowCol(
       if (file.id === ctx.currentSheetId) {
         ctx.config = cfg;
       }
-      emitCellFormatRangesToYdoc(ctx, id, cfg.cellFormatRanges);
+      emitCellFormatRangesToYdoc(
+        ctx,
+        id,
+        cfg.cellFormatRanges,
+        ydocBatch.sink,
+      );
     }
   }
 
@@ -1634,6 +1796,7 @@ export function insertRowCol(
       0,
       (d[0]?.length ?? 1) - 1,
       ydocBeforePersisted,
+      ydocBatch.sink,
     );
   } else {
     const baseStart = direction === 'lefttop' ? index : index + 1;
@@ -1649,8 +1812,32 @@ export function insertRowCol(
       startC,
       (d[0]?.length ?? 1) - 1,
       ydocBeforePersisted,
+      ydocBatch.sink,
     );
   }
+  // Formulas rewritten outside the range above (other tabs, rows above the
+  // insert) never reach a peer unless written here (K1).
+  emitRewrittenFormulasToYdoc(
+    ctx,
+    formulaTextsBefore,
+    id,
+    type === 'row'
+      ? Math.min(
+          direction === 'lefttop' ? index : index + 1,
+          mergeBounds?.minR ?? Infinity,
+        )
+      : Infinity,
+    type === 'column'
+      ? Math.min(
+          direction === 'lefttop' ? index : index + 1,
+          mergeBounds?.minC ?? Infinity,
+        )
+      : Infinity,
+    ydocBatch.sink,
+  );
+
+  emitGridSizeToYdoc(ctx, id, file, ydocBatch.sink);
+  ydocBatch.flush();
 
   notifyCommentAnchorMove(ctx, {
     type: 'insert',
@@ -1747,6 +1934,10 @@ export function deleteRowCol(
   const d = file.data;
   if (!d) return;
 
+  // Formulas shift and are rewritten without being evaluated (C8). Only once
+  // the edit is certain: a refused delete changes nothing (PR 466 N9).
+  ctx.formulaCache.markDepGraphIncomplete();
+
   if (start < 0) {
     start = 0;
   }
@@ -1839,6 +2030,7 @@ export function deleteRowCol(
     deleteSnapBounds.c2,
     file.celldata,
   );
+  const formulaTextsBefore = snapshotFormulaTexts(ctx);
 
   // 合并单元格配置变动
   if (cfg.merge == null) {
@@ -1905,13 +2097,9 @@ export function deleteRowCol(
     SheetIndex < ctx.luckysheetfile.length;
     SheetIndex += 1
   ) {
-    if (
-      _.isNil(ctx.luckysheetfile[SheetIndex].calcChain) ||
-      ctx.luckysheetfile.length === 0
-    ) {
-      continue;
-    }
-    const { calcChain } = ctx.luckysheetfile[SheetIndex];
+    // A tab with no calcChain still holds formulas that can point into the
+    // edited tab: it is not skipped (K6), the scan below finds them.
+    const calcChain = ctx.luckysheetfile[SheetIndex].calcChain ?? [];
     const { data } = ctx.luckysheetfile[SheetIndex];
     for (let i = 0; i < calcChain!.length; i += 1) {
       const calc: any = _.cloneDeep(calcChain![i]);
@@ -1929,6 +2117,10 @@ export function deleteRowCol(
             null,
             start,
             slen,
+            {
+              editedTab: file.name,
+              formulaTab: ctx.luckysheetfile[SheetIndex].name,
+            },
           )}`;
 
           if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
@@ -1951,12 +2143,16 @@ export function deleteRowCol(
           null,
           start,
           slen,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         const otherDelRowCell = data?.[calc_r]?.[calc_c];
         if (otherDelRowCell != null && otherDelRowCell.f === calc_funcStr) {
           otherDelRowCell.f = functionStr;
-          if (functionStr === '=#REF!') markCellRefError(otherDelRowCell);
+          if (functionStr.includes('#REF!')) markCellRefError(otherDelRowCell);
         }
       } else if (type === 'column' && SheetIndex === curOrder) {
         if (calc_c < start || calc_c > end) {
@@ -1967,6 +2163,10 @@ export function deleteRowCol(
             null,
             start,
             slen,
+            {
+              editedTab: file.name,
+              formulaTab: ctx.luckysheetfile[SheetIndex].name,
+            },
           )}`;
 
           if (data![calc_r]?.[calc_c]?.f === calc_funcStr) {
@@ -1989,12 +2189,16 @@ export function deleteRowCol(
           null,
           start,
           slen,
+          {
+            editedTab: file.name,
+            formulaTab: ctx.luckysheetfile[SheetIndex].name,
+          },
         )}`;
 
         const otherDelColCell = data?.[calc_r]?.[calc_c];
         if (otherDelColCell != null && otherDelColCell.f === calc_funcStr) {
           otherDelColCell.f = functionStr;
-          if (functionStr === '=#REF!') markCellRefError(otherDelColCell);
+          if (functionStr.includes('#REF!')) markCellRefError(otherDelColCell);
         }
       }
     }
@@ -2006,6 +2210,7 @@ export function deleteRowCol(
       null,
       start,
       slen,
+      file.name,
     );
   }
 
@@ -2667,6 +2872,8 @@ export function deleteRowCol(
 
   refreshLocalMergeData(merge_new, file);
 
+  const ydocBatch = createYdocBatch(ctx);
+
   const prevFormatRangesDelete = cfg.cellFormatRanges;
   cfg.cellFormatRanges = shiftCellFormatRangesOnDelete(
     cfg.cellFormatRanges,
@@ -2675,7 +2882,12 @@ export function deleteRowCol(
     end,
   );
   if (!_.isEqual(prevFormatRangesDelete, cfg.cellFormatRanges)) {
-    emitCellFormatRangesToYdoc(ctx, id, cfg.cellFormatRanges);
+    emitCellFormatRangesToYdoc(
+      ctx,
+      id,
+      cfg.cellFormatRanges,
+      ydocBatch.sink,
+    );
   }
 
   const namedRangeNames = shiftDefinedNamesOnDelete(ctx, id, type, start, end);
@@ -2696,6 +2908,7 @@ export function deleteRowCol(
       0,
       (d[0]?.length ?? 1) - 1,
       ydocBeforePersisted,
+      ydocBatch.sink,
     );
   } else {
     const startC = mergeBounds ? Math.min(start, mergeBounds.minC) : start;
@@ -2708,8 +2921,21 @@ export function deleteRowCol(
       startC,
       (d[0]?.length ?? 1) - 1,
       ydocBeforePersisted,
+      ydocBatch.sink,
     );
   }
+  emitRewrittenFormulasToYdoc(
+    ctx,
+    formulaTextsBefore,
+    id,
+    type === 'row'
+      ? Math.min(start, mergeBounds?.minR ?? Infinity)
+      : Infinity,
+    type === 'column'
+      ? Math.min(start, mergeBounds?.minC ?? Infinity)
+      : Infinity,
+    ydocBatch.sink,
+  );
   // Range diffs never visit coords past the new grid — delete those ghosts.
   emitCelldataDeletesBeyondGrid(
     ctx,
@@ -2717,7 +2943,11 @@ export function deleteRowCol(
     ydocBeforePersisted,
     d.length,
     d[0]?.length ?? 0,
+    ydocBatch.sink,
   );
+
+  emitGridSizeToYdoc(ctx, id, file, ydocBatch.sink);
+  ydocBatch.flush();
 
   notifyCommentAnchorMove(ctx, {
     type: 'delete',

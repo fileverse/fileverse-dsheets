@@ -56,7 +56,10 @@ import {
   sliceRangeFragmentForOrigin,
   type RangePassCacheEntry,
 } from './formula-range-cache';
-import { collectTransitiveFormulaDependents } from './formula-transitive-deps';
+import {
+  collectTransitiveFormulaDependents,
+  type WideRange,
+} from './formula-transitive-deps';
 import type { SnapshotEvalOutput } from './formula-snapshot-eval';
 import { resolveDefinedNameForFormula } from './namedRanges';
 
@@ -399,6 +402,36 @@ export class FormulaCache {
   formulasWithWideRangeDeps: Set<string>;
 
   /**
+   * The ranges of the wide formulas whose ranges could be read, by formula
+   * key. A wide formula joins a commit's walk only when one of these holds the
+   * edited cell or a formula cell the walk reaches. A key in
+   * `formulasWithWideRangeDeps` with no entry here (an unresolved tab, an
+   * unreadable range) joins every walk.
+   */
+  wideRangesByFormula: Map<string, WideRange[]>;
+
+  /**
+   * True once a full pass has evaluated every formula in the chain since the
+   * indexes were last reset, so `revDepsByCell` lists every dependent of every
+   * cell (C8). While true, a commit to a cell with no dependents runs no
+   * formula pass. Cleared by `markDepGraphIncomplete`.
+   */
+  depGraphComplete: boolean;
+
+  /**
+   * Bumped each time the flag is cleared. A deferred full pass records it at
+   * start and sets the flag only if nothing cleared it while it ran.
+   */
+  depGraphEpoch: number;
+
+  /**
+   * Grid size (`rows x cols`) of each dense tab when the graph was completed.
+   * Whole-row and whole-column references were recorded at that size, so a
+   * commit to a tab that has grown since takes the full pass again.
+   */
+  depGraphSheetSizes: Map<string, string>;
+
+  /**
    * Dependency collection state for the currently-parsed formula, set by `execfunction`.
    * When null, dependency recording is disabled.
    */
@@ -406,12 +439,50 @@ export class FormulaCache {
     originKey: string;
     deps: Set<string>;
     hasWideRangeDep: boolean;
+    /** Ranges over the cap, in the order they were read. */
+    wideRanges: WideRange[];
+    /** A wide dependency whose range can't be bounded (unresolved tab). */
+    wideUnreadable: boolean;
   };
 
   /** Step 2: per execFunctionGroup pass cache for materialized range reads. */
   rangeValuePassCache?: Map<string, RangePassCacheEntry>;
 
   rangeValuePassCacheStats?: { hits: number; misses: number };
+
+  /**
+   * Drop every recorded formula dependency, back to the state a fresh mount
+   * has. Used when a sheet's formula list is replaced from outside the
+   * engine (a collaborator's calcChain change, A4).
+   */
+  resetDependencyIndexes() {
+    this.depsByCell = new Map();
+    this.revDepsByCell = new Map();
+    this.formulasWithWideRangeDeps = new Set();
+    this.wideRangesByFormula = new Map();
+    this.markDepGraphIncomplete();
+  }
+
+  /**
+   * The graph may miss edges: formulas moved, were rewritten or entered the
+   * chain without being evaluated. Commits take the full pass again until the
+   * next full pass completes.
+   */
+  markDepGraphIncomplete() {
+    this.depGraphComplete = false;
+    this.depGraphEpoch += 1;
+    this.depGraphIncompleteListeners.forEach((listener) => listener());
+  }
+
+  /** Called after each `markDepGraphIncomplete` (the C8 warm-up re-runs). */
+  depGraphIncompleteListeners = new Set<() => void>();
+
+  onDepGraphIncomplete(listener: () => void): () => void {
+    this.depGraphIncompleteListeners.add(listener);
+    return () => {
+      this.depGraphIncompleteListeners.delete(listener);
+    };
+  }
 
   constructor() {
     const that = this;
@@ -420,6 +491,15 @@ export class FormulaCache {
     const recordDep = (key: string) => {
       if (!that.activeDepCollection) return;
       that.activeDepCollection.deps.add(key);
+    };
+    // A reference to a sheet that doesn't exist (yet) records no edge, but a
+    // later add or rename can make it resolve. Run the formula on every
+    // commit, like a wide range (C8).
+    const markUnresolvedSheetRef = () => {
+      if (that.activeDepCollection) {
+        that.activeDepCollection.hasWideRangeDep = true;
+        that.activeDepCollection.wideUnreadable = true;
+      }
     };
 
     this.data_parm_index = 0;
@@ -432,6 +512,10 @@ export class FormulaCache {
     this.depsByCell = new Map();
     this.revDepsByCell = new Map();
     this.formulasWithWideRangeDeps = new Set();
+    this.wideRangesByFormula = new Map();
+    this.depGraphComplete = false;
+    this.depGraphEpoch = 0;
+    this.depGraphSheetSizes = new Map();
     this.activeDepCollection = null;
     this.parser = new Parser();
     this.parser.on(
@@ -442,7 +526,10 @@ export class FormulaCache {
           cellCoord.sheetName == null
             ? options.sheetId
             : getSheetIdByName(context, cellCoord.sheetName);
-        if (id == null) throw Error(ERROR_REF);
+        if (id == null) {
+          markUnresolvedSheetRef();
+          throw Error(ERROR_REF);
+        }
         recordDep(toCellKey(id, cellCoord.row.index, cellCoord.column.index));
         // Inactive tabs may be demoted to sparse celldata; hydrate on demand.
         // Cheap no-op when already dense (`sheet.data?.length`).
@@ -464,7 +551,10 @@ export class FormulaCache {
           startCellCoord.sheetName == null
             ? options.sheetId
             : getSheetIdByName(context, startCellCoord.sheetName);
-        if (id == null) throw Error(ERROR_REF);
+        if (id == null) {
+          markUnresolvedSheetRef();
+          throw Error(ERROR_REF);
+        }
         // Same as callCellValue: demoted cross-sheet targets must rehydrate.
         const flowdata = ensureSheetFlowdata(context, { id });
         let startRow = startCellCoord.row.index;
@@ -509,6 +599,13 @@ export class FormulaCache {
             }
           } else {
             that.activeDepCollection.hasWideRangeDep = true;
+            that.activeDepCollection.wideRanges.push({
+              sheetId: id,
+              startRow,
+              endRow,
+              startCol,
+              endCol,
+            });
             if (originInRange) {
               // Still record self-in-range to detect circular refs.
               recordDep(toCellKey(id, originRow, originCol));
@@ -659,6 +756,13 @@ export class FormulaCache {
           }
         } else {
           that.activeDepCollection.hasWideRangeDep = true;
+          that.activeDepCollection.wideRanges.push({
+            sheetId: id,
+            startRow,
+            endRow,
+            startCol,
+            endCol,
+          });
           if (originInRange) {
             recordDep(toCellKey(id, originRow, originCol));
           }
@@ -822,13 +926,8 @@ function parseElement(eleString: string) {
 export function iscelldata(txt: string) {
   // 判断是否为单元格格式
   const val = txt.split('!');
-  let rangetxt: string;
-
-  if (val.length > 1) {
-    [, rangetxt] = val;
-  } else {
-    [rangetxt] = val;
-  }
+  // The range is the part after the last '!' (a quoted tab name may hold one).
+  const rangetxt: string = val[val.length - 1];
 
   // Allow:
   // - A1:A2 (cell-to-cell)
@@ -1485,19 +1584,21 @@ export function getAllFunctionGroup(ctx: Context) {
   return ret;
 }
 
-export function delFunctionGroup(
+const wideFormulaIndex = (ctx: Context) => ({
+  keys: ctx.formulaCache.formulasWithWideRangeDeps,
+  ranges: ctx.formulaCache.wideRangesByFormula,
+});
+
+/** Remove the dependency edges recorded for a cell that is no longer a formula. */
+export function dropDependencyEdges(
   ctx: Context,
   r: number,
   c: number,
-  id?: string,
+  id: string,
 ) {
-  if (_.isNil(id)) {
-    id = ctx.currentSheetId;
-  }
-
-  // Remove dependency edges for this cell (it is no longer a formula).
   const originKey = `${id}:${r}:${c}`;
   ctx.formulaCache.formulasWithWideRangeDeps.delete(originKey);
+  ctx.formulaCache.wideRangesByFormula.delete(originKey);
   const prevDeps = ctx.formulaCache?.depsByCell?.get(originKey);
   if (prevDeps) {
     prevDeps.forEach((depKey) => {
@@ -1509,53 +1610,87 @@ export function delFunctionGroup(
     ctx.formulaCache.depsByCell.delete(originKey);
     invalidateSheetsRequiredDenseCache();
   }
+}
+
+/**
+ * delFunctionGroup for many cells of one sheet: the chain and the dynamic
+ * array list are filtered once, not scanned and copied per cell. Same result
+ * as calling delFunctionGroup for each cell.
+ */
+export function delFunctionGroupBatch(
+  ctx: Context,
+  id: string,
+  cells: { r: number; c: number }[],
+) {
+  if (cells.length === 0) return;
+  cells.forEach(({ r, c }) => dropDependencyEdges(ctx, r, c, id));
 
   const file = ctx.luckysheetfile[getSheetIndex(ctx, id)!];
+  const drop = new Set(cells.map(({ r, c }) => `${r}_${c}`));
 
   const { calcChain } = file;
   if (!_.isNil(calcChain)) {
-    let modified = false;
-    const calcChainClone = _.cloneDeep(calcChain);
-    for (let i = 0; i < calcChainClone.length; i += 1) {
-      const calc = calcChainClone[i];
-      if (calc.r === r && calc.c === c && calc.id === id) {
-        calcChainClone.splice(i, 1);
-        modified = true;
-        // server.saveParam("fc", index, calc, {
-        //   op: "del",
-        //   pos: i,
-        // });
-        break;
-      }
-    }
-    if (modified) {
-      file.calcChain = calcChainClone;
+    const kept = calcChain.filter(
+      (calc) => !(calc.id === id && drop.has(`${calc.r}_${calc.c}`)),
+    );
+    if (kept.length !== calcChain.length) {
+      file.calcChain = kept;
       invalidateSheetsRequiredDenseCache();
     }
   }
 
   const { dynamicArray } = file;
   if (!_.isNil(dynamicArray)) {
-    let modified = false;
-    const dynamicArrayClone = _.cloneDeep(dynamicArray);
-    for (let i = 0; i < dynamicArrayClone.length; i += 1) {
-      const calc = dynamicArrayClone[i];
-      if (
-        calc.r === r &&
-        calc.c === c &&
-        (_.isNil(calc.id) || calc.id === id)
-      ) {
-        dynamicArrayClone.splice(i, 1);
-        modified = true;
-        // server.saveParam("ac", index, null, {
-        //   op: "del",
-        //   pos: i,
-        // });
-        break;
-      }
+    const kept = dynamicArray.filter(
+      (calc) =>
+        !(
+          (_.isNil(calc.id) || calc.id === id) && drop.has(`${calc.r}_${calc.c}`)
+        ),
+    );
+    if (kept.length !== dynamicArray.length) file.dynamicArray = kept;
+  }
+}
+
+export function delFunctionGroup(
+  ctx: Context,
+  r: number,
+  c: number,
+  id?: string,
+) {
+  if (_.isNil(id)) {
+    id = ctx.currentSheetId;
+  }
+
+  // Remove dependency edges for this cell (it is no longer a formula).
+  dropDependencyEdges(ctx, r, c, id);
+
+  const file = ctx.luckysheetfile[getSheetIndex(ctx, id)!];
+
+  // Find first; copy only when the cell is in the list (C3). Every
+  // plain-value commit and every remote cell runs this, and a deep clone of
+  // both lists on each call was the common case.
+  const { calcChain } = file;
+  if (!_.isNil(calcChain)) {
+    const i = calcChain.findIndex(
+      (calc) => calc.r === r && calc.c === c && calc.id === id,
+    );
+    if (i >= 0) {
+      file.calcChain = [...calcChain.slice(0, i), ...calcChain.slice(i + 1)];
+      invalidateSheetsRequiredDenseCache();
     }
-    if (modified) {
-      file.dynamicArray = dynamicArrayClone;
+  }
+
+  const { dynamicArray } = file;
+  if (!_.isNil(dynamicArray)) {
+    const i = dynamicArray.findIndex(
+      (calc) =>
+        calc.r === r && calc.c === c && (_.isNil(calc.id) || calc.id === id),
+    );
+    if (i >= 0) {
+      file.dynamicArray = [
+        ...dynamicArray.slice(0, i),
+        ...dynamicArray.slice(i + 1),
+      ];
     }
   }
 }
@@ -1674,6 +1809,72 @@ function replaceDotsInFunctionName(str: string) {
   const fixedFnName = fnName.replace(/\./g, '_');
   return `=${fixedFnName}${str.substring(openParenIndex)}`;
 }
+
+/**
+ * Drop every recorded formula dependency, back to a fresh mount's state, and
+ * mark the graph incomplete (A4, C8).
+ */
+export function resetFormulaDependencyIndexes(ctx: Context) {
+  ctx.formulaCache.resetDependencyIndexes();
+  invalidateSheetsRequiredDenseCache();
+}
+
+const sheetGridSize = (data: CellMatrix | null | undefined) =>
+  data ? `${data.length}x${data[0]?.length ?? 0}` : null;
+
+/**
+ * End of a full pass that started at `epoch` (C8): every formula in the chain
+ * has recorded its dependencies, unless the graph was invalidated meanwhile.
+ */
+export function finishFullFormulaPass(
+  ctx: Context,
+  epoch: number | null | undefined,
+) {
+  const { formulaCache } = ctx;
+  if (epoch == null || epoch !== formulaCache.depGraphEpoch) return;
+  formulaCache.depGraphSheetSizes = new Map();
+  ctx.luckysheetfile.forEach((file) => {
+    const size = sheetGridSize(file.data);
+    if (file.id && size) formulaCache.depGraphSheetSizes.set(file.id, size);
+  });
+  formulaCache.depGraphComplete = true;
+}
+
+/**
+ * A tab that is loaded after the graph was completed keeps the flag on (K60,
+ * PR 466): loading builds the grid from `celldata` and does not change the
+ * tab's structure, and the text index already treated a whole-row or column
+ * reference to a tab with no grid as wide. Without a recorded size the first
+ * commit on the tab would take the full pass and clear the flag.
+ */
+export function recordLoadedSheetSize(
+  ctx: Context,
+  sheetId: string | undefined,
+  data: CellMatrix | null | undefined,
+) {
+  const { formulaCache } = ctx;
+  const size = sheetGridSize(data);
+  if (!formulaCache?.depGraphComplete || !sheetId || !size) return;
+  if (formulaCache.depGraphSheetSizes.has(sheetId)) return;
+  formulaCache.depGraphSheetSizes.set(sheetId, size);
+}
+
+/** False once the edited tab's grid has grown or shrunk since the graph was completed. */
+function depGraphCoversSheetSize(
+  ctx: Context,
+  sheetId: string,
+  data: CellMatrix | null | undefined,
+) {
+  const size = sheetGridSize(data);
+  return size != null && ctx.formulaCache.depGraphSheetSizes.get(sheetId) === size;
+}
+
+/**
+ * INDIRECT and OFFSET would resolve references at run time, which the graph
+ * cannot see. Today both evaluate to an error (formulajs implements neither),
+ * but formulas using them are kept on every commit's run list regardless.
+ */
+export const RUNTIME_REFERENCE_RE = /\b(INDIRECT|OFFSET)\s*\(/i;
 
 export function execfunction(
   ctx: Context,
@@ -1830,16 +2031,21 @@ export function execfunction(
   const originKey = `${sheetId}:${r}:${c}`;
   const deps = new Set<string>();
   ctx.formulaCache.formulasWithWideRangeDeps.delete(originKey);
+  ctx.formulaCache.wideRangesByFormula.delete(originKey);
   ctx.formulaCache.activeDepCollection = {
     originKey,
     deps,
     hasWideRangeDep: false,
+    wideRanges: [],
+    wideUnreadable: false,
   };
 
   ctx.formulaCache.parser.context = ctx;
   const parserExpression = normalizeDateArithmeticForParser(txt.substring(1));
   let parsedResponse: { error: any; result: any };
   let hasWideRangeDep = false;
+  let wideRanges: WideRange[] = [];
+  let wideUnreadable = false;
   try {
     parsedResponse = ctx.formulaCache.parser.parse(parserExpression, {
       sheetId,
@@ -1849,10 +2055,18 @@ export function execfunction(
   } finally {
     hasWideRangeDep =
       ctx.formulaCache.activeDepCollection?.hasWideRangeDep ?? false;
+    wideRanges = ctx.formulaCache.activeDepCollection?.wideRanges ?? [];
+    wideUnreadable =
+      ctx.formulaCache.activeDepCollection?.wideUnreadable ?? false;
     ctx.formulaCache.activeDepCollection = null;
   }
-  if (hasWideRangeDep) {
+  const runtimeReference = RUNTIME_REFERENCE_RE.test(txt);
+  if (hasWideRangeDep || runtimeReference) {
     ctx.formulaCache.formulasWithWideRangeDeps.add(originKey);
+    // INDIRECT and OFFSET resolve their reference at run time: unbounded.
+    if (!wideUnreadable && !runtimeReference && wideRanges.length > 0) {
+      ctx.formulaCache.wideRangesByFormula.set(originKey, wideRanges);
+    }
   }
 
   // Update dependency graph for this formula cell.
@@ -2249,7 +2463,7 @@ function evalFormulaCellInGroup(
   );
 }
 
-function mergeFormulaDeps(
+export function mergeFormulaDeps(
   ctx: Context,
   originKey: string,
   deps: Iterable<string>,
@@ -2331,6 +2545,10 @@ export function applyWorkerFormulaChunkResults(
     }
 
     mergeFormulaDeps(ctx, formulaCellKey, result.deps);
+    if (result.unresolvedSheetRef) {
+      ctx.formulaCache.formulasWithWideRangeDeps.add(formulaCellKey);
+      ctx.formulaCache.wideRangesByFormula.delete(formulaCellKey);
+    }
 
     if (result.isError) {
       setCellError(ctx, result.r, result.c, {
@@ -2387,6 +2605,7 @@ export function runFormulaEvalChunk(
     ctx.formulaCache.execFunctionExist = undefined;
     clearRangeValuePassCache(ctx.formulaCache);
     ctx.formulaCache.execFunctionGlobalData = null;
+    finishFullFormulaPass(ctx, job.fullPassEpoch);
   }
   return complete;
 }
@@ -2488,21 +2707,32 @@ export function execFunctionGroup(
   // { "r": r, "c": c, "id": id, "func": func}
   const calcChains = getAllFunctionGroup(ctx);
   let calcChainsToProcess = calcChains;
+  // A forced pass evaluates every formula in the chain, so it completes the
+  // dependency graph (C8). Formulas on sparse (demoted) tabs are skipped by
+  // the pass, so it only counts when every tab holding formulas is dense.
+  const fullPassEpoch =
+    isForce &&
+    ctx.luckysheetfile.every((file) => !file.calcChain?.length || file.data)
+      ? ctx.formulaCache.depGraphEpoch
+      : null;
+  const { depGraphComplete } = ctx.formulaCache;
   if (
     !isForce &&
     !_.isNil(origin_r) &&
     !_.isNil(origin_c) &&
     !_.isNil(id) &&
-    ctx.formulaCache.revDepsByCell.size > 0
+    depGraphComplete
   ) {
-    const dependents = collectTransitiveFormulaDependents(
-      originKey,
-      ctx.formulaCache.revDepsByCell,
-    );
-    ctx.formulaCache.formulasWithWideRangeDeps.forEach((formulaKey) => {
-      dependents.add(formulaKey);
-    });
-    // Cold dep graph / named-range-only formulas: if the edited cell sits inside
+    // Narrow only on a complete graph: a formula that was never evaluated has
+    // no recorded edges, so a partial graph would leave it off the run list
+    // and its value stale (Task 16). Otherwise run the full list.
+    // Formulas that always run: a formula naming a range that covers the edited
+    // cell has no cell edges. It seeds the same walk as the edited cell, so a
+    // formula reading its result is reached too. Formulas over very large
+    // ranges record no edges either; they join the walk when their range holds
+    // the edited cell or a formula cell it reaches (C8).
+    const alwaysRun = new Set<string>();
+    // Named-range-only formulas (no cell edges): if the edited cell sits inside
     // a defined name, include calc-chain formulas that mention that name.
     const coveringNames = (ctx.definedNames || []).filter(
       (dn) =>
@@ -2517,7 +2747,7 @@ export function execFunctionGroup(
       for (let i = 0; i < calcChains.length; i += 1) {
         const cell = calcChains[i];
         const formulaKey = `${cell.id}:${cell.r}:${cell.c}`;
-        if (dependents.has(formulaKey)) continue;
+        if (alwaysRun.has(formulaKey)) continue;
         const f = getcellFormula(ctx, cell.r, cell.c, cell.id);
         if (!f) continue;
         const upper = f.toUpperCase();
@@ -2529,16 +2759,29 @@ export function execFunctionGroup(
             'i',
           );
           if (re.test(upper)) {
-            dependents.add(formulaKey);
+            alwaysRun.add(formulaKey);
             break;
           }
         }
       }
     }
+    const dependents = collectTransitiveFormulaDependents(
+      originKey,
+      ctx.formulaCache.revDepsByCell,
+      alwaysRun,
+      wideFormulaIndex(ctx),
+    );
     if (dependents.size > 0) {
       calcChainsToProcess = calcChains.filter((cell) =>
         dependents.has(`${cell.id}:${cell.r}:${cell.c}`),
       );
+    } else if (depGraphCoversSheetSize(ctx, id, getFlowdata(ctx, id))) {
+      // C8: the graph is complete and nothing depends on the edited cell.
+      ctx.formulaCache.execFunctionExist = undefined;
+      clearRangeValuePassCache(ctx.formulaCache);
+      return;
+    } else {
+      ctx.formulaCache.markDepGraphIncomplete();
     }
   }
   const formulaObjects: any = {};
@@ -2855,10 +3098,9 @@ export function execFunctionGroup(
     const depDependents = collectTransitiveFormulaDependents(
       originKey,
       ctx.formulaCache.revDepsByCell,
+      [],
+      wideFormulaIndex(ctx),
     );
-    ctx.formulaCache.formulasWithWideRangeDeps.forEach((formulaKey) => {
-      depDependents.add(formulaKey);
-    });
     if (depDependents.size > 0) {
       const alreadyQueued = new Set(
         updateValueArray.map((fo: { key: string }) => fo.key),
@@ -2942,6 +3184,7 @@ export function execFunctionGroup(
       impactedByCircular: Array.from(impactedByCircular),
       cycleNodes: Array.from(cycleNodes),
       workerSnapshotKey: `formula-job-${(formulaAsyncEvalJobId += 1)}`,
+      fullPassEpoch,
       nextIndex: 0,
       total: formulaRunList.length,
       debug: {
@@ -2978,6 +3221,7 @@ export function execFunctionGroup(
 
   ctx.formulaCache.execFunctionExist = undefined;
   clearRangeValuePassCache(ctx.formulaCache);
+  finishFullFormulaPass(ctx, fullPassEpoch);
 }
 
 function findrangeindex(ctx: Context, v: string, vp: string) {
@@ -4885,6 +5129,21 @@ export function toggleFormulaAbsoluteReferenceAtCaret(
   return true;
 }
 
+export type FormulaTabs = { editedTab: string; formulaTab: string };
+
+/** `'Bob''s Sheet'` -> `Bob's Sheet`; unquoted names pass through. */
+function unquoteTabName(name: string) {
+  const t = name.trim();
+  if (t.length >= 2 && t.startsWith("'") && t.endsWith("'")) {
+    return t.slice(1, -1).replace(/''/g, "'");
+  }
+  return t;
+}
+
+function sameTabName(a: string, b: string) {
+  return (a ?? '') === (b ?? '');
+}
+
 function functionStrChange_range(
   txt: string,
   type: string,
@@ -4892,16 +5151,24 @@ function functionStrChange_range(
   orient: string | null,
   stindex: number,
   step: number,
+  tabs: FormulaTabs,
 ) {
-  const val = txt.split('!');
-  let rangetxt;
+  const bang = txt.lastIndexOf('!');
+  let rangetxt: any;
   let prefix = '';
 
-  if (val.length > 1) {
-    [, rangetxt] = val;
-    prefix = `${val[0]}!`;
+  if (bang >= 0) {
+    rangetxt = txt.slice(bang + 1);
+    prefix = txt.slice(0, bang + 1);
   } else {
-    [rangetxt] = val;
+    rangetxt = txt;
+  }
+
+  // A reference only moves when it points at the edited tab. No prefix means
+  // the tab that owns the formula.
+  const refTab = bang >= 0 ? unquoteTabName(txt.slice(0, bang)) : tabs.formulaTab;
+  if (!sameTabName(refTab, tabs.editedTab)) {
+    return txt;
   }
 
   let r1;
@@ -5506,7 +5773,8 @@ export function functionStrChange(
   orient: string | null,
   stindex: number,
   step: number,
-) {
+  tabs: FormulaTabs,
+): string {
   if (!txt) {
     return '';
   }
@@ -5529,7 +5797,14 @@ export function functionStrChange(
   while (i < funcstack.length) {
     const s = funcstack[i];
 
-    if (s === '(' && matchConfig.dquote === 0) {
+    if (s === "'" && matchConfig.dquote === 0) {
+      // Quoted tab name ('Q1 2026'!B2, 'A-B'!C1): keep it inside the token.
+      // An escaped '' toggles twice and stays inside.
+      matchConfig.squote = matchConfig.squote === 0 ? 1 : 0;
+      str += s;
+    } else if (matchConfig.squote > 0 && matchConfig.dquote === 0) {
+      str += s;
+    } else if (s === '(' && matchConfig.dquote === 0) {
       matchConfig.bracket += 1;
 
       if (str.length > 0) {
@@ -5548,6 +5823,7 @@ export function functionStrChange(
         orient,
         stindex,
         step,
+        tabs,
       )})`;
       str = '';
     } else if (s === '"' && matchConfig.squote === 0) {
@@ -5567,6 +5843,7 @@ export function functionStrChange(
         orient,
         stindex,
         step,
+        tabs,
       )},`;
       str = '';
     } else if (s === '&' && matchConfig.dquote === 0) {
@@ -5578,6 +5855,7 @@ export function functionStrChange(
           orient,
           stindex,
           step,
+          tabs,
         )}&`;
         str = '';
       } else {
@@ -5602,7 +5880,7 @@ export function functionStrChange(
       if (s + s_next in operatorjson) {
         if (str.length > 0) {
           function_str +=
-            functionStrChange(str, type, rc, orient, stindex, step) +
+            functionStrChange(str, type, rc, orient, stindex, step, tabs) +
             s +
             s_next;
           str = '';
@@ -5624,7 +5902,7 @@ export function functionStrChange(
       } else {
         if (str.length > 0) {
           function_str +=
-            functionStrChange(str, type, rc, orient, stindex, step) + s;
+            functionStrChange(str, type, rc, orient, stindex, step, tabs) + s;
           str = '';
         } else {
           function_str += s;
@@ -5643,6 +5921,7 @@ export function functionStrChange(
           orient,
           stindex,
           step,
+          tabs,
         );
       } else {
         function_str += _.trim(str);

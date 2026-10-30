@@ -90,7 +90,13 @@ interface AfterUpdateCellParams {
   collabEnabled?: boolean;
   collabIsOwner?: boolean;
   remoteUpdateRef?: React.MutableRefObject<boolean>;
+  /** True while a peer's structural edit waits to remount the grid. */
+  structuralRemountPendingRef?: React.MutableRefObject<boolean>;
   localUserEditRef?: React.MutableRefObject<boolean>;
+  /** Sheet that held the cell at commit time; falls back to the current sheet. */
+  sheetId?: string;
+  /** The caller writes the cell to Yjs itself (paste and fill batch writes). */
+  skipPersist?: boolean;
 }
 
 /** True when data-block formulas (API / smart contract) should run for this edit. */
@@ -514,37 +520,65 @@ const handlePromiseValue = async (
 export const afterUpdateCell = async (
   params: AfterUpdateCellParams,
 ): Promise<void> => {
-  const runDataBlocks = shouldExecuteDataBlocks(params);
+  // Persist first, on the sheet that held the cell at commit time. The write
+  // is idempotent (skipIfEqual), so it is harmless after updateCell's own
+  // commit-time write, and it keeps paths that only reach Yjs through this
+  // hook (api.setCellValue with callAfterUpdate) working. It must not sit
+  // behind the data-block gate below: that gate dropped typed commits (B2).
+  const currentSheetId =
+    params.sheetId ??
+    (params.sheetEditorRef.current?.getWorkbookContext()
+      ?.currentSheetId as string);
+  const key = params.row + '_' + params.column;
+  if (!params.skipPersist) {
+    updateYdocSheetData(
+      // @ts-ignore
+      params.ydocRef.current,
+      // @ts-ignore
+      params.dsheetId,
+      [
+        {
+          sheetId: currentSheetId,
+          path: ['celldata'],
+          value: {
+            r: params.row,
+            c: params.column,
+            v: params.newValue,
+          },
+          key,
+          type: 'update',
+        },
+        // The calcChain echo hook is held back while a structural remount is
+        // pending (the engine grid is stale), so the chain entry for a formula
+        // committed in that window is written here, at the coordinates the cell
+        // is written at. The remount rebuilds the engine chain from Yjs.
+        ...(params.structuralRemountPendingRef?.current &&
+        params.newValue?.f != null
+          ? [
+              {
+                sheetId: currentSheetId,
+                path: ['calcChain'],
+                value: {
+                  r: params.row,
+                  c: params.column,
+                  v: { r: params.row, c: params.column, id: currentSheetId },
+                },
+                key,
+                type: 'update' as const,
+              },
+            ]
+          : []),
+      ],
+      // @ts-ignore
+      params.handleContentPortal,
+    );
+  }
 
   // During RTC remote apply (e.g. owner XLSX import), skip local data-block work.
   // Owner local edits and joiner local formula entry clear the lock via onLocalCellEdit.
-  if (!runDataBlocks) {
+  if (!shouldExecuteDataBlocks(params)) {
     return;
   }
-
-  const currentSheetId = params.sheetEditorRef.current?.getWorkbookContext()
-    ?.currentSheetId as string;
-  updateYdocSheetData(
-    // @ts-ignore
-    params.ydocRef.current,
-    // @ts-ignore
-    params.dsheetId,
-    [
-      {
-        sheetId: currentSheetId,
-        path: ['celldata'],
-        value: {
-          r: params.row,
-          c: params.column,
-          v: params.newValue,
-        },
-        key: params.row + '_' + params.column,
-        type: 'update',
-      },
-    ],
-    // @ts-ignore
-    params.handleContentPortal,
-  );
 
   const { newValue, sheetEditorRef } = params;
   // Early return for empty values

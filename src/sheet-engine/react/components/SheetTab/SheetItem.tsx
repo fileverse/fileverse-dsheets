@@ -9,13 +9,12 @@ import {
 } from '@sheet-engine/core';
 import _ from 'lodash';
 import React, {
-  useContext,
   useState,
   useEffect,
   useRef,
   useCallback,
 } from 'react';
-import WorkbookContext from '../../context';
+import { useWorkbookContextIgnoringScroll } from '../../context/use-workbook-store';
 import { useAlert } from '../../hooks/useAlert';
 import SVGIcon from '../SVGIcon';
 import { canOpenSheetTabMenu } from '../ContextMenu/sheet-tab-menu-items';
@@ -31,7 +30,8 @@ const toCssId = (s: string) =>
     .replace(/-+/g, '-');
 
 const SheetItem: React.FC<Props> = ({ sheet, isDropPlaceholder }) => {
-  const { context, setContext, refs, settings } = useContext(WorkbookContext);
+  const { context, setContext, refs, settings } =
+    useWorkbookContextIgnoringScroll();
   const [editing, setEditing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const editable = useRef<HTMLSpanElement>(null);

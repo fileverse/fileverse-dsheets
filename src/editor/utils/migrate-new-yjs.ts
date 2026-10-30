@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { Sheet } from '@sheet-engine/react';
+import { INIT_ORIGIN } from './content-change';
 
 function normalizeCelldataArray(celldata: any[]): Record<string, any> {
   const result: Record<string, any> = {};
@@ -168,7 +169,8 @@ export function migrateSheetArrayIfNeeded(
         sheetArray.insert(index, [sheetMap]);
       }
     });
-  });
+    // Storage migration, not a user edit (A1 userEdited).
+  }, INIT_ORIGIN);
   setMigrationStatusOnWindow(true);
 
   return true;

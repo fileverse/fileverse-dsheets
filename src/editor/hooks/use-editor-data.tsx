@@ -8,19 +8,25 @@ import { useLiveQuery } from './live-query/use-live-query';
 import type { ApiKeyStorage } from '../utils/api-key-storage';
 import type { OpenApiKeyModalFn } from '../utils/data-block-error-handler';
 import type { DataBlockEvent } from '../types';
-import { ySheetArrayToPlain } from '../utils/update-ydoc';
+import { readYdocSheetField, ySheetArrayToPlain } from '../utils/update-ydoc';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
+import { isFormatLocked } from '../utils/format-gate';
 import { applyCommentMarkers } from '../utils/apply-comment-markers';
 import {
   applyYdocCommentAnchors,
   getCommentAnchorsYMap,
 } from '../utils/comment-anchors-ydoc';
 import {
-  beginRemoteApply,
-  endRemoteApplyAfterPaint,
+  cancelStructuralRemount,
+  runRemoteApplyUntilPaint,
   runUnderRemoteApply,
+  scheduleStructuralRemount as scheduleGuardedStructuralRemount,
 } from '../utils/remote-apply-guard';
 import { shouldRenderBootstrappedWorkbook } from './collaboration-lifecycle';
+import {
+  patchPlainCelldata as patchSheetCelldata,
+  type PlainCelldataEntry,
+} from '../utils/patch-plain-celldata';
 
 /**
  * Hook for managing sheet data
@@ -64,6 +70,11 @@ export const useEditorData = (
   const debounceTimerRef = useRef<number | null>(null);
   /** While true, skip surgical applies — workbook is stale vs incoming Yjs sheet ids. */
   const structuralRemountPendingRef = useRef<boolean>(false);
+  const structuralRemountRefs = useRef({
+    ...remoteApplyGuardRefs,
+    pendingRef: structuralRemountPendingRef,
+    timerRef: debounceTimerRef,
+  }).current;
 
   useEffect(() => {
     dataInitialized.current = false;
@@ -142,7 +153,9 @@ export const useEditorData = (
 
     try {
       const sheetArray = ydocRef.current.getArray(dsheetId);
-      migrateSheetArrayIfNeeded(ydocRef.current, sheetArray);
+      if (!isFormatLocked(ydocRef.current, dsheetId)) {
+        migrateSheetArrayIfNeeded(ydocRef.current, sheetArray);
+      }
 
       const plain = ySheetArrayToPlain(
         // @ts-ignore
@@ -345,6 +358,8 @@ export const useEditorData = (
       const mapFieldUpdates = new Map<string, MapFieldBatch>();
       const configUpdates = new Map<string, ConfigSubKeyBatch>();
       const conditionFormatUpdates = new Map<string, ConditionFormatBatch>();
+      // Sheets whose formula list (calcChain) changed remotely (A4).
+      const calcChainUpdates = new Set<string>();
       const sheetMetaUpdates = new Map<
         string,
         { sheetId: string; sheetMap: Y.Map<any>; changedKeys: string[] }
@@ -417,6 +432,21 @@ export const useEditorData = (
             celldataMap,
             changedKeys: (event as Y.YMapEvent<any>).changes.keys,
           });
+        } else if (
+          path.length === 2 &&
+          path[1] === 'calcChain' &&
+          typeof path[0] === 'number'
+        ) {
+          // A peer committed or removed a formula: apply the chain in place
+          // instead of rebuilding the grid (A4).
+          const sheetMap = sheetsArr[path[0] as number];
+          const sheetId =
+            sheetMap instanceof Y.Map ? (sheetMap.get('id') as string) : '';
+          if (!sheetId) {
+            hasStructural = true;
+            continue;
+          }
+          calcChainUpdates.add(sheetId);
         } else if (
           path.length === 2 &&
           path[1] === 'dataVerification' &&
@@ -563,6 +593,7 @@ export const useEditorData = (
                   SURGICAL_MAP_FIELD_KEYS.has(k) ||
                   SURGICAL_OBJECT_FIELD_KEYS.has(k) ||
                   k === 'luckysheet_conditionformat_save' ||
+                  k === 'calcChain' ||
                   k === 'config',
               )
             ) {
@@ -644,6 +675,9 @@ export const useEditorData = (
                     hasStructural = true;
                   }
                 }
+                if (changedKeys.includes('calcChain')) {
+                  calcChainUpdates.add(sheetId);
+                }
                 if (changedKeys.includes('luckysheet_conditionformat_save')) {
                   const rulesArr = sheetMap.get(
                     'luckysheet_conditionformat_save',
@@ -701,7 +735,8 @@ export const useEditorData = (
           filterUpdates.size > 0 ||
           mapFieldUpdates.size > 0 ||
           configUpdates.size > 0 ||
-          conditionFormatUpdates.size > 0
+          conditionFormatUpdates.size > 0 ||
+          calcChainUpdates.size > 0
         )
           continue;
         const changedKeys = Array.from((event as Y.YMapEvent<any>).keys.keys());
@@ -729,44 +764,41 @@ export const useEditorData = (
         ...Array.from(mapFieldUpdates.values()).map((b) => b.sheetId),
         ...configUpdates.keys(),
         ...conditionFormatUpdates.keys(),
+        ...calcChainUpdates,
       ];
       const hasUnknownSheet = remoteSheetIds.some(
         (id) => id && !workbookSheetIds.has(id),
       );
 
-      const scheduleStructuralRemount = () => {
-        structuralRemountPendingRef.current = true;
-        beginRemoteApply(remoteApplyGuardRefs);
-        if (debounceTimerRef.current !== null) {
-          window.clearTimeout(debounceTimerRef.current);
-        }
-        debounceTimerRef.current = window.setTimeout(() => {
-          const isEditingCell =
-            (sheetEditorRef.current?.getWorkbookContext?.()
-              ?.luckysheetCellUpdate?.length ?? 0) > 0;
-          try {
-            const plain = ySheetArrayToPlain(sheetArray as any);
-            applyCommentMarkers(
-              plain,
-              commentsForMarkers(),
-              allowCommentsRef.current,
-            );
-            currentDataRef.current = plain;
-            syncDataBlockCalcFromPlain(plain);
-          } catch (e) {
-            console.error(
-              '[DSheet] ySheetArrayToPlain after ydoc observe failed',
-              e,
-            );
-          }
-          if (!isEditingCell && setForceSheetRender) {
-            setForceSheetRender((prev) => prev + 1);
-          }
-          structuralRemountPendingRef.current = false;
-          debounceTimerRef.current = null;
-          endRemoteApplyAfterPaint(remoteApplyGuardRefs);
-        }, 50);
-      };
+      const isEditingCell = () =>
+        (sheetEditorRef.current?.getWorkbookContext?.()?.luckysheetCellUpdate
+          ?.length ?? 0) > 0;
+      const scheduleStructuralRemount = () =>
+        scheduleGuardedStructuralRemount(
+          structuralRemountRefs,
+          () => {
+            try {
+              const plain = ySheetArrayToPlain(sheetArray as any);
+              applyCommentMarkers(
+                plain,
+                commentsForMarkers(),
+                allowCommentsRef.current,
+              );
+              currentDataRef.current = plain;
+              syncDataBlockCalcFromPlain(plain);
+            } catch (e) {
+              console.error(
+                '[DSheet] ySheetArrayToPlain after ydoc observe failed',
+                e,
+              );
+            }
+            if (setForceSheetRender) {
+              setForceSheetRender((prev) => prev + 1);
+            }
+          },
+          50,
+          isEditingCell,
+        );
 
       const needsStructuralRemount =
         hasStructural ||
@@ -988,6 +1020,37 @@ export const useEditorData = (
         }
       };
 
+      // A4: apply the remote formula list in place; the engine resets its
+      // dependency indexes, as a fresh mount would. Also keep the plain
+      // snapshot's chain current for later remounts.
+      const applyRemoteCalcChains = () => {
+        const ydoc = ydocRef.current;
+        if (!ydoc) return;
+        for (const sheetId of calcChainUpdates) {
+          const calcChain =
+            readYdocSheetField(ydoc, dsheetId, sheetId, 'calcChain') ?? [];
+          try {
+            sheetEditorRef.current?.setSheetCalcChain?.(calcChain, {
+              id: sheetId,
+            });
+          } catch (error) {
+            console.warn(
+              '[DSheet] Skipped remote calcChain apply — workbook not ready',
+              { sheetId, error },
+            );
+          }
+          const plainSheet = currentDataRef.current?.find(
+            (sheet) => sheet.id === sheetId,
+          );
+          // Its own copies: the engine's chain is frozen by Immer.
+          if (plainSheet) {
+            plainSheet.calcChain = calcChain.map((entry: any) =>
+              entry != null && typeof entry === 'object' ? { ...entry } : entry,
+            );
+          }
+        }
+      };
+
       const syncPlainSnapshot = () => {
         try {
           const plain = ySheetArrayToPlain(sheetArray as any);
@@ -1025,29 +1088,14 @@ export const useEditorData = (
                 ) as NonNullable<Sheet['celldata']>)
               : [];
           }
-          const celldata = sheet.celldata as NonNullable<Sheet['celldata']>;
-          changedKeys.forEach(({ action }, key) => {
-            const sep = key.lastIndexOf('_');
-            const r = parseInt(key.slice(0, sep), 10);
-            const c = parseInt(key.slice(sep + 1), 10);
-            const idx = celldata.findIndex(
-              (cell) => cell.r === r && cell.c === c,
-            );
-            if (action === 'delete') {
-              if (idx >= 0) celldata.splice(idx, 1);
-              return;
-            }
-            const cellObj = celldataMap.get(key);
-            const entry = {
-              r,
-              c,
-              v: (cellObj?.v ?? null) as NonNullable<
-                Sheet['celldata']
-              >[number]['v'],
-            };
-            if (idx >= 0) celldata[idx] = entry;
-            else celldata.push(entry);
-          });
+          patchSheetCelldata(
+            sheet.celldata as PlainCelldataEntry[],
+            Array.from(changedKeys, ([key, { action }]) => ({
+              key,
+              action: action === 'delete' ? 'delete' : 'update',
+              v: action === 'delete' ? undefined : celldataMap.get(key)?.v,
+            })),
+          );
         }
       };
 
@@ -1093,11 +1141,15 @@ export const useEditorData = (
               filterUpdates.size > 0 ||
               mapFieldUpdates.size > 0 ||
               configUpdates.size > 0 ||
-              conditionFormatUpdates.size > 0)
+              conditionFormatUpdates.size > 0 ||
+              calcChainUpdates.size > 0)
           ) {
             // Metadata-only: config rematerialize is fine with no cell deletes.
             if (configUpdates.size > 0) {
               applyRemoteConfig();
+            }
+            if (calcChainUpdates.size > 0) {
+              applyRemoteCalcChains();
             }
             // currentDataRef must pick up new cellFormatRanges for later remounts.
             if (cellFormatRangesTouched) {
@@ -1111,40 +1163,47 @@ export const useEditorData = (
           // one txn. Config-first rematerializes style into dense data, then the
           // null cell wipe leaves an unstyled empty until remount. Cells-first
           // then rematerialize restores format-only empties correctly.
+          // One quiet update per sheet batch (A5): a single Immer pass, and a
+          // collaborator's cells never land on the local undo stack.
           for (const { sheetId, celldataMap, changedKeys } of cellBatches) {
-            changedKeys.forEach(({ action }, key) => {
+            const cells = Array.from(changedKeys, ([key, { action }]) => {
               const sep = key.lastIndexOf('_');
-              const r = parseInt(key.slice(0, sep), 10);
-              const c = parseInt(key.slice(sep + 1), 10);
-
-              try {
-                if (action === 'delete') {
-                  sheetEditorRef.current?.applyRemoteCellValue(r, c, null, {
-                    id: sheetId,
-                  });
-                } else {
-                  const cellObj = celldataMap.get(key);
-                  const remoteCell = cellObj?.v ?? null;
-                  sheetEditorRef.current?.applyRemoteCellValue(
-                    r,
-                    c,
-                    remoteCell,
-                    {
-                      id: sheetId,
-                    },
-                  );
-                }
-              } catch (error) {
-                console.warn(
-                  '[DSheet] Skipped remote cell apply — workbook not ready',
-                  { sheetId, r, c, error },
-                );
-              }
+              return {
+                r: parseInt(key.slice(0, sep), 10),
+                c: parseInt(key.slice(sep + 1), 10),
+                v:
+                  action === 'delete'
+                    ? null
+                    : (celldataMap.get(key)?.v ?? null),
+              };
             });
+            try {
+              sheetEditorRef.current?.applyRemoteCells(
+                cells,
+                { id: sheetId },
+                ({ r, c }, error) => {
+                  console.warn(
+                    '[DSheet] Skipped remote cell apply — workbook not ready',
+                    { sheetId, r, c, error },
+                  );
+                },
+              );
+            } catch (error) {
+              console.warn(
+                '[DSheet] Skipped remote cell apply — workbook not ready',
+                { sheetId, error },
+              );
+            }
           }
 
           if (configUpdates.size > 0) {
             applyRemoteConfig();
+          }
+
+          // After cells: applying a cell can edit the engine's chain; the
+          // Yjs value is authoritative.
+          if (calcChainUpdates.size > 0) {
+            applyRemoteCalcChains();
           }
 
           if (totalCells > 0) {
@@ -1169,9 +1228,7 @@ export const useEditorData = (
 
     return () => {
       sheetArray.unobserveDeep(observerCallback);
-      if (debounceTimerRef.current !== null) {
-        window.clearTimeout(debounceTimerRef.current);
-      }
+      cancelStructuralRemount(structuralRemountRefs);
     };
   }, [
     ydocRef,
@@ -1192,30 +1249,30 @@ export const useEditorData = (
 
       try {
         const sheetArray = ydocRef.current.getArray(dsheetId);
-        migrateSheetArrayIfNeeded(ydocRef.current, sheetArray);
+        if (!isFormatLocked(ydocRef.current, dsheetId)) {
+          migrateSheetArrayIfNeeded(ydocRef.current, sheetArray);
+        }
 
         // @ts-ignore
         const plain = ySheetArrayToPlain(sheetArray as Y.Array<Y.Map>);
 
-        beginRemoteApply(remoteApplyGuardRefs);
+        runRemoteApplyUntilPaint(remoteApplyGuardRefs, () => {
+          applyCommentMarkers(
+            plain,
+            commentsForMarkers(),
+            allowCommentsRef.current,
+          );
+          currentDataRef.current = plain;
+          syncDataBlockCalcFromPlain(plain);
+          initialiseLiveQueryData(plain);
 
-        applyCommentMarkers(
-          plain,
-          commentsForMarkers(),
-          allowCommentsRef.current,
-        );
-        currentDataRef.current = plain;
-        syncDataBlockCalcFromPlain(plain);
-        initialiseLiveQueryData(plain);
+          dataInitialized.current = true;
+          setIsDataLoaded(true);
 
-        dataInitialized.current = true;
-        setIsDataLoaded(true);
-
-        if (setForceSheetRender) {
-          setForceSheetRender((prev) => prev + 1);
-        }
-
-        endRemoteApplyAfterPaint(remoteApplyGuardRefs);
+          if (setForceSheetRender) {
+            setForceSheetRender((prev) => prev + 1);
+          }
+        });
 
         return true;
       } catch (error) {
@@ -1259,6 +1316,7 @@ export const useEditorData = (
     setSheetData,
     currentDataRef,
     remoteUpdateRef,
+    structuralRemountPendingRef,
     isDataLoaded,
     setIsDataLoaded,
     handleChange,

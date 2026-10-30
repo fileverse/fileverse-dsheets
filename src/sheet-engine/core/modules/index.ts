@@ -360,6 +360,8 @@ export {
   confirmMessage,
   cellFocus,
   validateCellData,
+  splitDropdownOptions,
+  getDropdownOptions,
 } from './dataVerification';
 
 // ConditionFormat
@@ -379,6 +381,7 @@ export { MAX_ZOOM_RATIO, MIN_ZOOM_RATIO } from './zoom';
 
 // refresh
 export { jfrefreshgrid } from './refresh';
+export { deleteCellsShift, insertCellsShift } from './cell-shift';
 
 // iframe
 export {
@@ -422,6 +425,8 @@ export {
   refreshFormulasUsingDefinedNames,
   runFormulaEvalChunk,
   applyWorkerFormulaChunkResults,
+  finishFullFormulaPass,
+  resetFormulaDependencyIndexes,
   insertUpdateFunctionGroup,
   functionCopy,
 } from './formula';

@@ -1,0 +1,46 @@
+{
+  "label": "after-c8-text-index",
+  "date": "2026-10-28T11:08:35.398Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S14 500 formulas: warm-up": {
+    "status": "complete",
+    "formulasEvaluated": 0,
+    "totalMs": 8.24,
+    "slices": 1,
+    "longestSliceMs": 7.88,
+    "ydocWrites": 0,
+    "depGraphComplete": true
+  },
+  "S14 500 formulas: commit to unreferenced cell, formulas processed": {
+    "formulasRead": 0,
+    "formulasEvaluated": 0,
+    "depGraphComplete": true
+  },
+  "S14 500 formulas: commit to unreferenced cell (updateCell)": {
+    "median": 0.159,
+    "p95": 0.577,
+    "min": 0.0417,
+    "runs": 20
+  },
+  "S14 5000 formulas: warm-up": {
+    "status": "complete",
+    "formulasEvaluated": 0,
+    "totalMs": 54.45,
+    "slices": 6,
+    "longestSliceMs": 10.96,
+    "ydocWrites": 0,
+    "depGraphComplete": true
+  },
+  "S14 5000 formulas: commit to unreferenced cell, formulas processed": {
+    "formulasRead": 0,
+    "formulasEvaluated": 0,
+    "depGraphComplete": true
+  },
+  "S14 5000 formulas: commit to unreferenced cell (updateCell)": {
+    "median": 0.125,
+    "p95": 0.722,
+    "min": 0.0605,
+    "runs": 20
+  }
+}

@@ -11,6 +11,7 @@ import {
 } from '@sheet-engine/core';
 import { Button, Checkbox } from '@fileverse/ui';
 import WorkbookContext from '../../context';
+import { useWorkbookContextIgnoringScroll } from '../../context/use-workbook-store';
 import { useDialog } from '../../hooks/useDialog';
 
 type RemoveDuplicatesDialogProps = {
@@ -179,7 +180,7 @@ const RemoveDuplicatesDialog: React.FC<RemoveDuplicatesDialogProps> = ({
 };
 
 export function useRemoveDuplicatesDialog() {
-  const { context, setContext } = useContext(WorkbookContext);
+  const { context, setContext } = useWorkbookContextIgnoringScroll();
   const { showDialog, hideDialog } = useDialog();
   const { removeDuplicates: copy } = locale(context) as any;
 
