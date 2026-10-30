@@ -18,11 +18,19 @@ export function isUsDateBaseLocale(): boolean {
   return activeDateBaseLocale === 'us';
 }
 
+/** Standard Date toolbar / formula display format (no leading zeros). */
+export function getCanonicalDateDisplayFormat(hasTime = false): string {
+  if (isUsDateBaseLocale()) {
+    return hasTime ? 'M/d/yyyy hh:mm AM/PM' : 'M/d/yyyy';
+  }
+  return hasTime ? 'd/M/yyyy hh:mm AM/PM' : 'd/M/yyyy';
+}
+
 export function getCanonicalDateEditFormat(hasTime: boolean): string {
   if (isUsDateBaseLocale()) {
-    return hasTime ? 'MM/dd/yyyy HH:mm:ss' : 'MM/dd/yyyy';
+    return hasTime ? 'M/d/yyyy HH:mm:ss' : 'M/d/yyyy';
   }
-  return hasTime ? 'dd/MM/yyyy HH:mm:ss' : 'dd/MM/yyyy';
+  return hasTime ? 'd/M/yyyy HH:mm:ss' : 'd/M/yyyy';
 }
 
 function normalizeDateFormatTokenOrder(format: string): Array<'d' | 'm' | 'y'> {

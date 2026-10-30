@@ -74,13 +74,20 @@
 .fortune-sheettab-container .fortune-sheettab-container-c {
   padding: 0px 0px;
   margin-left: 0px;
-  overflow: scroll;
-  scrollbar-width: none; 
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   white-space: nowrap;
   position: relative;
   max-width: 100%;
   vertical-align: bottom;
   display: inline-block;
+}
+
+.fortune-sheettab-container .fortune-sheettab-container-c::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .luckysheet-sheet-container-menu-hide .luckysheet-sheets-item {

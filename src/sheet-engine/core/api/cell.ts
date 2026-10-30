@@ -43,7 +43,15 @@ export function getCellValue(
       ret = functionHTMLGenerate(ret);
     } else if (type === 'f') {
       ret = cellData.v;
-    } else if (cellData && cellData.ct && cellData.ct.fa === 'yyyy-MM-dd') {
+    } else if (
+      cellData &&
+      cellData.ct &&
+      (cellData.ct.fa === 'yyyy-MM-dd' ||
+        cellData.ct.fa === 'd/M/yyyy' ||
+        cellData.ct.fa === 'dd/MM/yyyy' ||
+        cellData.ct.fa === 'M/d/yyyy' ||
+        cellData.ct.fa === 'MM/dd/yyyy')
+    ) {
       ret = cellData.m;
     } else if (cellData.ct?.t === 'inlineStr') {
       ret = cellData.ct.s.reduce(

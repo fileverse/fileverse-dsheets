@@ -23,6 +23,9 @@ import {
 } from '../hooks/collaboration-lifecycle';
 import { useCelldataCompaction } from '../hooks/use-celldata-compaction';
 import { useEditorData } from '../hooks/use-editor-data';
+import { navigateToSheet } from '../utils/navigate-to-sheet';
+import { activateSheetForLink } from '../utils/activate-sheet-for-link';
+import { createActiveSheetKeeper } from '../utils/active-sheet-keeper';
 import {
   updateRowIndices,
   updateColumnIndices,
@@ -80,6 +83,7 @@ export interface EditorContextType {
 
   // UI states
   loading: boolean;
+  isDataLoaded: boolean;
   forceSheetRender: number;
   setForceSheetRender: React.Dispatch<React.SetStateAction<number>>;
 
@@ -193,6 +197,12 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   const resolvedAllowComments = !!commentsConfig;
 
   const [forceSheetRender, setForceSheetRender] = useState<number>(1);
+
+  const forceSheetRenderRef = useRef(forceSheetRender);
+  forceSheetRenderRef.current = forceSheetRender;
+  const dsheetIdRef = useRef(dsheetId);
+  dsheetIdRef.current = dsheetId;
+  const activeSheetKeeperRef = useRef(createActiveSheetKeeper());
   const sheetEditorRef = useRef<WorkbookInstance | null>(null);
   const [dataBlockCalcFunction, setDataBlockCalcFunction] = useState<{
     [key: string]: { [key: string]: any };
@@ -403,10 +413,21 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
           updateCollaboratorName: (name) =>
             updateCollaboratorNameRef.current(name),
           updateSessionTitle: (args) => updateSessionTitleRef.current(args),
+          navigateToSheet: (sheetId, opts) =>
+            navigateToSheet(
+              () => sheetEditorRef.current,
+              sheetId,
+              activateSheetForLink,
+              opts,
+            ),
         },
         [externalEditorRef, legacyEditorRef],
       );
-        },
+      activeSheetKeeperRef.current.onAttach(
+        workbook,
+        `${dsheetIdRef.current}-${forceSheetRenderRef.current}`,
+      );
+    },
     [externalEditorRef, legacyEditorRef],
   );
 
@@ -615,6 +636,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
       remoteUpdateRef,
       handleChange,
       loading,
+      isDataLoaded,
       setIsDataLoaded,
       forceSheetRender,
       setForceSheetRender,
@@ -662,6 +684,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     remoteUpdateRef,
     handleChange,
     loading,
+    isDataLoaded,
     forceSheetRender,
     setForceSheetRender,
     syncStatus,

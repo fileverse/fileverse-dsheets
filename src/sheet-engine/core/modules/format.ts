@@ -1,7 +1,7 @@
 import numeral from 'numeral';
 import _ from 'lodash';
 import { isRealNum, valueIsError, detectDateFormat } from './validation';
-import { getDateBaseLocale } from './date-base-locale';
+import { getCanonicalDateDisplayFormat } from './date-base-locale';
 // @ts-ignore
 import SSF from './ssf';
 import { Cell, CellMatrix } from '../types';
@@ -361,7 +361,13 @@ export function genarate(value: string | number | boolean) {
       );
       v = datenum_local(dateObj);
       ct.t = 'd';
-
+      // Preserve the typed pattern on auto-input (GSheets-like).
+      // Toolbar Format → Date applies getCanonicalDateDisplayFormat separately.
+      const hasTime =
+        df.hours !== 0 ||
+        df.minutes !== 0 ||
+        df.seconds !== 0 ||
+        /H|h|AM\/PM|T/i.test(df.formatType);
       const map: Record<string, string> = {
         'yyyy-MM-dd': 'yyyy-MM-dd',
         'yyyy-MM-dd HH:mm': 'yyyy-MM-dd HH:mm',
@@ -403,6 +409,8 @@ export function genarate(value: string | number | boolean) {
         'MM-dd-yy': 'mm-dd-yy',
         'M d yyyy': 'm d yyyy',
         'MM dd yyyy': 'mm dd yyyy',
+        'd M yyyy': 'd m yyyy',
+        'dd MM yyyy': 'dd mm yyyy',
         'MM/yyyy': 'mm/yyyy',
         'M/yyyy': 'm/yyyy',
         'MM-yyyy': 'mm-yyyy',
@@ -433,10 +441,8 @@ export function genarate(value: string | number | boolean) {
         'dy dd/MM/yyyy': 'ddd dd/mm/yyyy',
         'dy MM/dd/yyyy': 'ddd mm/dd/yyyy',
       };
-
       ct.fa =
-        map[df.formatType] ||
-        (getDateBaseLocale() === 'us' ? 'MM/dd/yyyy' : 'dd/MM/yyyy');
+        map[df.formatType] || getCanonicalDateDisplayFormat(hasTime);
       m = SSF.format(ct.fa, v);
     } else {
       m = String(value);

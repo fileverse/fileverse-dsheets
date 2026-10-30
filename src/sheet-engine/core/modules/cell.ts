@@ -8,6 +8,8 @@ import {
   processArray,
   getContentInParentheses,
   getNumberFormat,
+  formatSheetNameForFormula,
+  quoteSheetNamesInFormula,
 } from '../utils';
 import { ensureSheetFlowdata } from '../api/sheet';
 import { checkCF, getComputeMap } from './ConditionFormat';
@@ -1470,7 +1472,10 @@ export function updateCell(
     // API, we get value from user
     value = value || inputText;
     if (_.isString(value) && value.startsWith('=')) {
-      value = normalizeFormulaExecText(value);
+      value = quoteSheetNamesInFormula(
+        normalizeFormulaExecText(value),
+        ctx.luckysheetfile.map((f) => f.name),
+      );
     }
     if (_.isString(value) && value.startsWith('=') && value.length > 1) {
       const closedValue = closeUnclosedParenthesesInFormula(value);
@@ -1489,7 +1494,12 @@ export function updateCell(
       (value as Cell).f!.length > 1
     ) {
       const originalFormula = (value as Cell).f!;
-      const closedFormula = closeUnclosedParenthesesInFormula(originalFormula);
+      const closedFormula = closeUnclosedParenthesesInFormula(
+        quoteSheetNamesInFormula(
+          originalFormula,
+          ctx.luckysheetfile.map((f) => f.name),
+        ),
+      );
       if (
         shouldPersistFormulaEditHtml &&
         (rawInputText ?? '').startsWith('=') &&
@@ -2103,21 +2113,11 @@ export function getRangetxt(
   }
 
   if (sheetId !== currentId) {
-    // sheet名字包含'的，引用时应该替换为''
+    // Quote names that are not plain identifiers (spaces, `-`, etc.) so the
+    // reference parses, e.g. `'Finance - 1'!A1`, `'Sheet-4'!H6`.
     const index = getSheetIndex(ctx, sheetId);
     if (index == null) return '';
-    sheettxt = ctx.luckysheetfile[index].name.replace(/'/g, "''");
-    // 如果包含除a-z、A-Z、0-9、下划线等以外的字符那么就用单引号包起来
-    if (
-      // eslint-disable-next-line no-misleading-character-class
-      /^[:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD][:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\-.0-9\u00B7\u0300-\u036F\u203F-\u2040]*$/.test(
-        sheettxt,
-      )
-    ) {
-      sheettxt += '!';
-    } else {
-      sheettxt = `'${sheettxt}'!`;
-    }
+    sheettxt = `${formatSheetNameForFormula(ctx.luckysheetfile[index].name)}!`;
   }
 
   const row0 = range.row[0];

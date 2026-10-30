@@ -10,6 +10,7 @@ import {
   unavailableDsheetContentSnapshot,
 } from '../../persistence-utils';
 import { migrateSheetArrayIfNeeded } from '../utils/migrate-new-yjs';
+import { compactDsheetPersistence } from '../../persistence-compaction';
 import {
   createCollaborationConnectionController,
   mergePublishedContentIntoYdoc,
@@ -84,14 +85,14 @@ export const useEditorSync = (
 
     if (persistenceRef.current) {
       try {
-      await persistenceRef.current.destroy();
+        await persistenceRef.current.destroy();
       } catch (error) {
         const indexedDbError =
           error instanceof Error ? error : new Error(String(error));
         console.error(
           '[DSheet] IndexedDB persistence cleanup failed:',
           indexedDbError,
-    );
+        );
         onIndexedDbErrorRef.current?.(indexedDbError);
       }
       if (generation !== bootstrapGenerationRef.current) return;
@@ -99,10 +100,11 @@ export const useEditorSync = (
     }
 
     try {
-      // dDoc parity: host/published state is present in the one Y.Doc before
-      // IndexedDB replay and before SyncManager is allowed to connect.
-      mergePublishedContentIntoYdoc(ydoc, portalContent);
-
+      // Attach IndexedDB to the doc BEFORE merging the published state.
+      // y-indexeddb stores a full copy of whatever the doc holds when it
+      // attaches, so attaching to a pre-filled doc appended the whole sheet on
+      // every open. Merging afterwards stores only the parts IndexedDB did not
+      // already have. Yjs merges commute, so the resulting doc is the same.
       if (!isReadOnly && enableIndexeddbSync && storeId) {
         try {
           const persistence = new IndexeddbPersistence(storeId, ydoc);
@@ -116,9 +118,14 @@ export const useEditorSync = (
               indexedDbError,
             );
             onIndexedDbErrorRef.current?.(indexedDbError);
-    });
+          });
           await persistence.whenSynced;
           if (generation !== bootstrapGenerationRef.current) return;
+          // Collapse rows that were already replayed into the doc (legacy full
+          // copies, previous sessions' edits) into one, in the background.
+          void compactDsheetPersistence(persistence).catch((error: unknown) => {
+            console.warn('[DSheet] IndexedDB compaction failed:', error);
+          });
         } catch (error) {
           const indexedDbError =
             error instanceof Error ? error : new Error(String(error));
@@ -140,6 +147,10 @@ export const useEditorSync = (
           // Match dDoc: keep the merged Y.Doc and continue without IndexedDB.
         }
       }
+
+      // dDoc parity: host/published state is present in the one Y.Doc before
+      // SyncManager is allowed to connect.
+      mergePublishedContentIntoYdoc(ydoc, portalContent);
 
       // IndexedDB may contain a legacy plain-object sheet array. Persist its
       // migration before connection so local-only diff seeding sends the same
@@ -189,7 +200,7 @@ export const useEditorSync = (
     };
   }, [ydoc]);
 
-  // Content bootstrap effect: published state → IndexedDB replay → migration.
+  // Content bootstrap effect: IndexedDB replay → published state → migration.
   // Never replaces the Y.Doc — SyncManager, persistence, and Fortune share it.
   useEffect(() => {
     void initialiseEditorIndexedDB();

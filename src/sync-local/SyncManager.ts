@@ -91,11 +91,19 @@ export class SyncManager {
   // Bounds the "resend once on a stale current-key-ok 409" retry shared by the write-ack
   // paths below, so a genuinely-stuck client can't loop. Reset on any successful ack.
   private staleAckRetries = 0;
-  private encryptMirror: ((yjsUpdate: Uint8Array) => Promise<string>) | null =
-    null;
+  private encryptMirror:
+    | ((yjsUpdate: Uint8Array) => Promise<string | null>)
+    | null = null;
   private fileKeyEpoch = 0;
   private mirrorIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  // Latched by rekey(): a room rotation means the host's fileKey may have rotated too, and a
+  // mirror under the old key would be readable by a removed member through the open mirror
+  // GET. Never cleared on this instance — a page reload recovers the current key.
+  private mirrorDisabled = false;
   private readonly MIRROR_IDLE_MS = 4000;
+  // Headroom under the server's 10 MB Socket.IO maxHttpBufferSize: an oversized emit drops
+  // the socket. Matches the ddoc engine's MAX_WIRE_UPDATE_CHARS.
+  private readonly MAX_MIRROR_CHARS = 9_000_000;
   private isOwner = false;
   private joinOnly = false;
   private updateQueue: Uint8Array[] = [];
@@ -261,7 +269,9 @@ export class SyncManager {
     this.isOwner = config.isOwner;
     this.joinOnly = config.joinOnly ?? false;
 
-    this.encryptMirror = config.encryptMirror ?? null;
+    this.encryptMirror = this.mirrorDisabled
+      ? null
+      : (config.encryptMirror ?? null);
     this.fileKeyEpoch = config.fileKeyEpoch ?? 0;
 
     this.socketClient = new SocketClient({
@@ -469,6 +479,13 @@ export class SyncManager {
     }
 
     this.rotating = true;
+    // Stop mirroring before the re-auth await, and keep it stopped even if the re-auth fails.
+    this.mirrorDisabled = true;
+    this.encryptMirror = null;
+    if (this.mirrorIdleTimer) {
+      clearTimeout(this.mirrorIdleTimer);
+      this.mirrorIdleTimer = null;
+    }
     const prevRoomKey = this.roomKey;
     this.roomKeyBytesPrev = this.roomKeyBytes; // dual-decrypt window
     // Swap FIRST: inbound new-session traffic arriving during the re-auth round-trip must
@@ -876,7 +893,7 @@ export class SyncManager {
   // editing-idle debounce (trailing) — active editing keeps resetting the timer, so exactly
   // one write lands once typing pauses. Best-effort; NOT owner-gated (unlike authorSnapshot).
   private scheduleMirror(): void {
-    if (!this.encryptMirror) return;
+    if (this.mirrorDisabled || !this.encryptMirror) return;
     if (this.mirrorIdleTimer) clearTimeout(this.mirrorIdleTimer);
     this.mirrorIdleTimer = setTimeout(() => {
       this.authorMirror().catch((err) =>
@@ -886,11 +903,19 @@ export class SyncManager {
   }
 
   private async authorMirror(): Promise<void> {
-    if (!this.encryptMirror || !this.isConnected) return;
+    if (this.mirrorDisabled || !this.encryptMirror || !this.isConnected) return;
     // The app's closure AES-GCM-encrypts { file, source } under the fileKey in the publish wire
     // format, so a viewer reads it with the same penumbraDecryptFileGP path. The package
     // supplies the live full-state; it never sees the fileKey or the crypto.
     const data = await this.encryptMirror(Y.encodeStateAsUpdate(this.ydoc));
+    // A rekey can land while the host closure is encrypting.
+    if (data === null || this.mirrorDisabled) return;
+    if (data.length > this.MAX_MIRROR_CHARS) {
+      console.error(
+        `SyncManager: mirror skipped, ${data.length} chars exceeds ${this.MAX_MIRROR_CHARS}`,
+      );
+      return;
+    }
     await this.socketClient?.sendMirrorSnapshot({
       data,
       fileKeyEpoch: this.fileKeyEpoch,
@@ -908,6 +933,18 @@ export class SyncManager {
   fireBeacon(): void {
     const payload = this.buildPendingBeaconPayload();
     if (payload) this.socketClient?.flushBeacon(payload);
+  }
+
+  // Tab hidden / app backgrounded: write the debounced mirror now, while the socket is still
+  // up — forceCleanup would otherwise clear the timer and drop the last ~4s of edits. Best
+  // effort on an outright close (the write is async and the page may die first).
+  flushPendingMirror(): void {
+    if (this.mirrorDisabled || !this.mirrorIdleTimer) return;
+    clearTimeout(this.mirrorIdleTimer);
+    this.mirrorIdleTimer = null;
+    this.authorMirror().catch((err) =>
+      console.error('SyncManager: mirror flush failed', err),
+    );
   }
 
   forceCleanup(): void {
@@ -1786,6 +1823,7 @@ export class SyncManager {
       clearTimeout(this.mirrorIdleTimer);
       this.mirrorIdleTimer = null;
     }
+    // mirrorDisabled deliberately survives: the host's config still carries the old fileKey.
     if (this.tailCompactTimer) {
       clearTimeout(this.tailCompactTimer);
       this.tailCompactTimer = null;

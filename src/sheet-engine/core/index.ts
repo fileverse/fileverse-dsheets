@@ -87,6 +87,7 @@ export {
   getRangeRectsByCharacterOffset,
   // date base locale
   getDateBaseLocale,
+  getCanonicalDateDisplayFormat,
   getCanonicalDateEditFormat,
   getDateEditFormatForCell,
   isUsDateBaseLocale,
@@ -373,6 +374,7 @@ export type { FilterDate, FilterValue, FilterColor } from './modules';
 // utils
 export {
   getFreezeState,
+  getFrozenPixelBounds,
   toggleFreeze,
   indexToColumnChar,
   escapeScriptTag,

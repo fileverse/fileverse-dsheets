@@ -4,6 +4,7 @@ import {
   onImageResizeStart,
   removeActiveImage,
   cancelNormalSelected,
+  getFrozenPixelBounds,
 } from '@sheet-engine/core';
 import React, { useContext, useEffect, useMemo, useRef } from 'react';
 import WorkbookContext from '../../context';
@@ -14,6 +15,22 @@ const ImgBoxs: React.FC = () => {
   const activeImg = useMemo(() => {
     return _.find(context.insertedImgs, { id: context.activeImg });
   }, [context.activeImg, context.insertedImgs]);
+
+  // Frozen rows/columns are only ever redrawn at a fixed spot on the canvas
+  // -- there's no separate DOM layer for them -- so an inserted image (a
+  // plain DOM box positioned in document space) can scroll on top of them.
+  // Clip each image to whatever screen space isn't claimed by the frozen
+  // strip so it visually tucks behind it instead, like a real freeze pane.
+  const { widthPx: frozenWidthPx, heightPx: frozenHeightPx } = useMemo(
+    () => getFrozenPixelBounds(context),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      context.luckysheetfile,
+      context.currentSheetId,
+      context.visibledatarow,
+      context.visibledatacolumn,
+    ],
+  );
 
   // Keep keyboard focus on the active image so Delete / Ctrl+C/X/V work
   // immediately after click (without needing a prior move/resize).
@@ -148,6 +165,21 @@ const ImgBoxs: React.FC = () => {
         {context.insertedImgs?.map((v: any) => {
           const { id, left, top, width, height, src } = v;
           if (v.id === context.activeImg) return null;
+
+          // This image's current on-screen position, i.e. its document
+          // position minus how far the sheet has scrolled. The frozen
+          // strip always occupies screen (0,0) to (frozenWidthPx,
+          // frozenHeightPx), so however much of the image falls to the
+          // left of / above that boundary gets clipped away.
+          const screenTop = top * context.zoomRatio - context.scrollTop;
+          const screenLeft = left * context.zoomRatio - context.scrollLeft;
+          const topClip = Math.max(0, frozenHeightPx - screenTop);
+          const leftClip = Math.max(0, frozenWidthPx - screenLeft);
+          const clipPath =
+            topClip > 0 || leftClip > 0
+              ? `inset(${topClip}px 0 0 ${leftClip}px)`
+              : undefined;
+
           return (
             <div
               id={id}
@@ -161,6 +193,7 @@ const ImgBoxs: React.FC = () => {
                 left: left * context.zoomRatio,
                 top: top * context.zoomRatio,
                 zIndex: 200,
+                clipPath,
               }}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {

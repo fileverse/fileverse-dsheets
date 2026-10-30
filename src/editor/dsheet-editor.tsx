@@ -10,6 +10,7 @@ import {
   OnboardingHandlerType,
 } from './types';
 import SkeletonLoader from './components/skeleton-loader';
+import { debugLog, debugWarn } from './utils/debug-log';
 import { EditorProvider, useEditor } from './contexts/editor-context';
 import { EditorWorkbook } from './components/editor-workbook';
 import { ApiKeyModal } from './components/api-key-modal/api-key-modal';
@@ -54,6 +55,9 @@ type OnboardingHandler = OnboardingHandlerType;
 const EditorContent = ({
   setShowFetchURLModal,
   renderNavbar,
+  showNavbar = true,
+  showToolbar = true,
+  showFormulaBar = true,
   isReadOnly,
   permissionMode,
   onEnterEdit,
@@ -74,12 +78,16 @@ const EditorContent = ({
   setInputFetchURLDataBlock,
   onDuneChartEmbed,
   onSheetCountChange,
+  onCopySheetLink,
   isNewSheet,
   customPanels,
   theme,
 }: Pick<
   DsheetProps,
   | 'renderNavbar'
+  | 'showNavbar'
+  | 'showToolbar'
+  | 'showFormulaBar'
   | 'isReadOnly'
   | 'permissionMode'
   | 'onEnterEdit'
@@ -104,6 +112,7 @@ const EditorContent = ({
   onboardingHandler?: OnboardingHandler;
   onDuneChartEmbed?: () => void;
   onSheetCountChange?: (sheetCount: number) => void;
+  onCopySheetLink?: (args: { sheetId: string; sheetName: string }) => void;
   customPanels?: PanelConfig[];
 }) => {
   const resolvedPermissionMode = resolvePermissionChipMode({
@@ -113,6 +122,7 @@ const EditorContent = ({
   });
   const {
     loading,
+    isDataLoaded,
     syncStatus,
     collabEnabled,
     collabState,
@@ -194,27 +204,27 @@ const EditorContent = ({
       : []),
     ...(commentsConfig
       ? [
-        {
-          id: 'comments',
-          header: { title: 'Comments' },
-          width: '380px',
-          content: (
-            <CommentsContent
-              sheetEditorRef={sheetEditorRef}
-              userName={commentsConfig.userName}
-              commentsData={anchoredCommentsData}
-              onSendComment={commentsConfig.onSendComment}
-              onCommentAction={commentsConfig.onCommentAction}
-              ownerAddress={commentsConfig.ownerAddress}
-              currentUserAddress={commentsConfig.currentUserAddress}
-              isOwner={commentsConfig.isOwner}
-              disabled={commentsConfig.disabled}
-              isAuthenticated={commentsConfig.isAuthenticated}
-              unauthenticatedFallback={commentsConfig.unauthenticatedFallback}
-            />
-          ),
-        },
-      ]
+          {
+            id: 'comments',
+            header: { title: 'Comments' },
+            width: '380px',
+            content: (
+              <CommentsContent
+                sheetEditorRef={sheetEditorRef}
+                userName={commentsConfig.userName}
+                commentsData={anchoredCommentsData}
+                onSendComment={commentsConfig.onSendComment}
+                onCommentAction={commentsConfig.onCommentAction}
+                ownerAddress={commentsConfig.ownerAddress}
+                currentUserAddress={commentsConfig.currentUserAddress}
+                isOwner={commentsConfig.isOwner}
+                disabled={commentsConfig.disabled}
+                isAuthenticated={commentsConfig.isAuthenticated}
+                unauthenticatedFallback={commentsConfig.unauthenticatedFallback}
+              />
+            ),
+          },
+        ]
       : []),
     {
       id: 'templates',
@@ -322,6 +332,65 @@ const EditorContent = ({
   );
 
   const shouldRenderSheet = currentDataRef.current.length > 0 || isNewSheet;
+
+  // [DSheet:Skeleton] Why the workbook is hidden behind the skeleton.
+  const showSkeletonOnly = loading || !shouldRenderSheet;
+  const skeletonReasons: string[] = [];
+  if (!isDataLoaded) {
+    skeletonReasons.push(
+      collabEnabled && currentDataRef.current.length === 0
+        ? 'isDataLoaded=false (Y.Doc empty, waiting for collab hydration)'
+        : 'isDataLoaded=false',
+    );
+  }
+  if (syncStatus === 'initializing' || syncStatus === 'syncing') {
+    skeletonReasons.push(
+      `syncStatus=${syncStatus} (portalContent merge / IndexedDB whenSynced pending)`,
+    );
+  }
+  if (isReadOnly && currentDataRef.current.length === 0) {
+    skeletonReasons.push('readOnly with no sheet data');
+  }
+  if (!shouldRenderSheet) {
+    skeletonReasons.push(
+      'no sheet data (currentData empty) and isNewSheet=false',
+    );
+  }
+  const skeletonReasonKey = skeletonReasons.join(' | ');
+  const skeletonStateRef = React.useRef<Record<string, unknown>>({});
+  skeletonStateRef.current = {
+    reasons: skeletonReasons,
+    isDataLoaded,
+    syncStatus,
+    sheetCount: currentDataRef.current.length,
+    isNewSheet,
+    isReadOnly,
+    collabEnabled,
+    collabStatus: collabState?.status,
+  };
+  useEffect(() => {
+    if (showSkeletonOnly) {
+      debugLog(
+        '[DSheet:Skeleton] showing skeleton',
+        dsheetId,
+        skeletonStateRef.current,
+      );
+    } else {
+      debugLog('[DSheet:Skeleton] workbook visible', dsheetId);
+    }
+  }, [showSkeletonOnly, skeletonReasonKey, collabState?.status, dsheetId]);
+  useEffect(() => {
+    if (!showSkeletonOnly) return undefined;
+    const startedAt = Date.now();
+    const id = window.setInterval(() => {
+      debugWarn(
+        `[DSheet:Skeleton] still on skeleton after ${Math.round((Date.now() - startedAt) / 1000)}s`,
+        dsheetId,
+        skeletonStateRef.current,
+      );
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [showSkeletonOnly, dsheetId]);
 
   const cellArrayToYMap = (celldata: any[] = []) => {
     const yCellMap = new Y.Map();
@@ -454,7 +523,7 @@ const EditorContent = ({
         }}
       />
 
-      {renderNavbar && (
+      {renderNavbar && showNavbar && (
         <nav
           id="Navbar"
           className={cn(
@@ -471,7 +540,12 @@ const EditorContent = ({
       )}
 
       <div
-        className="dsheet-editor-main relative overflow-hidden h-[94dvh] md:!h-[calc(100vh-44px)] mt-[44px]"
+        className={cn(
+          'dsheet-editor-main relative overflow-hidden',
+          showNavbar
+            ? 'h-[94dvh] md:!h-[calc(100vh-44px)] mt-[44px]'
+            : 'h-[100dvh] md:!h-[100vh]',
+        )}
         data-testid="dsheet-editor-main"
       >
         <TransitionWrapper show={true}>
@@ -497,6 +571,7 @@ const EditorContent = ({
             dsheetId={dsheetId}
             onDuneChartEmbed={onDuneChartEmbed}
             onSheetCountChange={onSheetCountChange}
+            onCopySheetLink={onCopySheetLink}
             sidebarActivePanel={activePanel}
             sidebarPortalRegistry={sidebarPortalRegistry}
             permissionMode={resolvedPermissionMode}
@@ -504,6 +579,8 @@ const EditorContent = ({
             onSignInToComment={onSignInToComment}
             onViewerModeChange={onViewerModeChange}
             theme={theme}
+            showToolbar={showToolbar}
+            showFormulaBar={showFormulaBar}
           />
         </TransitionWrapper>
       </div>
@@ -513,6 +590,8 @@ const EditorContent = ({
         activePanelConfig={activePanelConfig}
         onClose={closePanel}
         isReadOnly={isReadOnly}
+        showNavbar={showNavbar}
+        showToolbar={showToolbar}
       />
       {hoveredTemplate && !isMobile && (
         <TemplatePreview template={hoveredTemplate} />
@@ -562,49 +641,53 @@ const EditorContent = ({
 const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
   (
     {
-  isReadOnly = false,
+      isReadOnly = false,
       permissionMode,
       onEnterEdit,
       onSignInToComment,
       onViewerModeChange,
-  allowSheetDownload,
-  renderNavbar,
-  enableIndexeddbSync,
-  dsheetId = '',
+      allowSheetDownload,
+      renderNavbar,
+      showNavbar,
+      showToolbar,
+      showFormulaBar,
+      enableIndexeddbSync,
+      dsheetId = '',
       localStoreId,
-  portalContent,
-  onContentUpdate,
-  onChange,
-  username,
-  selectedTemplate,
-  toggleTemplateSidebar,
-  isTemplateOpen,
-  onboardingComplete,
-  onboardingCompleteLocalStorageKey,
-  onboardingHandler,
-  commentsConfig,
-  setFetchingURLData,
-  setShowFetchURLModal,
-  setInputFetchURLDataBlock,
-  sheetEditorRef: externalSheetEditorRef,
-  onDuneChartEmbed,
-  onSheetCountChange,
-  isAuthorized,
-  getDocumentTitle,
-  updateDocumentTitle,
-  editorStateRef,
-  setSelectedTemplate,
-  isNewSheet,
-  liveQueryRefreshRate,
-  enableLiveQuery,
-  collaboration,
-  customPanels,
-  apiKeyStorage,
-  onDataBlockEvent,
-  smartContracts,
-  theme,
-  onContentSyncStatusChange,
-  onCollaborationInitializationComplete,
+      portalContent,
+      onContentUpdate,
+      onChange,
+      username,
+      selectedTemplate,
+      toggleTemplateSidebar,
+      isTemplateOpen,
+      onboardingComplete,
+      onboardingCompleteLocalStorageKey,
+      onboardingHandler,
+      commentsConfig,
+      setFetchingURLData,
+      setShowFetchURLModal,
+      setInputFetchURLDataBlock,
+      sheetEditorRef: externalSheetEditorRef,
+      onDuneChartEmbed,
+      onSheetCountChange,
+      onCopySheetLink,
+      isAuthorized,
+      getDocumentTitle,
+      updateDocumentTitle,
+      editorStateRef,
+      setSelectedTemplate,
+      isNewSheet,
+      liveQueryRefreshRate,
+      enableLiveQuery,
+      collaboration,
+      customPanels,
+      apiKeyStorage,
+      onDataBlockEvent,
+      smartContracts,
+      theme,
+      onContentSyncStatusChange,
+      onCollaborationInitializationComplete,
       onIndexedDbError,
     }: DsheetProps,
     forwardedEditorRef,
@@ -612,68 +695,72 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
     const [exportDropdownOpen, setExportDropdownOpen] =
       useState<boolean>(false);
 
-  return (
-    <EditorProvider
+    return (
+      <EditorProvider
         key={
           localStoreId === undefined ? dsheetId : `${localStoreId}:${dsheetId}`
         }
-      setSelectedTemplate={setSelectedTemplate}
-      getDocumentTitle={getDocumentTitle}
-      updateDocumentTitle={updateDocumentTitle}
-      dsheetId={dsheetId}
+        setSelectedTemplate={setSelectedTemplate}
+        getDocumentTitle={getDocumentTitle}
+        updateDocumentTitle={updateDocumentTitle}
+        dsheetId={dsheetId}
         localStoreId={localStoreId}
-      username={username}
-      portalContent={portalContent}
-      enableIndexeddbSync={enableIndexeddbSync}
-      isReadOnly={isReadOnly}
-      onContentUpdate={onContentUpdate}
-      onChange={onChange}
+        username={username}
+        portalContent={portalContent}
+        enableIndexeddbSync={enableIndexeddbSync}
+        isReadOnly={isReadOnly}
+        onContentUpdate={onContentUpdate}
+        onChange={onChange}
         externalEditorRef={forwardedEditorRef}
         legacyEditorRef={externalSheetEditorRef}
-      collaboration={collaboration}
-      commentsConfig={commentsConfig}
-      isAuthorized={isAuthorized}
-      editorStateRef={editorStateRef}
-      liveQueryRefreshRate={liveQueryRefreshRate}
-      enableLiveQuery={enableLiveQuery}
-      apiKeyStorage={apiKeyStorage}
-      onDataBlockEvent={onDataBlockEvent}
-      smartContracts={smartContracts}
-      onContentSyncStatusChange={onContentSyncStatusChange}
-      onCollaborationInitializationComplete={
-        onCollaborationInitializationComplete
-      }
-        onIndexedDbError={onIndexedDbError}
-    >
-      <EditorContent
+        collaboration={collaboration}
         commentsConfig={commentsConfig}
-        renderNavbar={renderNavbar}
-        setFetchingURLData={setFetchingURLData}
-        isNewSheet={isNewSheet}
-        setShowFetchURLModal={setShowFetchURLModal}
-        setInputFetchURLDataBlock={setInputFetchURLDataBlock}
-        isReadOnly={isReadOnly}
+        isAuthorized={isAuthorized}
+        editorStateRef={editorStateRef}
+        liveQueryRefreshRate={liveQueryRefreshRate}
+        enableLiveQuery={enableLiveQuery}
+        apiKeyStorage={apiKeyStorage}
+        onDataBlockEvent={onDataBlockEvent}
+        smartContracts={smartContracts}
+        onContentSyncStatusChange={onContentSyncStatusChange}
+        onCollaborationInitializationComplete={
+          onCollaborationInitializationComplete
+        }
+        onIndexedDbError={onIndexedDbError}
+      >
+        <EditorContent
+          commentsConfig={commentsConfig}
+          renderNavbar={renderNavbar}
+          showNavbar={showNavbar}
+          showToolbar={showToolbar}
+          showFormulaBar={showFormulaBar}
+          setFetchingURLData={setFetchingURLData}
+          isNewSheet={isNewSheet}
+          setShowFetchURLModal={setShowFetchURLModal}
+          setInputFetchURLDataBlock={setInputFetchURLDataBlock}
+          isReadOnly={isReadOnly}
           permissionMode={permissionMode}
           onEnterEdit={onEnterEdit}
           onSignInToComment={onSignInToComment}
           onViewerModeChange={onViewerModeChange}
-        allowSheetDownload={allowSheetDownload}
-        toggleTemplateSidebar={toggleTemplateSidebar}
-        onboardingComplete={onboardingComplete}
-        onboardingCompleteLocalStorageKey={onboardingCompleteLocalStorageKey}
-        onboardingHandler={onboardingHandler as OnboardingHandler}
-        isTemplateOpen={isTemplateOpen}
-        exportDropdownOpen={exportDropdownOpen}
-        setExportDropdownOpen={setExportDropdownOpen}
-        dsheetId={dsheetId}
-        selectedTemplate={selectedTemplate}
-        onDuneChartEmbed={onDuneChartEmbed}
-        onSheetCountChange={onSheetCountChange}
-        customPanels={customPanels}
-        theme={theme}
-      />
-    </EditorProvider>
-  );
+          allowSheetDownload={allowSheetDownload}
+          toggleTemplateSidebar={toggleTemplateSidebar}
+          onboardingComplete={onboardingComplete}
+          onboardingCompleteLocalStorageKey={onboardingCompleteLocalStorageKey}
+          onboardingHandler={onboardingHandler as OnboardingHandler}
+          isTemplateOpen={isTemplateOpen}
+          exportDropdownOpen={exportDropdownOpen}
+          setExportDropdownOpen={setExportDropdownOpen}
+          dsheetId={dsheetId}
+          selectedTemplate={selectedTemplate}
+          onDuneChartEmbed={onDuneChartEmbed}
+          onSheetCountChange={onSheetCountChange}
+          onCopySheetLink={onCopySheetLink}
+          customPanels={customPanels}
+          theme={theme}
+        />
+      </EditorProvider>
+    );
   },
 );
 

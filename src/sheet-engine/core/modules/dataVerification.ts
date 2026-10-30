@@ -71,7 +71,9 @@ export function getDropdownList(ctx: Context, txt: string) {
   const list: (string | number | boolean)[] = [];
   if (iscelldata(txt)) {
     const range = getcellrange(ctx, txt);
-    const index = getSheetIndex(ctx, range.sheetId) as number;
+    if (!range) return list;
+    const index = getSheetIndex(ctx, range.sheetId);
+    if (index == null || !ctx.luckysheetfile[index]) return list;
     const d = ctx.luckysheetfile[index].data;
     if (!d) return [];
     for (let r = range.row[0]; r <= range.row[1]; r += 1) {
@@ -848,18 +850,36 @@ export function cellFocus(
 }
 
 // 设置下拉列表的值
-export function setDropdownValue(ctx: Context, value: string, arr: any) {
-  if (!ctx.luckysheet_select_save) return;
+/**
+ * `target` is the cell the dropdown was opened for. Without it, the current
+ * selection focus is used, which may have moved since the list opened.
+ */
+export function setDropdownValue(
+  ctx: Context,
+  value: string,
+  arr: any,
+  target?: { row: number; column: number },
+) {
   const d = getFlowdata(ctx);
   if (!d) return;
-  const last =
-    ctx.luckysheet_select_save[ctx.luckysheet_select_save.length - 1];
-  const rowIndex = last.row_focus;
-  const colIndex = last.column_focus;
+  let rowIndex = target?.row;
+  let colIndex = target?.column;
+  if (!target) {
+    if (!ctx.luckysheet_select_save?.length) return;
+    const last =
+      ctx.luckysheet_select_save[ctx.luckysheet_select_save.length - 1];
+    rowIndex = last.row_focus;
+    colIndex = last.column_focus;
+  }
   if (rowIndex == null || colIndex == null) return;
   const index = getSheetIndex(ctx, ctx.currentSheetId) as number;
   const item =
-    ctx.luckysheetfile[index].dataVerification[`${rowIndex}_${colIndex}`];
+    ctx.luckysheetfile[index]?.dataVerification?.[`${rowIndex}_${colIndex}`];
+  if (!item) {
+    // Rule removed (undo, collaborator) while the list was open.
+    ctx.dataVerificationDropDownList = false;
+    return;
+  }
   if (item.type2 === 'true') {
     value = item.value1
       .split(',')

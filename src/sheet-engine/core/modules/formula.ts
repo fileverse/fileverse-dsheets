@@ -21,7 +21,7 @@ import {
 } from './cell';
 import { error, detectErrorFromValue, isNumericCellType } from './validation';
 import { locale } from '../locale';
-import { colors } from './color';
+import { getRangeColor } from './color';
 import { colLocation, mousePosition, rowLocation } from './location';
 import {
   cancelFunctionrangeSelected,
@@ -107,7 +107,7 @@ function formulaDebugStable(value: any) {
   }
   return preview;
 }
-const simpleSheetName = '[A-Za-z0-9_\u00C0-\u02AF]+';
+const simpleSheetName = "[^'!:]+";
 const quotedSheetName = "'(?:(?!').|'')*'";
 const sheetNameRegexp = `(${simpleSheetName}|${quotedSheetName})!`;
 // Used for sheet-qualified refs like `'Sheet 1'!A1`, `'Sheet'!A:A`, `'Sheet'!1:1`.
@@ -3248,7 +3248,7 @@ export function createRangeHightlight(
           formulaRanges.push({
             rangeIndex,
             ...rect,
-            backgroundColor: colors[rangeIndex],
+            backgroundColor: getRangeColor(rangeIndex),
           });
         }
       }
@@ -3760,7 +3760,7 @@ function functionHTML(txt: string) {
     braces: 0,
   };
 
-  const appendStrTail = (acc: string, dquote: number) => {
+  const appendStrTail = (acc: string, dquote: number, squote: number) => {
     if (acc.length === 0) {
       return;
     }
@@ -3773,7 +3773,12 @@ function functionHTML(txt: string) {
     let trailingWS = '';
     if (dquote === 0) {
       leadingWS = acc.match(/^\s+/)?.[0] || '';
-      trailingWS = acc.match(/\s+$/)?.[0] || '';
+      // Inside an unclosed single quote (e.g. typing `='Finance ` of
+      // `'Finance - 1'!A1`) trailing spaces belong to the sheet name. Moving
+      // them outside the span shifts the caret before the space, so the next
+      // keystroke lands in the wrong spot and the name collapses to
+      // `Finance-1`.
+      trailingWS = squote > 0 ? '' : acc.match(/\s+$/)?.[0] || '';
       acc = acc.slice(leadingWS.length, acc.length - trailingWS.length);
       if (acc.length === 0) {
         // The whole tail was only whitespace (often a lone `\n` from the
@@ -3788,7 +3793,7 @@ function functionHTML(txt: string) {
         rangeIndexes.length > functionHTMLIndex
           ? rangeIndexes[functionHTMLIndex]
           : functionHTMLIndex;
-      function_str += `<span class="fortune-formula-functionrange-cell" rangeindex="${rangeIndex}" dir="auto" style="color:${colors[rangeIndex]};">${acc}</span>`;
+      function_str += `<span class="fortune-formula-functionrange-cell" rangeindex="${rangeIndex}" dir="auto" style="color:${getRangeColor(rangeIndex)};">${acc}</span>`;
       functionHTMLIndex += 1;
     } else if (dquote > 0) {
       function_str += `${acc}</span>`;
@@ -3984,7 +3989,7 @@ function functionHTML(txt: string) {
     }
 
     if (i === funcstack.length - 1) {
-      appendStrTail(str, matchConfig.dquote);
+      appendStrTail(str, matchConfig.dquote, matchConfig.squote);
     }
 
     i += 1;
@@ -5745,7 +5750,7 @@ export function rangeSetValue(
       existingRangeIndexes.length > 0
         ? Math.max(...existingRangeIndexes) + 1
         : functionHTMLIndex;
-    const function_str = `<span class="fortune-formula-functionrange-cell" rangeindex="${nextRangeIndex}" dir="auto" style="color:${colors[nextRangeIndex]};">${range}</span>`;
+    const function_str = `<span class="fortune-formula-functionrange-cell" rangeindex="${nextRangeIndex}" dir="auto" style="color:${getRangeColor(nextRangeIndex)};">${range}</span>`;
     const newEle = parseElement(function_str) as HTMLSpanElement;
     let refEle = ctx.formulaCache.rangeSetValueTo;
     if (refEle && !refEle.parentNode) {

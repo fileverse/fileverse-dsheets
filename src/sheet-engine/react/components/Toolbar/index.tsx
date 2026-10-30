@@ -729,6 +729,30 @@ const Toolbar: React.FC<{
       [setContext],
     );
 
+    const currencyFormatClick = useCallback(
+      (selectedCells: any) => {
+        setContext((ctx) => {
+          const selection =
+            Array.isArray(selectedCells) && selectedCells.length > 0
+              ? selectedCells
+              : api.getSelection(ctx);
+          if (selection?.length) {
+            ctx.luckysheet_select_save = selection;
+          } else {
+            api.setSelection(ctx, [{ row: [0, 0], column: [0, 0] }], {
+              id: ctx.currentSheetId,
+            });
+          }
+        });
+        showDialog(
+          <FormatSearch onCancel={hideDialog} type="currency" />,
+          undefined,
+          'Currency Format',
+        );
+      },
+      [setContext, showDialog, hideDialog],
+    );
+
     const { openRemoveDuplicatesDialog } = useRemoveDuplicatesDialog();
 
     useEffect(() => {
@@ -737,8 +761,15 @@ const Toolbar: React.FC<{
       // @ts-ignore
       window.conditionalFormatClick = conditionalFormatClick;
       // @ts-ignore
+      window.currencyFormatClick = currencyFormatClick;
+      // @ts-ignore
       window.removeDuplicatesClick = openRemoveDuplicatesDialog;
-    }, [dataVerificationClick, conditionalFormatClick, openRemoveDuplicatesDialog]);
+    }, [
+      dataVerificationClick,
+      conditionalFormatClick,
+      currencyFormatClick,
+      openRemoveDuplicatesDialog,
+    ]);
 
     // Sync toolbar recent colors from selected cell so picker and display stay correct (only when cell exists)
     useEffect(() => {
@@ -973,8 +1004,18 @@ const Toolbar: React.FC<{
               current = cell.ff;
             }
           }
+          const fontStyle = (font?: string) =>
+            font
+              ? { fontFamily: `"${font.replace(/["']/g, '')}", sans-serif` }
+              : undefined;
           return (
-            <Combo text={current} key={name} tooltip={tooltip} showArrow={false}>
+            <Combo
+              text={current}
+              textStyle={fontStyle(current)}
+              key={name}
+              tooltip={tooltip}
+              showArrow={false}
+            >
               {(setOpen) => (
                 <Select>
                   {fontarray.map((o: string) => (
@@ -990,7 +1031,7 @@ const Toolbar: React.FC<{
                         setOpen(false);
                       }}
                     >
-                      {o}
+                      <span style={fontStyle(o)}>{o}</span>
                     </Option>
                   ))}
                 </Select>

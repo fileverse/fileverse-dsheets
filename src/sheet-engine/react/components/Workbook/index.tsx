@@ -43,9 +43,16 @@ import {
   jfrefreshgrid,
 } from '@sheet-engine/core';
 import { clearMeasureTextCache } from '@sheet-engine/core/modules/text';
-import { applyCellFormatRangesToData, getCellFormatRangeGridBounds } from '@sheet-engine/core/utils/range-format';
+import {
+  applyCellFormatRangesToData,
+  getCellFormatRangeGridBounds,
+} from '@sheet-engine/core/utils/range-format';
 import { applyMergeConfigToData } from '@sheet-engine/core/utils/merge-hydrate';
-import { activePalette, setActiveGridPalette, type ThemeKey } from '@sheet-engine/core/theme';
+import {
+  activePalette,
+  setActiveGridPalette,
+  type ThemeKey,
+} from '@sheet-engine/core/theme';
 import {
   normalizeDateBaseLocale,
   setDateBaseLocale,
@@ -738,10 +745,10 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           let nw = {
             ...newContext,
             ...(sheetIdxAfterUndo != null &&
-              newContext.luckysheetfile[sheetIdxAfterUndo]?.config != null
+            newContext.luckysheetfile[sheetIdxAfterUndo]?.config != null
               ? {
-                config: newContext.luckysheetfile[sheetIdxAfterUndo].config,
-              }
+                  config: newContext.luckysheetfile[sheetIdxAfterUndo].config,
+                }
               : {}),
           };
           if (isBorderUndo) {
@@ -794,10 +801,10 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           let nw = {
             ...newContext,
             ...(sheetIdxAfterRedo != null &&
-              newContext.luckysheetfile[sheetIdxAfterRedo]?.config != null
+            newContext.luckysheetfile[sheetIdxAfterRedo]?.config != null
               ? {
-                config: newContext.luckysheetfile[sheetIdxAfterRedo].config,
-              }
+                  config: newContext.luckysheetfile[sheetIdxAfterRedo].config,
+                }
               : {}),
           };
           if (isBorderUndo) {
@@ -847,6 +854,9 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
         const scrollBar = document.getElementsByClassName(
           'luckysheet-scrollbar-x',
         )[0] as HTMLElement;
+        const addRowBar = document.getElementById(
+          'luckysheet-bottom-controll-row',
+        );
         if (denominatedUsed && denoWarn) {
           denoWarn.style.display = 'block';
           denoWarn.style.left = '0px';
@@ -856,6 +866,10 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
               'bottom: 36px !important; width: calc(100% - 60px);',
             );
           }
+          // Lift add-row bar so its white band sits directly on top of the disclaimer bar (no grid gap).
+          if (addRowBar) {
+            addRowBar.style.bottom = '54px';
+          }
         } else if (!denominatedUsed && denoWarn) {
           denoWarn.style.display = 'none';
           denoWarn.style.left = '-9999px';
@@ -864,6 +878,9 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
               'style',
               'bottom: 10px !important; width: calc(100% - 60px);',
             );
+          }
+          if (addRowBar) {
+            addRowBar.style.bottom = '38px';
           }
         }
         return ctx;
@@ -1269,7 +1286,11 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
     useEffect(() => {
       const isExternalTextFocus = (root: HTMLDivElement | null) => {
         const active = document.activeElement;
-        if (!active || active === document.body || active === document.documentElement) {
+        if (
+          !active ||
+          active === document.body ||
+          active === document.documentElement
+        ) {
           return false;
         }
         if (root?.contains(active)) return false;
@@ -1315,7 +1336,8 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
       };
 
       window.addEventListener('keydown', onWindowInsertShortcut, true);
-      return () => window.removeEventListener('keydown', onWindowInsertShortcut, true);
+      return () =>
+        window.removeEventListener('keydown', onWindowInsertShortcut, true);
     }, [handleRedo, handleUndo, setContextWithProduce]);
 
     const onKeyDown = useCallback(
@@ -1661,18 +1683,18 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           const insertRowColOp: SetContextOptions['insertRowColOp'] | null =
             rowToBeAdded > 0
               ? {
-                type: 'row',
-                index:
-                  context.luckysheetfile[
-                    getSheetIndex(
-                      context,
-                      context!.currentSheetId! as string,
-                    ) as number
-                  ].data!.length - 1,
-                count: rowToBeAdded,
-                direction: 'rightbottom',
-                id: context.currentSheetId,
-              }
+                  type: 'row',
+                  index:
+                    context.luckysheetfile[
+                      getSheetIndex(
+                        context,
+                        context!.currentSheetId! as string,
+                      ) as number
+                    ].data!.length - 1,
+                  count: rowToBeAdded,
+                  direction: 'rightbottom',
+                  id: context.currentSheetId,
+                }
               : null;
           const runPaste = (pasteEvent: ClipboardEvent) => {
             setContextWithProduce(
@@ -1889,11 +1911,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
                     FORMULA_ASYNC_CHUNK_SIZE,
                     formulas.length,
                   );
-                  runFormulaEvalChunk(
-                    draft,
-                    liveJob,
-                    fallbackChunkSize,
-                  );
+                  runFormulaEvalChunk(draft, liveJob, fallbackChunkSize);
                   const elapsed = performance.now() - startedAt;
                   liveJob.debug = {
                     mode: 'fallback',
@@ -1977,33 +1995,29 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
     }, [isFormulaCalculating, formulaAsyncEvalTotal, setContextWithProduce]);
 
     // expose APIs
-    useImperativeHandle(
-      ref,
-      () => {
-        const workbookInstance = generateAPIs(
-          context,
-          setContextWithProduce,
-          handleUndo,
-          handleRedo,
-          mergedSettings,
-          cellInput.current,
-          scrollbarX.current,
-          scrollbarY.current,
-          globalCache.current,
-          refs,
-        );
-        workbookInstanceRef.current = workbookInstance;
-        return workbookInstance;
-      },
-      [
+    useImperativeHandle(ref, () => {
+      const workbookInstance = generateAPIs(
         context,
         setContextWithProduce,
         handleUndo,
         handleRedo,
         mergedSettings,
-        globalCache,
-      ],
-    );
+        cellInput.current,
+        scrollbarX.current,
+        scrollbarY.current,
+        globalCache.current,
+        refs,
+      );
+      workbookInstanceRef.current = workbookInstance;
+      return workbookInstance;
+    }, [
+      context,
+      setContextWithProduce,
+      handleUndo,
+      handleRedo,
+      mergedSettings,
+      globalCache,
+    ]);
 
     const i = getSheetIndex(context, context.currentSheetId);
     if (i == null) {
@@ -2042,61 +2056,64 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
             {showFormulaExecutionDebug &&
               context.isFormulaCalculating &&
               context.formulaAsyncEval && (
-              <div
-                className="fortune-formula-calculating-indicator"
-                role="status"
-                aria-live="polite"
-              >
-                <div>
-                  Calculating formulas…{' '}
-                  {Math.min(
-                    context.formulaAsyncEval.nextIndex,
-                    context.formulaAsyncEval.total,
-                  )}
-                  /{context.formulaAsyncEval.total}
-                </div>
-                {context.formulaAsyncEval.debug && (
-                  <div className="fortune-formula-calculating-debug">
-                    <div>
-                      Mode: {context.formulaAsyncEval.debug.mode} | Last chunk:{' '}
-                      {context.formulaAsyncEval.debug.lastChunkSize} in{' '}
-                      {Math.round(context.formulaAsyncEval.debug.lastChunkMs)}ms
-                    </div>
-                    <div>
-                      Chunks: {context.formulaAsyncEval.debug.completedChunks}
-                    </div>
-                    <div>
-                      Fallbacks: {context.formulaAsyncEval.debug.fallbackChunks}
-                    </div>
-                    <div>
-                      Worker formulas total:{' '}
-                      {context.formulaAsyncEval.debug.totalWorkerFormulas}
-                    </div>
-                    <div>
-                      Main-engine formulas total:{' '}
-                      {context.formulaAsyncEval.debug.totalMainThreadFormulas}
-                    </div>
-                    <div>
-                      Worker:{' '}
-                      {context.formulaAsyncEval.debug.workerAvailable
-                        ? 'ok'
-                        : 'unavailable'}
-                    </div>
-                    {context.formulaAsyncEval.debug.unsafeFormulaCount > 0 && (
-                      <div>
-                        Main-engine formulas this chunk:{' '}
-                        {context.formulaAsyncEval.debug.unsafeFormulaCount}
-                      </div>
+                <div
+                  className="fortune-formula-calculating-indicator"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div>
+                    Calculating formulas…{' '}
+                    {Math.min(
+                      context.formulaAsyncEval.nextIndex,
+                      context.formulaAsyncEval.total,
                     )}
-                    {context.formulaAsyncEval.debug.lastError && (
-                      <div className="fortune-formula-calculating-error">
-                        Last error: {context.formulaAsyncEval.debug.lastError}
-                      </div>
-                    )}
+                    /{context.formulaAsyncEval.total}
                   </div>
-                )}
-              </div>
-            )}
+                  {context.formulaAsyncEval.debug && (
+                    <div className="fortune-formula-calculating-debug">
+                      <div>
+                        Mode: {context.formulaAsyncEval.debug.mode} | Last
+                        chunk: {context.formulaAsyncEval.debug.lastChunkSize} in{' '}
+                        {Math.round(context.formulaAsyncEval.debug.lastChunkMs)}
+                        ms
+                      </div>
+                      <div>
+                        Chunks: {context.formulaAsyncEval.debug.completedChunks}
+                      </div>
+                      <div>
+                        Fallbacks:{' '}
+                        {context.formulaAsyncEval.debug.fallbackChunks}
+                      </div>
+                      <div>
+                        Worker formulas total:{' '}
+                        {context.formulaAsyncEval.debug.totalWorkerFormulas}
+                      </div>
+                      <div>
+                        Main-engine formulas total:{' '}
+                        {context.formulaAsyncEval.debug.totalMainThreadFormulas}
+                      </div>
+                      <div>
+                        Worker:{' '}
+                        {context.formulaAsyncEval.debug.workerAvailable
+                          ? 'ok'
+                          : 'unavailable'}
+                      </div>
+                      {context.formulaAsyncEval.debug.unsafeFormulaCount >
+                        0 && (
+                        <div>
+                          Main-engine formulas this chunk:{' '}
+                          {context.formulaAsyncEval.debug.unsafeFormulaCount}
+                        </div>
+                      )}
+                      {context.formulaAsyncEval.debug.lastError && (
+                        <div className="fortune-formula-calculating-error">
+                          Last error: {context.formulaAsyncEval.debug.lastError}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             <SVGDefines currency={mergedSettings.currency} />
             <div className="fortune-workarea">
               {mergedSettings.showToolbar && (

@@ -1,6 +1,7 @@
 import { IconButton } from '@fileverse/ui';
 import { ReactNode } from 'react';
 import { RightSidebar, RightSidebarHeader } from './right-sidebar';
+import { getRightSidebarOffsets } from './sidebar-offsets';
 
 export interface ActivePanelConfig {
   id: string;
@@ -15,6 +16,8 @@ interface EditorRightSidebarProps {
   onClose: () => void;
   /** Read/preview mode hides the toolbar, so the sidebar starts higher. */
   isReadOnly?: boolean;
+  showNavbar?: boolean;
+  showToolbar?: boolean;
 }
 
 export const EditorRightSidebar = ({
@@ -22,11 +25,14 @@ export const EditorRightSidebar = ({
   activePanelConfig,
   onClose,
   isReadOnly = false,
+  showNavbar = true,
+  showToolbar = true,
 }: EditorRightSidebarProps) => {
-  const top = isReadOnly ? '44px' : '83px';
-  const height = isReadOnly
-    ? 'calc(100vh - 44px - 27px)'
-    : 'calc(100vh - 83px - 37px)';
+  const { top, height } = getRightSidebarOffsets({
+    isReadOnly,
+    showNavbar,
+    showToolbar,
+  });
 
   return (
     <RightSidebar

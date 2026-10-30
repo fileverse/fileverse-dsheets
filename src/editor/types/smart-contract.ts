@@ -43,7 +43,7 @@ export interface SmartContractConfig {
   contracts?: ContractConfig[];
   /** RPC URL per chain. Falls back to bundled defaults when omitted. */
   rpcConfig?: Partial<Record<SupportedChain, string>>;
-  /** Resolve ABI from stored reference (e.g. IPFS hash). Required for user-saved contracts with abiHash. */
+  /** Resolve ABI from stored reference (e.g. an IPFS CID or a Swarm reference — opaque to the package). Required for user-saved contracts with abiHash. */
   resolveAbi?: (abiHash: string) => Promise<Abi>;
   /** Persist a new contract. When omitted, package keeps it in session memory only. */
   onAddContract?: (input: NewContractInput) => Promise<void>;
@@ -67,7 +67,8 @@ export interface CallerParams {
 export interface FetchAbiParams {
   contractAddress: Hex;
   chain: import('viem').Chain;
-  ipfsHash?: string;
+  /** Stored ABI reference (`ContractConfig.abiHash`), resolved via `resolveAbi`. */
+  abiRef?: string;
 }
 
 export type ParsedFunction = {

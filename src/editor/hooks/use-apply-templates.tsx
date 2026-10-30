@@ -52,7 +52,11 @@ export const useApplyTemplatesBtn = ({
       );
       if (cancelled || !ydocRef.current) return;
 
-      const templateData: Sheet[] = mod.TEMPLATES_DATA[slug] as Sheet[];
+      // getTemplateData returns a fresh copy with new sheet ids, so applying
+      // the same template twice never duplicates ids. Older template package
+      // versions lack it; fall back to the shared (hardcoded-id) data.
+      const templateData = (mod.getTemplateData?.(slug) ??
+        mod.TEMPLATES_DATA[slug]) as Sheet[] | undefined;
       if (templateData) {
         const newSheetId = sheetEditorRef.current
           ?.getSettings()

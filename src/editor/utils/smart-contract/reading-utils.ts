@@ -73,8 +73,8 @@ export const fetchAbi = async (
   params: FetchAbiParams,
   deps: SmartContractRuntimeDeps,
 ): Promise<Abi> => {
-  const cacheKey = params.ipfsHash
-    ? `${params.contractAddress}_${params.chain.id}_${params.ipfsHash}`
+  const cacheKey = params.abiRef
+    ? `${params.contractAddress}_${params.chain.id}_${params.abiRef}`
     : `${params.contractAddress}_${params.chain.id}`;
 
   if (deps.abiCache[cacheKey]) {
@@ -83,8 +83,8 @@ export const fetchAbi = async (
 
   let abi: Abi | undefined;
 
-  if (params.ipfsHash && deps.resolveAbi) {
-    abi = await deps.resolveAbi(params.ipfsHash);
+  if (params.abiRef && deps.resolveAbi) {
+    abi = await deps.resolveAbi(params.abiRef);
   } else {
     abi = await fetchVerifiedAbi(params.contractAddress, params.chain);
   }
@@ -194,7 +194,13 @@ export const getCallerParamsByAddress = async (
   const abi = await fetchAbi({ contractAddress, chain }, deps);
   const [functionName, ...args] = rest;
 
-  return { abi, contractAddress, chain, functionName: functionName as string, args };
+  return {
+    abi,
+    contractAddress,
+    chain,
+    functionName: functionName as string,
+    args,
+  };
 };
 
 export const getCallerParamsByName = async (
@@ -214,7 +220,7 @@ export const getCallerParamsByName = async (
     {
       contractAddress: contractConfig.address,
       chain,
-      ipfsHash: contractConfig.abiHash || undefined,
+      abiRef: contractConfig.abiHash || undefined,
     },
     deps,
   );
@@ -425,7 +431,7 @@ export const fetchContractAbi = (
     {
       contractAddress: contract.address,
       chain,
-      ipfsHash: contract.abiHash || undefined,
+      abiRef: contract.abiHash || undefined,
     },
     deps,
   );

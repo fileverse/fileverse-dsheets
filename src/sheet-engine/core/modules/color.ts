@@ -29,3 +29,9 @@ export const colors = [
   '#c4ebad',
   '#96dee8',
 ];
+
+export function getRangeColor(rangeIndex: number): string {
+  if (!Number.isFinite(rangeIndex)) return colors[0];
+  const len = colors.length;
+  return colors[((Math.trunc(rangeIndex) % len) + len) % len];
+}

@@ -16,6 +16,7 @@ type Props = {
   tooltip: string;
   iconId?: string;
   text?: string;
+  textStyle?: CSSProperties;
   showArrow?: boolean;
   onClick?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
   children: (
@@ -34,6 +35,7 @@ const Combo: React.FC<Props> = ({
   tooltip,
   onClick,
   text,
+  textStyle,
   iconId,
   showArrow = true,
   children,
@@ -103,7 +105,7 @@ const Combo: React.FC<Props> = ({
         {iconId ? (
           <SVGIcon name={iconId} width={16} height={16} />
         ) : (
-          <span className="fortune-toolbar-combo-text">
+          <span className="fortune-toolbar-combo-text" style={textStyle}>
             {text !== undefined ? text : ''}
           </span>
         )}

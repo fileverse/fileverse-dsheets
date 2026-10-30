@@ -2,7 +2,7 @@
   "name": "@fileverse-dev/dsheet",
   "private": false,
   "description": "DSheet",
-  "version": "4.1.11-opaque-sheets.1",
+  "version": "4.1.23",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fileverse/fileverse-dsheets.git"
@@ -62,7 +62,7 @@
     ]
   },
   "dependencies": {
-    "@fileverse-dev/dsheets-templates": "0.0.34",
+    "@fileverse-dev/dsheets-templates": "0.0.35",
     "@fileverse-dev/formulajs": "4.4.55",
     "@fileverse/crypto": "^0.0.22",
     "@fileverse/ens": "^0.0.4",
@@ -119,6 +119,7 @@
     "eslint-plugin-prettier": "^5.2.1",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.4",
+    "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",
     "lint-staged": "^15.2.10",
     "postcss": "^8.4.38",
