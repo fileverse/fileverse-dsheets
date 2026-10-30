@@ -21,6 +21,7 @@ import {
   functionHTMLGenerate,
   isAllowEdit,
   suppressFormulaRangeSelectionForInitialEdit,
+  resetFormulaArrowSession,
   ensureFormulaRangeToSheet,
   returnToFormulaOriginSheet,
   normalizeSelection,
@@ -368,17 +369,6 @@ const FxEditor: React.FC = () => {
         const row_index = last.row_focus;
         const col_index = last.column_focus;
 
-        if (!_.isNil(row_index) && !_.isNil(col_index)) {
-          const flowdata = getFlowdata(draftCtx);
-          const cellAt = flowdata?.[row_index]?.[col_index] as
-            | { f?: string }
-            | null
-            | undefined;
-          if (cellAt?.f != null && String(cellAt.f).trim() !== '') {
-            suppressFormulaRangeSelectionForInitialEdit(draftCtx);
-          }
-        }
-
         // draftCtx.luckysheetCellUpdate = [row_index, col_index];
         // refs.globalCache.doNotFocus = true;
         const currentUpdate = draftCtx.luckysheetCellUpdate || [];
@@ -386,6 +376,29 @@ const FxEditor: React.FC = () => {
           currentUpdate.length === 2 &&
           currentUpdate[0] === row_index &&
           currentUpdate[1] === col_index;
+
+        // Only a session that is *opening* decides auto reference selection.
+        // Focusing the bar while already editing this cell (type-over, then a
+        // click into the bar) must keep the session's state and F2 choice.
+        if (
+          !alreadyEditingSameCell &&
+          !_.isNil(row_index) &&
+          !_.isNil(col_index)
+        ) {
+          const flowdata = getFlowdata(draftCtx);
+          const cellAt = flowdata?.[row_index]?.[col_index] as
+            | { f?: string }
+            | null
+            | undefined;
+          if (cellAt?.f != null && String(cellAt.f).trim() !== '') {
+            suppressFormulaRangeSelectionForInitialEdit(draftCtx, [
+              row_index,
+              col_index,
+            ]);
+          } else {
+            resetFormulaArrowSession(draftCtx);
+          }
+        }
 
         if (!alreadyEditingSameCell) {
           // Preserve mouse-placed caret on first FX focus-open. Without this,
