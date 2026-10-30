@@ -109,6 +109,9 @@ export interface DsheetProps {
   showFormulaBar?: boolean;
   enableIndexeddbSync?: boolean;
   dsheetId: string;
+  /** Names the local IndexedDB database and labels content snapshots
+   * (default `dsheetId`). `dsheetId` stays the Yjs root key. */
+  localStoreId?: string;
   /**
    * Cheap change signal for hosts that persist sheet bodies through Yjs.
    * Unlike `onChange`, this does not build a plain sheet or encode the Y.Doc.
