@@ -130,6 +130,7 @@ export {
   setFormulaEditorOwner,
   functionHTMLGenerate,
   suppressFormulaRangeSelectionForInitialEdit,
+  resetFormulaArrowSession,
   ensureFormulaRangeToSheet,
   shouldPreserveFormulaEditOnSheetSwitch,
   activateSheetForNavigation,

@@ -141,6 +141,7 @@ interface EditorProviderProps {
   isAuthorized: boolean;
   children: React.ReactNode;
   dsheetId: string;
+  localStoreId?: string;
   username?: string;
   portalContent?: string;
   enableIndexeddbSync?: boolean;
@@ -183,6 +184,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
   updateDocumentTitle,
   children,
   dsheetId,
+  localStoreId,
   username = 'Anonymous',
   portalContent = '',
   enableIndexeddbSync = true,
@@ -362,6 +364,7 @@ export const EditorProvider: React.FC<EditorProviderProps> = ({
     collaboration,
     onRemoteApplied,
     onIndexedDbError,
+    localStoreId,
   );
 
   // A collaborator may upgrade the sheet to a format this client cannot write.

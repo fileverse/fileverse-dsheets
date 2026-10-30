@@ -42,6 +42,7 @@ import {
   isTodayNowPureArithmeticDateResult,
   iscelldata,
   suppressFormulaRangeSelectionForInitialEdit,
+  resetFormulaArrowSession,
   ensureFormulaRangeToSheet,
   returnToFormulaOriginSheet,
 } from './formula';
@@ -1252,6 +1253,7 @@ export function cancelNormalSelected(ctx: Context) {
   ctx.formulaCache.rangedrag_row_start = false;
   ctx.formulaCache.rangeSelectionActive = null;
   ctx.formulaCache.keyboardRangeSelectionLock = false;
+  resetFormulaArrowSession(ctx);
   ctx.formulaCache.formulaKeyboardRefSync = false;
   ctx.formulaCache.func_selectedrange = undefined;
   ctx.formulaCache.rangetosheet = undefined;
@@ -2908,8 +2910,10 @@ export function luckysheetUpdateCell(
   const flowdata = getFlowdata(ctx);
   const cell = flowdata?.[row_index]?.[col_index] as { f?: string } | null;
   if (cell?.f != null && String(cell.f).trim() !== '') {
-    suppressFormulaRangeSelectionForInitialEdit(ctx);
+    suppressFormulaRangeSelectionForInitialEdit(ctx, [row_index, col_index]);
     ensureFormulaRangeToSheet(ctx);
+  } else {
+    resetFormulaArrowSession(ctx);
   }
   ctx.luckysheetCellUpdate = [row_index, col_index];
 }

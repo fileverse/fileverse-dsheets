@@ -37,6 +37,7 @@ export const useEditorSync = (
   collaboration?: CollaborationProps,
   onRemoteApplied?: (update: Uint8Array) => void,
   onIndexedDbError?: (error: Error) => void,
+  localStoreId?: string,
 ) => {
   // Match dDoc: one Y.Doc is owned by this provider for its entire lifetime.
   // A dsheetId change remounts EditorProvider at the component boundary.
@@ -264,7 +265,9 @@ export const useEditorSync = (
       return Promise.resolve();
     }
     if (unmountedRef.current) {
-      return Promise.reject(new Error('[DSheet] IndexedDB rebuild after unmount'));
+      return Promise.reject(
+        new Error('[DSheet] IndexedDB rebuild after unmount'),
+      );
     }
     if (rebuildInFlightRef.current) return rebuildInFlightRef.current;
     const reportError = (error: unknown) => {
@@ -345,13 +348,13 @@ export const useEditorSync = (
   const getContentSnapshot = useCallback(
     () =>
       ydocRef.current
-        ? snapshotDsheetDocument(dsheetId, ydocRef.current)
+        ? snapshotDsheetDocument(localStoreId as string, ydocRef.current)
         : unavailableDsheetContentSnapshot(
-          dsheetId,
-          'unavailable',
-          new Error('dSheet document is not ready'),
-        ),
-    [dsheetId],
+            localStoreId as string,
+            'unavailable',
+            new Error('dSheet document is not ready'),
+          ),
+    [localStoreId],
   );
 
   /**
@@ -379,8 +382,12 @@ export const useEditorSync = (
 
   const mergeContent = useCallback(
     (encodedState: string) =>
-      mergeDsheetContentIntoDocument(dsheetId, encodedState, ydocRef.current),
-    [dsheetId],
+      mergeDsheetContentIntoDocument(
+        localStoreId as string,
+        encodedState,
+        ydocRef.current,
+      ),
+    [localStoreId],
   );
 
   // Doc-lifecycle effect: this exact document is also owned by SyncManager.
@@ -471,7 +478,7 @@ export const useEditorSync = (
   const isEnsSession =
     collabEnabled && collaboration?.enabled
       ? (collaboration as Extract<CollaborationProps, { enabled: true }>)
-        .session.isEns
+          .session.isEns
       : undefined;
 
   const prevCollabStatusRef = useRef<string | undefined>(undefined);
@@ -497,8 +504,7 @@ export const useEditorSync = (
     const localState = awareness.getLocalState();
     awareness.setLocalStateField('user', {
       ...(localState?.user ?? {}),
-      color:
-        localState?.user?.color ?? presenceColor(session.isEns),
+      color: localState?.user?.color ?? presenceColor(session.isEns),
       isEns: true,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

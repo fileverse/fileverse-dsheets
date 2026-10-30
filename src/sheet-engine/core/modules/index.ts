@@ -81,6 +81,7 @@ export {
   setFormulaEditorOwner,
   getAllFunctionGroup,
   suppressFormulaRangeSelectionForInitialEdit,
+  resetFormulaArrowSession,
   ensureFormulaRangeToSheet,
   shouldPreserveFormulaEditOnSheetSwitch,
   activateSheetForNavigation,
