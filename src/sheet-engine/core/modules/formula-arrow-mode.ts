@@ -1,6 +1,6 @@
 /**
  * Pure (DOM-free, ctx-free) logic that decides what an arrow key does while a
- * formula is being edited. See docs/formula-arrow-key-spec.md.
+ * formula is being edited.
  *
  * GRID             - not editing: arrows move the grid selection
  * TEXT_EDIT        - arrows move the text caret
@@ -54,7 +54,9 @@ const ROW = '\\$?\\d+';
 const REF_BODY = `(?:${CELL}(?::${CELL})?|${COL}:${COL}|${ROW}:${ROW})`;
 const REF_RE = new RegExp(`^${SHEET_PREFIX}${REF_BODY}$`, 'u');
 const REF_BODY_RE = new RegExp(`^${REF_BODY}$`, 'u');
-const NUMBER_RE = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
+const NUMBER_RE = /^(?:\d+(?:\.\d+)?|\.\d+)(?:[eE]\d+)?$/;
+// `1E`, `1.5e`: an exponent marker whose sign / digits are still to come.
+const EXPONENT_PREFIX_RE = /^(?:\d+(?:\.\d*)?|\.\d+)[eE]$/;
 const FUNC_NAME_RE = /^[\p{L}_][\p{L}\p{N}_.]*$/u;
 
 function scanQuoted(
@@ -160,6 +162,16 @@ export function tokenizeFormula(text: string): Token[] {
     } else if (RUN_CHAR.test(ch)) {
       let j = i + 1;
       while (j < n && RUN_CHAR.test(text[j])) j += 1;
+      // Scientific notation: `1E+5`, `2.5e-3`. The sign is not a run char, so
+      // consume it (and the exponent digits) here; otherwise `=1E+|` would look
+      // like `NAME OPERATOR` and offer a reference slot.
+      if (
+        (text[j] === '+' || text[j] === '-') &&
+        EXPONENT_PREFIX_RE.test(text.slice(i, j))
+      ) {
+        j += 1;
+        while (j < n && /\d/.test(text[j])) j += 1;
+      }
       const run = text.slice(i, j);
       let kind: TokenKind;
       let partial: boolean | undefined;
@@ -168,7 +180,10 @@ export function tokenizeFormula(text: string): Token[] {
       } else if (REF_RE.test(run)) {
         kind = 'REF';
         partial = false;
-      } else if (NUMBER_RE.test(run)) {
+      } else if (
+        NUMBER_RE.test(run) ||
+        /^(?:\d+(?:\.\d*)?|\.\d+)[eE][+-]\d*$/.test(run)
+      ) {
         kind = 'NUMBER';
       } else if (run.includes(':') || run.includes('!')) {
         kind = 'REF';
@@ -200,7 +215,6 @@ export type CaretContext = {
   touchingRef: Token | null;
   prevSig: Token | null;
   nextSig: Token | null;
-  parenDepth: number;
 };
 
 export function getCaretContext(tokens: Token[], caret: number): CaretContext {
@@ -209,7 +223,6 @@ export function getCaretContext(tokens: Token[], caret: number): CaretContext {
   let touchingRef: Token | null = null;
   let prevSig: Token | null = null;
   let nextSig: Token | null = null;
-  let parenDepth = 0;
 
   tokens.forEach((t) => {
     if (t.kind === 'STRING') {
@@ -236,14 +249,12 @@ export function getCaretContext(tokens: Token[], caret: number): CaretContext {
     if (t.kind === 'SPACE') return;
     if (t.end <= caret) {
       prevSig = t;
-      if (t.kind === 'LPAREN') parenDepth += 1;
-      if (t.kind === 'RPAREN') parenDepth = Math.max(0, parenDepth - 1);
     } else if (t.start >= caret && nextSig === null) {
       nextSig = t;
     }
   });
 
-  return { inString, insideToken, touchingRef, prevSig, nextSig, parenDepth };
+  return { inString, insideToken, touchingRef, prevSig, nextSig };
 }
 
 const OPERAND_EXPECTING: ReadonlySet<TokenKind> = new Set([
@@ -328,13 +339,21 @@ export function resolveArrowMode(input: ArrowModeInput): FormulaArrowMode {
   return 'TEXT_EDIT';
 }
 
-/** F2 while editing a formula: flip between caret and reference selection. */
-export function overrideAfterF2(mode: FormulaArrowMode): FormulaArrowOverride {
-  if (mode === 'TEXT_EDIT') return 'REFERENCE';
-  if (mode === 'REFERENCE_READY' || mode === 'REFERENCE_ACTIVE') {
-    return 'TEXT_EDIT';
-  }
-  return null;
+/**
+ * F2 while editing a formula: flip between caret and reference selection.
+ *
+ * Toggles the stored override once one exists, so a second press always undoes
+ * the first, even at a caret where the derived mode cannot change (e.g. after
+ * `)`). With no stored override, flips from the mode the user is looking at.
+ */
+export function overrideAfterF2(
+  mode: FormulaArrowMode,
+  current: FormulaArrowOverride = null,
+): FormulaArrowOverride {
+  if (mode === 'GRID') return null;
+  if (current !== null)
+    return current === 'REFERENCE' ? 'TEXT_EDIT' : 'REFERENCE';
+  return mode === 'TEXT_EDIT' ? 'REFERENCE' : 'TEXT_EDIT';
 }
 
 /**
@@ -352,5 +371,22 @@ export function isTextChangingKeyCode(kcode: number): boolean {
     (kcode >= 65 && kcode <= 90) ||
     (kcode >= 96 && kcode <= 111) ||
     (kcode >= 186 && kcode <= 222)
+  );
+}
+
+/**
+ * Keys that edit characters *inside* a reference token (letters, digits incl.
+ * numpad digits, Backspace/Delete). Typing them over an arrow-inserted
+ * reference makes it a hand-edited token, so its highlight must be dropped.
+ * Operators, commas and spaces are not here: they end the reference but leave
+ * its highlight alone (see `isTextChangingKeyCode`).
+ */
+export function isReferenceDirtyingKeyCode(kcode: number): boolean {
+  return (
+    kcode === 8 ||
+    kcode === 46 ||
+    (kcode >= 48 && kcode <= 57) ||
+    (kcode >= 65 && kcode <= 90) ||
+    (kcode >= 96 && kcode <= 105)
   );
 }

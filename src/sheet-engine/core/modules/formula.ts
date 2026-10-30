@@ -24,8 +24,11 @@ import { locale } from '../locale';
 import {
   FormulaArrowMode,
   FormulaArrowOverride,
+  getCaretContext,
+  isReferenceDirtyingKeyCode,
   isTextChangingKeyCode,
   resolveArrowMode,
+  tokenizeFormula,
 } from './formula-arrow-mode';
 import { getRangeColor } from './color';
 import { colLocation, mousePosition, rowLocation } from './location';
@@ -350,6 +353,12 @@ export class FormulaCache {
   // formula bar): arrows move the caret until the user presses F2.
   // undefined = true.
   arrowAutoAllowed?: boolean;
+
+  // Cell [row, col] that `arrowOverride` / `arrowAutoAllowed` belong to. A
+  // session that ended through a path that never reset them (several exits just
+  // clear `luckysheetCellUpdate`) is detected by this not matching the cell now
+  // being edited, and its stale values are ignored.
+  arrowSessionCell?: [number, number];
 
   /** True after arrow/Shift+arrow moved `func_selectedrange` without updating yellow selection. */
   formulaKeyboardRefSync?: boolean;
@@ -3215,6 +3224,42 @@ export function seedFormulaFuncSelectedRangeFromLastSelection(
   return true;
 }
 
+/**
+ * Explicit reference selection (F2) with the caret on an existing reference:
+ * seed the keyboard range from *that reference*, so the first arrow moves it
+ * from where it is (`=SUM(A1|)` + Right -> `=SUM(B1)`), not from the edited
+ * cell. Replaces any stale `func_selectedrange`. Returns false when the caret
+ * is not on a complete reference on the visible sheet.
+ */
+export function seedFormulaFuncSelectedRangeFromTouchedReference(
+  ctx: Context,
+): boolean {
+  const editor = getActiveFormulaEditorElement(ctx);
+  if (!editor) return false;
+  const caret = getCaretOffsetInEditor(editor);
+  if (caret === null) return false;
+  const text = normalizeFormulaBoundaryText(editor.textContent || '');
+  const touched = getCaretContext(tokenizeFormula(text), caret).touchingRef;
+  if (!touched || touched.partial) return false;
+  const range = getcellrange(ctx, touched.text);
+  if (!range || range.sheetId !== ctx.currentSheetId) return false;
+
+  const previous = ctx.formulaCache.func_selectedrange;
+  ctx.formulaCache.func_selectedrange = undefined;
+  if (!seedFormulaFuncSelectedRangeFromLastSelection(ctx)) {
+    ctx.formulaCache.func_selectedrange = previous;
+    return false;
+  }
+  const seeded = ctx.formulaCache.func_selectedrange!;
+  seeded.row = [...range.row];
+  seeded.column = [...range.column];
+  // Focus on the far corner: that is the end an arrow moves.
+  seeded.row_focus = range.row[1];
+  seeded.column_focus = range.column[1];
+  seeded.moveXY = undefined;
+  return true;
+}
+
 export function createFormulaRangeSelect(
   ctx: Context,
   select: { rangeIndex: number } & Rect,
@@ -4363,11 +4408,15 @@ export function isBareCellOrRangeOnlyFormula(formulaText: string): boolean {
  * disable sheet-driven range selection until the caret reaches a fresh insertion slot
  * (comma, open paren, operator, etc.) or the user starts an active range drag.
  */
-export function suppressFormulaRangeSelectionForInitialEdit(ctx: Context) {
+export function suppressFormulaRangeSelectionForInitialEdit(
+  ctx: Context,
+  cell?: [number, number],
+) {
   ctx.formulaCache.rangeSelectionActive = false;
   ctx.formulaCache.keyboardRangeSelectionLock = true;
   ctx.formulaCache.arrowAutoAllowed = false;
   ctx.formulaCache.arrowOverride = null;
+  ctx.formulaCache.arrowSessionCell = cell;
   ctx.formulaCache.rangestart = false;
   ctx.formulaCache.rangedrag_column_start = false;
   ctx.formulaCache.rangedrag_row_start = false;
@@ -4579,10 +4628,7 @@ export function handleFormulaInput(
     }
 
     const isBackspaceOrDelete = kcode === 8 || kcode === 46;
-    const isAlphaNumeric =
-      (kcode >= 48 && kcode <= 57) || // 0-9
-      (kcode >= 65 && kcode <= 90) || // A-Z
-      (kcode >= 97 && kcode <= 122); // a-z
+    const isAlphaNumeric = isReferenceDirtyingKeyCode(kcode);
 
     // If a keyboard/mouse-inserted range token is currently being edited
     // and the user types characters (or backspace/delete), mark it as
@@ -5321,15 +5367,57 @@ export function israngeseleciton(ctx: Context, istooltip?: boolean) {
   return false;
 }
 
+/**
+ * Start (or end) an arrow-key session with the defaults: automatic reference
+ * selection on, no F2 override. Call when a session opens on a cell that does
+ * not hold a formula, and when one ends.
+ */
+export function resetFormulaArrowSession(ctx: Context) {
+  ctx.formulaCache.arrowAutoAllowed = true;
+  ctx.formulaCache.arrowOverride = null;
+  ctx.formulaCache.arrowSessionCell = undefined;
+}
+
+/** The F2 override / auto flag in effect for the cell being edited right now. */
+export function getFormulaArrowSession(ctx: Context): {
+  override: FormulaArrowOverride;
+  autoAllowed: boolean;
+} {
+  const fc = ctx.formulaCache;
+  const owner = fc.arrowSessionCell;
+  const cur = ctx.luckysheetCellUpdate;
+  if (owner && (owner[0] !== cur[0] || owner[1] !== cur[1])) {
+    return { override: null, autoAllowed: true };
+  }
+  return {
+    override: fc.arrowOverride ?? null,
+    autoAllowed: fc.arrowAutoAllowed !== false,
+  };
+}
+
+/** F2 pressed while editing: store the new override for this cell's session. */
+export function setFormulaArrowOverride(
+  ctx: Context,
+  override: FormulaArrowOverride,
+) {
+  const { autoAllowed } = getFormulaArrowSession(ctx);
+  ctx.formulaCache.arrowAutoAllowed = autoAllowed;
+  ctx.formulaCache.arrowOverride = override;
+  const [row, col] = ctx.luckysheetCellUpdate;
+  ctx.formulaCache.arrowSessionCell =
+    row === undefined || col === undefined ? undefined : [row, col];
+}
+
 /** Caret offset inside `editor` (same space as `textContent`), or null when the selection is elsewhere. */
 function getCaretOffsetInEditor(editor: HTMLElement): number | null {
   const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return null;
-  if (!editor.contains(sel.anchorNode)) return null;
+  if (!sel || sel.rangeCount === 0 || !sel.focusNode) return null;
+  if (!editor.contains(sel.focusNode)) return null;
+  // The caret is the selection's focus. For a backward selection (Shift+Left)
+  // that is the range *start*, so `getRangeAt(0).endContainer` would be wrong.
   const pre = document.createRange();
   pre.selectNodeContents(editor);
-  const r = sel.getRangeAt(0);
-  pre.setEnd(r.endContainer, r.endOffset);
+  pre.setEnd(sel.focusNode, sel.focusOffset);
   return normalizeFormulaBoundaryText(pre.toString()).length;
 }
 
@@ -5370,8 +5458,7 @@ export function getFormulaArrowMode(ctx: Context): FormulaArrowMode {
     editing: true,
     text,
     caretOffset,
-    override: fc.arrowOverride ?? null,
-    autoAllowed: fc.arrowAutoAllowed !== false,
+    ...getFormulaArrowSession(ctx),
     refActive,
   });
 }

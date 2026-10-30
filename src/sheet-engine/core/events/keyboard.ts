@@ -8,6 +8,10 @@ import {
   isLegacyFormulaRangeMode,
   isFormulaReferenceInputMode,
   getFormulaArrowMode,
+  getFormulaArrowSession,
+  setFormulaArrowOverride,
+  resetFormulaArrowSession,
+  seedFormulaFuncSelectedRangeFromTouchedReference,
   seedFormulaFuncSelectedRangeFromLastSelection,
   markRangeSelectionDirty,
   setFormulaEditorOwner,
@@ -17,7 +21,10 @@ import {
   returnToFormulaOriginSheet,
   toggleFormulaAbsoluteReferenceAtCaret,
 } from '../modules/formula';
-import { overrideAfterF2 } from '../modules/formula-arrow-mode';
+import {
+  FormulaArrowMode,
+  overrideAfterF2,
+} from '../modules/formula-arrow-mode';
 import { isInlineStringCell } from '../modules/inline-string';
 import {
   copy,
@@ -91,32 +98,19 @@ function getActiveFormulaEditorForKeyboardGuard(): HTMLElement | null {
 }
 
 /**
- * While editing a formula, keyboard range navigation is blocked unless the
- * arrow-key mode is REFERENCE_READY / REFERENCE_ACTIVE
- * (see `getFormulaArrowMode` and docs/formula-arrow-key-spec.md).
+ * Decides whether an arrow key belongs to the sheet and returns the arrow mode
+ * to use for the rest of this key press (computed once; it re-reads the DOM and
+ * re-tokenizes the formula). `null` means the editor keeps the key (caret
+ * movement). Marks the reference flow active when it starts.
  */
-function shouldBlockFormulaRangeKeyboardNavigation(ctx: Context): boolean {
-  if (ctx.luckysheetCellUpdate.length === 0) return false;
-  const editor = getActiveFormulaEditorForKeyboardGuard();
-  if (!editor) return false;
-  const t = (editor.innerText || '').trim();
-  if (!t.startsWith('=')) return false;
-  return !isFormulaReferenceInputMode(ctx);
-}
-
-/**
- * True when an arrow key should be handled by the sheet (grid navigation, or
- * formula reference selection). Marks the reference flow active when it starts.
- * False means the editor keeps the key (caret movement).
- */
-function enterSheetArrowNavigation(ctx: Context): boolean {
-  if (ctx.luckysheetCellUpdate.length === 0) return true;
+function enterSheetArrowNavigation(ctx: Context): FormulaArrowMode | null {
+  if (ctx.luckysheetCellUpdate.length === 0) return 'GRID';
   const mode = getFormulaArrowMode(ctx);
   if (mode === 'REFERENCE_READY' || mode === 'REFERENCE_ACTIVE') {
     ctx.formulaCache.rangeSelectionActive = true;
-    return true;
+    return mode;
   }
-  return false;
+  return null;
 }
 
 /** Immer tracks this; `FormulaCache` mutations alone do not re-render React. */
@@ -134,14 +128,25 @@ function bumpFormulaKeyboardRangeSync(
  * Formula reference keyboard path: seed `func_selectedrange`, use it for moves/jump-to-edge
  * while keeping yellow `luckysheet_select_save` on the edited cell.
  */
-function getFormulaKeyboardNavState(ctx: Context): {
+function getFormulaKeyboardNavState(
+  ctx: Context,
+  mode: FormulaArrowMode,
+): {
   navType: 'rangeOfFormula' | 'rangeOfSelect';
   navSelection: Selection | undefined;
 } {
   const useFormulaRangeOnly =
-    ctx.luckysheetCellUpdate.length > 0 && isFormulaReferenceInputMode(ctx);
+    ctx.luckysheetCellUpdate.length > 0 &&
+    (mode === 'REFERENCE_READY' || mode === 'REFERENCE_ACTIVE');
   if (useFormulaRangeOnly) {
-    seedFormulaFuncSelectedRangeFromLastSelection(ctx);
+    // READY on an existing reference (explicit F2 reference mode): move that
+    // reference from where it is. Everywhere else start from the edited cell.
+    const seededFromReference =
+      mode === 'REFERENCE_READY' &&
+      seedFormulaFuncSelectedRangeFromTouchedReference(ctx);
+    if (!seededFromReference) {
+      seedFormulaFuncSelectedRangeFromLastSelection(ctx);
+    }
   }
   const navType =
     useFormulaRangeOnly && ctx.formulaCache.func_selectedrange
@@ -281,7 +286,12 @@ export function handleGlobalEnter(
           | null
           | undefined;
         if (cellAt?.f != null && String(cellAt.f).trim() !== '') {
-          suppressFormulaRangeSelectionForInitialEdit(ctx);
+          suppressFormulaRangeSelectionForInitialEdit(ctx, [
+            row_index,
+            col_index,
+          ]);
+        } else {
+          resetFormulaArrowSession(ctx);
         }
       }
 
@@ -415,15 +425,15 @@ function handleControlPlusArrowKey(
   e: KeyboardEvent,
   shiftPressed: boolean,
 ) {
-  if (shouldBlockFormulaRangeKeyboardNavigation(ctx)) {
+  const arrowMode = enterSheetArrowNavigation(ctx);
+  if (!arrowMode) {
     return;
   }
 
-  if (!enterSheetArrowNavigation(ctx)) {
-    return;
-  }
-
-  const { navType, navSelection: last } = getFormulaKeyboardNavState(ctx);
+  const { navType, navSelection: last } = getFormulaKeyboardNavState(
+    ctx,
+    arrowMode,
+  );
   if (!last) return;
 
   const idx = getSheetIndex(ctx, ctx.currentSheetId);
@@ -854,15 +864,15 @@ export function handleWithCtrlOrMetaKey(
 }
 
 function handleShiftWithArrowKey(ctx: Context, e: KeyboardEvent) {
-  if (shouldBlockFormulaRangeKeyboardNavigation(ctx)) {
+  const arrowMode = enterSheetArrowNavigation(ctx);
+  if (!arrowMode) {
     return;
   }
 
-  if (!enterSheetArrowNavigation(ctx)) {
-    return;
-  }
-
-  const { navType: shiftNavType } = getFormulaKeyboardNavState(ctx);
+  const { navType: shiftNavType } = getFormulaKeyboardNavState(
+    ctx,
+    arrowMode,
+  );
 
   ctx.luckysheet_shiftpositon = _.cloneDeep(
     ctx.luckysheet_select_save?.[ctx.luckysheet_select_save.length - 1],
@@ -901,15 +911,12 @@ function handleShiftWithArrowKey(ctx: Context, e: KeyboardEvent) {
 }
 
 export function handleArrowKey(ctx: Context, e: KeyboardEvent) {
-  if (shouldBlockFormulaRangeKeyboardNavigation(ctx)) {
+  const arrowMode = enterSheetArrowNavigation(ctx);
+  if (!arrowMode) {
     return;
   }
 
-  if (!enterSheetArrowNavigation(ctx)) {
-    return;
-  }
-
-  const { navType } = getFormulaKeyboardNavState(ctx);
+  const { navType } = getFormulaKeyboardNavState(ctx, arrowMode);
 
   const moveCount = hideCRCount(ctx, e.key);
   switch (e.key) {
@@ -1236,9 +1243,12 @@ export async function handleGlobalKeyDown(
       const activeEditor = getActiveFormulaEditorForKeyboardGuard();
       const activeText = (activeEditor?.innerText || '').trim();
       if (activeEditor && activeText.startsWith('=')) {
-        const override = overrideAfterF2(getFormulaArrowMode(ctx));
+        const override = overrideAfterF2(
+          getFormulaArrowMode(ctx),
+          getFormulaArrowSession(ctx).override,
+        );
         if (override !== null) {
-          ctx.formulaCache.arrowOverride = override;
+          setFormulaArrowOverride(ctx, override);
           if (override === 'TEXT_EDIT') {
             ctx.formulaCache.rangeSelectionActive = null;
           }
@@ -1263,7 +1273,9 @@ export async function handleGlobalKeyDown(
         | null
         | undefined;
       if (cellF2?.f != null && String(cellF2.f).trim() !== '') {
-        suppressFormulaRangeSelectionForInitialEdit(ctx);
+        suppressFormulaRangeSelectionForInitialEdit(ctx, [row_index, col_index]);
+      } else {
+        resetFormulaArrowSession(ctx);
       }
     }
 
@@ -1421,7 +1433,12 @@ export async function handleGlobalKeyDown(
             _.isNil((cellAt as any).f);
 
           if (existingFormula != null) {
-            suppressFormulaRangeSelectionForInitialEdit(ctx);
+            suppressFormulaRangeSelectionForInitialEdit(ctx, [
+              row_index,
+              col_index,
+            ]);
+          } else {
+            resetFormulaArrowSession(ctx);
           }
 
           ctx.luckysheetCellUpdate = [row_index, col_index];
@@ -1445,8 +1462,7 @@ export async function handleGlobalKeyDown(
           ctx.formulaCache.rangedrag_row_start = false;
           ctx.formulaCache.rangeSelectionActive = null;
           ctx.formulaCache.keyboardRangeSelectionLock = false;
-          ctx.formulaCache.arrowAutoAllowed = true;
-          ctx.formulaCache.arrowOverride = null;
+          resetFormulaArrowSession(ctx);
 
           cellInput.focus();
           const initial = getTypeOverInitialContent(e);

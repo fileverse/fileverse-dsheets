@@ -4,6 +4,7 @@ import {
   FormulaArrowOverride,
   getCaretContext,
   isOperandSlot,
+  isReferenceDirtyingKeyCode,
   isTextChangingKeyCode,
   overrideAfterF2,
   resolveArrowMode,
@@ -147,14 +148,6 @@ describe('getCaretContext', () => {
     expect(ctxAt('=SUM(|A1)').touchingRef).toBeNull();
     expect(ctxAt('=SUM(A|1)').touchingRef?.text).toBe('A1');
     expect(ctxAt('=SUM(|)').touchingRef).toBeNull();
-  });
-
-  it('computes paren depth before the caret', () => {
-    expect(ctxAt('=|').parenDepth).toBe(0);
-    expect(ctxAt('=SUM(|').parenDepth).toBe(1);
-    expect(ctxAt('=SUM((A1+|').parenDepth).toBe(2);
-    expect(ctxAt('=SUM((A1+B1)|').parenDepth).toBe(1);
-    expect(ctxAt('=SUM(A1)|)').parenDepth).toBe(0);
   });
 
   it('skips spaces when finding neighbours', () => {
@@ -359,6 +352,91 @@ describe('F2 toggle', () => {
   });
 });
 
+describe('F2 toggles the stored override', () => {
+  it('a second press always undoes the first, even where the mode cannot change', () => {
+    const caretText = '=SUM(A1)|';
+    const shown1 = resolveAt(caretText);
+    expect(shown1).toBe('TEXT_EDIT');
+    const first = overrideAfterF2(shown1, null);
+    expect(first).toBe('REFERENCE');
+
+    // reference override has no effect after `)`: still TEXT_EDIT on screen
+    const shown2 = resolveAt(caretText, { override: first });
+    expect(shown2).toBe('TEXT_EDIT');
+    const second = overrideAfterF2(shown2, first);
+    expect(second).toBe('TEXT_EDIT');
+
+    // walking the caret onto A1 must not capture the arrow
+    expect(resolveAt('=SUM(A1|)', { override: second })).toBe('TEXT_EDIT');
+  });
+
+  it('with no stored override it flips what the user is looking at', () => {
+    expect(overrideAfterF2('REFERENCE_READY', null)).toBe('TEXT_EDIT');
+    expect(overrideAfterF2('REFERENCE_ACTIVE', null)).toBe('TEXT_EDIT');
+    expect(overrideAfterF2('TEXT_EDIT', null)).toBe('REFERENCE');
+  });
+
+  it('with a stored override it flips the stored value', () => {
+    // auto READY on screen, but a stored REFERENCE must still toggle off
+    expect(overrideAfterF2('REFERENCE_READY', 'REFERENCE')).toBe('TEXT_EDIT');
+    expect(overrideAfterF2('TEXT_EDIT', 'TEXT_EDIT')).toBe('REFERENCE');
+  });
+
+  it('is ignored outside editing', () => {
+    expect(overrideAfterF2('GRID', 'REFERENCE')).toBeNull();
+  });
+});
+
+describe('scientific notation', () => {
+  it('reads the exponent sign and digits as part of the number', () => {
+    expect(kinds('=1E+5')).toEqual(['EQ:=', 'NUMBER:1E+5']);
+    expect(kinds('=2.5e-3*A1')).toEqual([
+      'EQ:=',
+      'NUMBER:2.5e-3',
+      'OPERATOR:*',
+      'REF:A1',
+    ]);
+    expect(kinds('=1E5')).toEqual(['EQ:=', 'NUMBER:1E5']);
+  });
+
+  it('keeps an unfinished exponent as one number token', () => {
+    expect(kinds('=1E+')).toEqual(['EQ:=', 'NUMBER:1E+']);
+    expect(kinds('=A1*1E-')).toEqual([
+      'EQ:=',
+      'REF:A1',
+      'OPERATOR:*',
+      'NUMBER:1E-',
+    ]);
+  });
+
+  it('does not offer a reference slot inside an unfinished exponent', () => {
+    expect(resolveAt('=1E+|')).toBe('TEXT_EDIT');
+    expect(resolveAt('=A1*1E-|')).toBe('TEXT_EDIT');
+    expect(resolveAt('=1.5E+3|')).toBe('TEXT_EDIT');
+    expect(resolveAt('=1E5|')).toBe('TEXT_EDIT');
+  });
+
+  it('a real operator after the number is still a slot', () => {
+    expect(resolveAt('=1E5+|')).toBe('REFERENCE_READY');
+    expect(resolveAt('=1E+5-|')).toBe('REFERENCE_READY');
+  });
+
+  it('does not swallow a sign after an ordinary name or reference', () => {
+    expect(kinds('=A1E+1')).toEqual([
+      'EQ:=',
+      'NAME:A1E',
+      'OPERATOR:+',
+      'NUMBER:1',
+    ]);
+    expect(kinds('=B1+2')).toEqual([
+      'EQ:=',
+      'REF:B1',
+      'OPERATOR:+',
+      'NUMBER:2',
+    ]);
+  });
+});
+
 describe('Rule 4 transitions derive from caret position', () => {
   it('operator or comma after a reference -> READY', () => {
     expect(resolveAt('=B4+|')).toBe('REFERENCE_READY');
@@ -441,4 +519,32 @@ describe('isTextChangingKeyCode', () => {
     'key %i does not change text',
     (k) => expect(isTextChangingKeyCode(k)).toBe(false),
   );
+});
+
+describe('key classification', () => {
+  it('dirtying keys edit characters inside a token', () => {
+    [8, 46, 48, 57, 65, 90, 96, 97, 105].forEach((k) =>
+      expect(isReferenceDirtyingKeyCode(k), `key ${k}`).toBe(true),
+    );
+  });
+
+  it('numpad 0 dirties like every other digit', () => {
+    expect(isReferenceDirtyingKeyCode(96)).toBe(true);
+  });
+
+  it('operators, comma, space, arrows and F-keys do not dirty', () => {
+    [
+      32, 37, 38, 106, 107, 109, 111, 112, 113, 115, 122, 187, 188, 189, 191,
+    ].forEach((k) =>
+      expect(isReferenceDirtyingKeyCode(k), `key ${k}`).toBe(false),
+    );
+  });
+
+  it('every dirtying key also counts as text-changing', () => {
+    for (let k = 0; k < 256; k += 1) {
+      if (isReferenceDirtyingKeyCode(k)) {
+        expect(isTextChangingKeyCode(k), `key ${k}`).toBe(true);
+      }
+    }
+  });
 });
