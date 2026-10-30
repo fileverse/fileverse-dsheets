@@ -196,7 +196,7 @@ export type CaretContext = {
   inString: boolean;
   /** Caret strictly inside a non-string token (e.g. `A|1`, `SU|M(`). */
   insideToken: Token | null;
-  /** REF token the caret is on or touches (start <= caret <= end). */
+  /** REF token the caret is inside or right after (start < caret <= end). */
   touchingRef: Token | null;
   prevSig: Token | null;
   nextSig: Token | null;
@@ -227,7 +227,10 @@ export function getCaretContext(tokens: Token[], caret: number): CaretContext {
     ) {
       insideToken = t;
     }
-    if (t.kind === 'REF' && t.start <= caret && caret <= t.end) {
+    // `start < caret`: a caret at the very start of a reference is *before* it.
+    // Treating it as touching made the arrow insert next to the reference
+    // instead of replacing it (`=SUM(│A1)` -> `=SUM(D6A1)`).
+    if (t.kind === 'REF' && t.start < caret && caret <= t.end) {
       touchingRef = t;
     }
     if (t.kind === 'SPACE') return;
@@ -268,6 +271,16 @@ export function isOperandSlot(ctx: CaretContext): boolean {
   if (ctx.inString || ctx.insideToken) return false;
   if (!ctx.prevSig || !OPERAND_EXPECTING.has(ctx.prevSig.kind)) return false;
   if (ctx.nextSig && OPERAND_LIKE.has(ctx.nextSig.kind)) return false;
+  // A `+` / `-` right of the caret after a token that wants an operand is a
+  // unary sign (`D11/│-F11`, `=│-A1`): it already occupies the operand slot,
+  // so inserting a reference there would silently rewrite the formula.
+  if (
+    ctx.nextSig &&
+    ctx.nextSig.kind === 'OPERATOR' &&
+    (ctx.nextSig.text === '+' || ctx.nextSig.text === '-')
+  ) {
+    return false;
+  }
   return true;
 }
 

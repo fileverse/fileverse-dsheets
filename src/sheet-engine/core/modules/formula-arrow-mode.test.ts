@@ -143,7 +143,8 @@ describe('getCaretContext', () => {
 
   it('reports the reference the caret touches', () => {
     expect(ctxAt('=SUM(A1|)').touchingRef?.text).toBe('A1');
-    expect(ctxAt('=SUM(|A1)').touchingRef?.text).toBe('A1');
+    // start edge is *before* the reference, not on it
+    expect(ctxAt('=SUM(|A1)').touchingRef).toBeNull();
     expect(ctxAt('=SUM(A|1)').touchingRef?.text).toBe('A1');
     expect(ctxAt('=SUM(|)').touchingRef).toBeNull();
   });
@@ -186,7 +187,6 @@ describe('isOperandSlot', () => {
     '=A1&|',
     '=SUM(|)',
     '=SUM(|,B1)',
-    '=|+B1',
     '=SUM((|',
     '=SUM((A1+|',
   ])('slot: %s', (f) => expect(slot(f)).toBe(true));
@@ -205,6 +205,15 @@ describe('isOperandSlot', () => {
     '=A1:|',
     '=SUM(|A1)',
     '=A1+|B1',
+    // unary sign already occupies the operand slot
+    '=|+B1',
+    '=|-A1',
+    '=SUM(|-A1)',
+    '=A1*|-1',
+    '=IF(A1>0,|-1,1)',
+    '=A1+|-B1',
+    '=A1-|+B1',
+    '=if(D11<>"", if(F11<>"", D11/|-F11,""),"")',
     '=SUM((A1+B1)|)',
     '=SUM(A1)|+B1',
     '=SUM(A1|)',
@@ -362,6 +371,64 @@ describe('Rule 4 transitions derive from caret position', () => {
 
   it('plain text after a reference -> TEXT_EDIT', () => {
     expect(resolveAt('=B4x|')).toBe('TEXT_EDIT');
+  });
+});
+
+describe('unary sign to the right of the caret (TEC-3303)', () => {
+  const reporterFormula = '=if(D11<>"", if(F11<>"", D11/-F11,""),"")';
+
+  it('keeps the caret in the reporter formula at every position', () => {
+    // position of the caret right after `/` and before `-`
+    const caret = reporterFormula.indexOf('/-') + 1;
+    const mode = resolveArrowMode({
+      editing: true,
+      text: reporterFormula,
+      caretOffset: caret,
+      override: null,
+      autoAllowed: true,
+      refActive: false,
+    });
+    expect(mode).toBe('TEXT_EDIT');
+  });
+
+  it('is caret-only under the explicit reference override too', () => {
+    expect(
+      resolveAt('=A1*|-1', { override: 'REFERENCE', autoAllowed: false }),
+    ).toBe('TEXT_EDIT');
+  });
+
+  it('still picks a reference after the sign has been passed', () => {
+    expect(resolveAt('=A1*-|')).toBe('REFERENCE_READY');
+    expect(resolveAt('=D11/-|F11')).toBe('TEXT_EDIT');
+  });
+
+  it('binary plus/minus before the caret is unaffected', () => {
+    expect(resolveAt('=A1-|')).toBe('REFERENCE_READY');
+    expect(resolveAt('=A1+|,')).toBe('REFERENCE_READY');
+  });
+
+  it('only +/- are treated as unary; other operators keep their slot', () => {
+    expect(resolveAt('=SUM(|*2)')).toBe('REFERENCE_READY');
+  });
+});
+
+describe('F2 override at the edges of a reference', () => {
+  const ref = { override: 'REFERENCE' as const, autoAllowed: false };
+
+  it('caret at the start of a reference stays text (no insert next to it)', () => {
+    expect(resolveAt('=SUM(|A1)', ref)).toBe('TEXT_EDIT');
+    expect(resolveAt('=SUM(|A1:B2)', ref)).toBe('TEXT_EDIT');
+    expect(resolveAt("=SUM(|'My Sheet'!A1)", ref)).toBe('TEXT_EDIT');
+  });
+
+  it('caret at the end of or inside a reference can replace it', () => {
+    expect(resolveAt('=SUM(A1|)', ref)).toBe('REFERENCE_READY');
+    expect(resolveAt('=SUM(A1:B2|)', ref)).toBe('REFERENCE_READY');
+    expect(resolveAt('=SUM(A|1)', ref)).toBe('REFERENCE_READY');
+  });
+
+  it('a slot before a reference does not reopen via the start edge', () => {
+    expect(resolveAt('=SUM(A1,|B1)', ref)).toBe('TEXT_EDIT');
   });
 });
 
