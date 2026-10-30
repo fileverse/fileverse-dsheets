@@ -108,8 +108,8 @@ export function sortDataRange(
     }
   }
 
-  // Sort is a row permutation. Remap references to moved rows for formulas
-  // on the current sheet so they keep pointing to the same logical rows.
+  // Only cells in the sorted rectangle move. References to other columns
+  // must keep pointing to their original cells.
   const absoluteRowMap: Record<number, number> = {};
   Object.keys(rowMap).forEach((k) => {
     const oldLocal = parseInt(k, 10);
@@ -119,6 +119,7 @@ export function sortDataRange(
   const sheetIdx = getSheetIndex(ctx, ctx.currentSheetId);
   const sheet = sheetIdx == null ? null : ctx.luckysheetfile[sheetIdx];
   const sheetName = sheet?.name || '';
+  const changedFormulaCells: { r: number; c: number }[] = [];
   if (sheetData && sheetName) {
     for (let r = 0; r < sheetData.length; r += 1) {
       const row = sheetData[r];
@@ -126,9 +127,21 @@ export function sortDataRange(
       for (let c = 0; c < row.length; c += 1) {
         const cell = row[c];
         if (!cell?.f) continue;
-        cell.f = remapFormulaReferencesByMap(cell.f, sheetName, sheetName, {
-          rowMap: absoluteRowMap,
-        });
+        const nextFormula = remapFormulaReferencesByMap(
+          cell.f,
+          sheetName,
+          sheetName,
+          {
+            rowMap: absoluteRowMap,
+            range: { rowStart: str, rowEnd: edr, colStart: stc, colEnd: edc },
+          },
+        );
+        if (nextFormula !== cell.f) {
+          cell.f = nextFormula;
+          if (r < str || r > edr || c < stc || c > edc) {
+            changedFormulaCells.push({ r, c });
+          }
+        }
       }
     }
   }
@@ -136,7 +149,7 @@ export function sortDataRange(
   // Keep formula dependency locations aligned with row permutation.
   sheet?.calcChain?.forEach((item: any) => {
     const mapped = absoluteRowMap[item.r];
-    if (!_.isNil(mapped)) {
+    if (!_.isNil(mapped) && item.c >= stc && item.c <= edc) {
       item.r = mapped;
     }
   });
@@ -151,7 +164,13 @@ export function sortDataRange(
   //     RowlChange: true,
   //   };
   // }
-  jfrefreshgrid(ctx, sheetData, [{ row: [str, edr], column: [stc, edc] }]);
+  jfrefreshgrid(ctx, sheetData, [
+    { row: [str, edr], column: [stc, edc] },
+    ...changedFormulaCells.map(({ r, c }) => ({
+      row: [r, r],
+      column: [c, c],
+    })),
+  ]);
 
   // Sync sorted values to Yjs (sorting rewrites many cells without setCellValue()).
   if (ctx?.hooks?.updateCellYdoc) {
@@ -173,6 +192,15 @@ export function sortDataRange(
           type: 'update',
         });
       }
+    }
+    for (const { r, c } of changedFormulaCells) {
+      changes.push({
+        sheetId: ctx.currentSheetId,
+        path: ['celldata'],
+        value: { r, c, v: sheetData[r][c] },
+        key: `${r}_${c}`,
+        type: 'update',
+      });
     }
     if (changes.length > 0) ctx.hooks.updateCellYdoc(changes);
   }
@@ -451,12 +479,36 @@ export function spillSortResult(
   const sheetData = flowdata || getFlowdata(ctx);
   if (!sheetData) return false;
 
+  const previousRange = sheetData[startRow]?.[startCol]?.spillRange;
+  const clearedCells: { r: number; c: number }[] = [];
+  if (previousRange) {
+    for (let r = 0; r < previousRange.rows; r += 1) {
+      for (let c = 0; c < previousRange.columns; c += 1) {
+        if (r < rowCount && c < colCount) continue;
+        const rr = startRow + r;
+        const cc = startCol + c;
+        const cell = sheetData[rr]?.[cc];
+        // Keep unrelated cells and any output the user has since edited.
+        if (
+          cell?.spillParent?.r !== startRow ||
+          cell.spillParent.c !== startCol
+        ) {
+          continue;
+        }
+        setCellValue(ctx, rr, cc, sheetData, null);
+        clearedCells.push({ r: rr, c: cc });
+      }
+    }
+  }
+
   // write the first cell with the formula reference
   setCellValue(ctx, startRow, startCol, sheetData, {
     ...formulaResult,
     v: valueMatrix[0][0],
     tb: '1',
   });
+  const anchor = sheetData[startRow][startCol];
+  if (anchor) anchor.spillRange = { rows: rowCount, columns: colCount };
 
   // spill the rest of the result to the grid
   for (let r = 0; r < rowCount; r++) {
@@ -467,6 +519,7 @@ export function spillSortResult(
         v: cellValue,
         ct: { fa: 'General', t: typeof cellValue === 'number' ? 'n' : 'g' },
         tb: '1',
+        spillParent: { r: startRow, c: startCol },
       });
     }
   }
@@ -479,6 +532,15 @@ export function spillSortResult(
       value: any;
       type?: 'update' | 'delete';
     }[] = [];
+    for (const { r, c } of clearedCells) {
+      cellChanges.push({
+        sheetId: ctx.currentSheetId,
+        path: ['celldata'],
+        value: { r, c, v: sheetData[r][c] ?? null },
+        key: `${r}_${c}`,
+        type: 'update',
+      });
+    }
     for (let r = 0; r < rowCount; r += 1) {
       const rr = startRow + r;
       const row = sheetData?.[rr] || [];

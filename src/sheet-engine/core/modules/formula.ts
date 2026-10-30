@@ -6562,9 +6562,11 @@ export function remapFormulaReferencesByMap(
   maps: {
     rowMap?: Record<number, number>;
     colMap?: Record<number, number>;
+    /** Only references inside this rectangle participate in the permutation. */
+    range?: MoveReferenceRect;
   },
 ) {
-  const { rowMap, colMap } = maps;
+  const { rowMap, colMap, range } = maps;
   if (!formula) return formula;
   return formula.replace(
     MAP_REMAP_REF_REGEX,
@@ -6588,6 +6590,16 @@ export function remapFormulaReferencesByMap(
       const remapOne = (colText: string, rowText: string) => {
         const colIndex = columnCharToIndex(colText);
         const rowIndex = parseInt(rowText, 10) - 1;
+
+        if (
+          range &&
+          (rowIndex < range.rowStart ||
+            rowIndex > range.rowEnd ||
+            colIndex < range.colStart ||
+            colIndex > range.colEnd)
+        ) {
+          return { nextCol: colText, nextRow: rowText };
+        }
 
         const nextCol =
           !Number.isNaN(colIndex) && !_.isNil(colMap?.[colIndex])
