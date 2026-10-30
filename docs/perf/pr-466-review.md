@@ -495,5 +495,31 @@ Notes.
 | 4 | N2, N4, N5, N8 | `b046b97` |
 | 4 | N1, N9, N6 | `5f0cb23` |
 | 4 | N3, N7, N10 | `24fabfc` |
+| 5 | N1 (two comments), K60 | not committed (section 17) |
 
 Unit suite at the end: 66 files, 618 tests pass; `tsc --noEmit` clean. No browser check and no two-client check of any round-4 change or of the C8 spec changes.
+
+## 17. Fifth round: reviewer's re-check at `ed0adf4` (2026-10-30)
+
+The reviewer verified N2 to N10 and the C8 spec changes, and left five comments. Two block merge (both N1), K60 is welcome in the same push, and two are follow-up tickets (not done here, per the reviewer: add nothing else to this PR).
+
+| Comment | Status | Change | Tests |
+|---|---|---|---|
+| N1a (`rowcol.ts:281`): undo after the unloaded tab was opened leaves the shifted reference, in the engine and in Yjs | Fixed | `loadTabsReadingSheet` (`structural-edit-prep.ts`) loads the unloaded tabs whose formulas name the edited tab, in a separate `produce` before the recorded one. `setContextWithProduce` calls it for any edit that carries `insertRowColOp` or `deleteRowColOp`. The rewrite is then recorded as `data` cell patches, and `handleUndo`/`handleRedo` already load a tab for `data` patches. | `structural-edit-prep.test.ts`, 16 tests; 9 failed with the load step removed, all pass with it. |
+| N1b (`history-celldata.ts:52`): undo while the tab is unloaded removes or reverts a collaborator's edits | Fixed by the same change | Undo and redo now replay only the cells the rewrite touched, so a peer's added formula, changed formula and value edit survive, with B loaded, or unloaded again at undo time. | Same file: peer-added `=A!B9`, peer `=C!A1` to `=C!A2`, peer value 42, peer edit of the rewritten cell, each after undo and redo, loaded and unloaded again. |
+| K60 (`formula.ts:1826`): first commit after a tab switch takes the full pass and clears the flag | Fixed | `initSheetData` calls `recordLoadedSheetSize` when it loads an existing tab while `depGraphComplete` is on and no size is recorded. | `formula-tab-load.test.ts`, 4 tests; 2 failed without the call. |
+| `formula-warmup.ts:296`: reader re-indexes `celldata` per slice | Open, follow-up ticket | One reader per run, rebuilt when a tab's `celldata` array changes. | none |
+| `formula-transitive-deps.ts:88`: walk cost grows with wide formulas times reached cells | Open, follow-up ticket | Parse each reached cell once; group pending ranges by tab and column. | none |
+
+Unit suite 68 files, 638 tests; `tsc --noEmit` clean.
+
+Browser check (2026-10-30, demo dev build, one window, built-in browser; temporary instrumentation exposing the Y.Doc, removed afterwards). Setup: tabs `A` and `B`, B holds `A1 =A!B5` and `D4 =A!B1+1`, B demoted to `celldata` with no calcChain, then "Insert 1 rows above" on row 3 of A through the row-header context menu. Results, engine and Yjs both read: insert gives `=A!B6` (B was loaded first); undo gives `=A!B5`; redo gives `=A!B6`; a second undo gives `=A!B5` again. Peer-style writes straight into the Yjs doc on B (`C3 =A!B9`, `E5` 42, `D4` changed to `=A!B2+1`) survived undo and redo, with B loaded and with B demoted again right before the undo (B was loaded by the undo). K60: `depGraphComplete` stayed true across tab switches and commits, but B stayed loaded in that run (it reads A), so the unloaded-tab case of K60 is covered by unit tests only. Not run: two windows in one room (no collaboration server; the peer was simulated by writing to the Y.Doc), the undo with the real Ctrl+Z key, and the old code for a before-comparison.
+
+Limits.
+
+- Only edits that carry `insertRowColOp` or `deleteRowColOp` load the tabs first (context menu, row/column header insert, paste-insert, Workbook handlers). `insertRowOrColumn` / `deleteRowOrColumn` on the host API pass no op, and remote ops are `noHistory`, so those still take the whole-array `celldata` path of N1 (`rewriteFormulasInCelldata`), with the limits in K56.
+- A structural edit now leaves the tabs that read the edited tab loaded (until demote-on-switch). The scan for such tabs reads the `celldata` formulas of every unloaded tab once per edit; its cost was not measured.
+- The Yjs write for undo/redo goes through the existing `data` cell branch of `emitYjsFromPatches`; it has no test (no React renderer). The tests check the engine state after replaying the patches.
+- K60: the size is recorded at load from the dense grid built from `celldata`; a remote structural change that arrived while the tab was unloaded clears the flag as before.
+
+Commit for this round: not committed yet.

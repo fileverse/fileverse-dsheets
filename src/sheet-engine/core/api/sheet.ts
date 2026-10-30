@@ -6,6 +6,7 @@ import { applyCellFormatRangesToData, getCellFormatRangeGridBounds } from '../ut
 import { Context } from '../context';
 import { CellMatrix, CellWithRowAndCol, Sheet } from '../types';
 import { getSheetIndex } from '../utils';
+import { recordLoadedSheetSize } from '../modules/formula';
 import {
   api,
   changeSheet,
@@ -118,6 +119,11 @@ export function initSheetData(
     } else {
       draftCtx.luckysheetfile[index].data = expandedData;
       delete draftCtx.luckysheetfile[index].celldata;
+      recordLoadedSheetSize(
+        draftCtx,
+        draftCtx.luckysheetfile[index].id,
+        expandedData,
+      );
     }
     return expandedData;
   }

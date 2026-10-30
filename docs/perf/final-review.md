@@ -70,5 +70,10 @@ Two spec deviations from the audit are closed: C8 now builds its index from form
 - **C8 spec changes** (committed in `7847262`): a wide formula (range over 10,000 cells) joins a commit's walk only when its range holds the edited cell or a formula cell the walk reaches (it keeps its ranges in `wideRangesByFormula`; one whose ranges cannot be read from its text joins every walk). A collaborator's formula keeps `depGraphComplete`, and `setSheetCalcChain` diffs the chain. K17 is closed. Node figures: commit outside 5 wide ranges 21.8 ms to 0.13 ms; commit after a remote formula, 500 formulas 4.19 ms to 0.024 ms and 2,000 formulas 15.6 ms to 0.031 ms (the second "before" is an emulation).
 - **PR 466 round 4** (ten new comments N1 to N10 on `f0c7334`): all fixed. `b046b97` (N2 warm-up reads unloaded tabs from celldata, N4 digit-only tab names, N5 backslash in strings, N8 accented tab names), `5f0cb23` (N1 unloaded-tab rewrite replayable by undo and redo, N9 refused edit keeps the graph, N6 cut-paste pass), `24fabfc` (N3 hover predicate for drag states, N7 comment key follows the box, N10 compaction retry). Details: `pr-466-review.md` sections 12 to 16.
 - Unit suite 66 files, 618 tests; `tsc` clean.
+
+## Update 2026-10-30
+
+- **PR 466 round 5** (reviewer's re-check at `ed0adf4`, not committed): the two blocking N1 comments and K60 are fixed (`pr-466-review.md` section 17). Two non-blocking comments go to follow-up tickets, not this PR: the warm-up text reader re-indexes `celldata` per slice (`formula-warmup.ts`), and the wide-formula walk cost (`formula-transitive-deps.ts`). K56 narrowed to the host API path; K60 closed.
+- Unit suite 68 files, 638 tests; `tsc` clean.
 - **Section 2 now:** K18, K12, K10, K29, K28 (K17 done). New limits from this work are K56 to K61 in `KNOWN-ISSUES.md`.
 - **Still not done:** the whole-branch diff review, the browser targets of spec section 6, two-window QA (K39, K43, K57, K60, K61), and the app side (dsheets.new).

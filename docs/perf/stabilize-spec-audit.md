@@ -71,3 +71,7 @@ C8 and B3 now follow the ticket text. C8: the warm-up builds the index from form
 - **PR 466 round 4** found gaps in the code that implements this spec's C8 and K6 rewrite: the warm-up aborted with a tab that has no grid (N2), the text reader differed from `execfunction` on digit-only tab names, backslashes and accented tab names (N4, N5, N8), and history could not replay the rewrite of an unloaded tab (N1). All fixed in `b046b97` and `5f0cb23`; see `pr-466-review.md` sections 12 to 16.
 - Unit suite 66 files, 618 tests; `tsc` clean. Not browser-checked.
 
+## Update 2026-10-30
+
+PR 466 round 5 (reviewer's re-check at `ed0adf4`): the N1 fix is reworked (tabs that read the edited tab are loaded before a user-driven row/column edit, so undo and redo replay `data` cell patches) and K60 is fixed (a tab's size is recorded when it loads while the graph is complete). Not committed. Unit suite 68 files, 638 tests; `tsc` clean; one-window browser run. See `pr-466-review.md` section 17.
+

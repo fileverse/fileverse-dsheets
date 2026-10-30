@@ -47,6 +47,8 @@ Bench scenario numbers: S9–S15 are all used (S13 = Task 8).
 4. **G7 done** (Tasks 9–14, E1–E6; see the Status table for hashes). Plan deviations are in `stabilize-bench-results.md`: E2 uses an ignore list of scroll keys instead of per-component field lists, E3 keeps `generateAPIs` and gives the host a delegating stable handle, E5's one-update target is blocked by the `Sheet` offsets effect (G1 of the follow-ups spec), E4 leaves `getToolbarItem` deps unchanged.
 5. **Final review:** triage in `docs/perf/final-review.md`; K6, K7, K9 fixed and K11 closed on 2026-10-28 (committed in `9f614a5`); K8 accepted for P1; K17 fixed and the C8 spec changes in `7847262` (2026-10-29); PR 466 round 4 (N1 to N10) fixed in `b046b97`, `5f0cb23`, `24fabfc`. Unit suite 66 files, 618 tests; tsc clean. Still open: the whole-branch diff review, the browser targets of spec section 6, two-window QA, the app side.
 
+6. **PR 466 round 5** (2026-10-30, not committed): N1 twice and K60 fixed; unit suite 68 files, 638 tests; tsc clean. `docs/perf/pr-466-review.md` section 17.
+
 ## Global Constraints
 
 - **Never commit, stage or stash.** Leave changes in the working tree. The user commits after each group.

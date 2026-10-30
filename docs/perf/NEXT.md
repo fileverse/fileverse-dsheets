@@ -26,6 +26,8 @@ C8 spec changes (2026-10-29, committed in `7847262`): a wide formula joins a com
 
 PR 466 round 4 (2026-10-29, ten new comments N1 to N10 on `f0c7334`, all fixed): `b046b97` N2 (warm-up reads unloaded tabs' formulas from celldata, so `depGraphComplete` turns on with formulas on two tabs), N4 (digit-only tab names), N5 (backslash in strings), N8 (accented tab names); `5f0cb23` N1 (an unloaded tab's `celldata` is replaced as a whole array, so undo and redo replay it, plus the Yjs write), N9 (a refused insert or delete keeps the graph), N6 (cut-paste runs its pass); `24fabfc` N3 (hover predicate covers the drag states), N7 (pinned comment key follows position, size and text), N10 (compaction retries). Unit suite 66 files, 618 tests; `tsc` clean. Not browser-checked. Details: `docs/perf/pr-466-review.md` sections 12 to 16; limits K56 to K61 in `KNOWN-ISSUES.md`.
 
+PR 466 round 5 (2026-10-30, reviewer's re-check at `ed0adf4`, not committed): two blocking N1 comments and K60 fixed. Unloaded tabs that name the edited tab are loaded before a user-driven row/column edit (`structural-edit-prep.ts`, called in `setContextWithProduce`), so undo and redo replay the rewrite cell by cell and leave a collaborator's edits alone; K60: `recordLoadedSheetSize` in `initSheetData`. Unit suite 68 files, 638 tests; `tsc` clean. Browser-checked in one window with a simulated peer (see section 17); no two-window run. The warm-up reader and wide-walk comments are follow-up tickets, not in this PR. Details: `pr-466-review.md` section 17.
+
 | Order | Group | Task | What | Reviewer |
 |---|---|---|---|---|
 | done | G4 | 17 | B5 compares tab prefixes exactly and case-sensitively (spec says so; the shipped code is case-insensitive) | opus |

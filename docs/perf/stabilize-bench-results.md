@@ -1330,3 +1330,9 @@ Correctness fixes with repro tests, no timing (see `pr-466-review.md` section 15
 
 Unit suite at the end of round 4: 66 files, 618 tests pass; `tsc --noEmit` clean.
 
+### PR 466 round 5: N1 (two comments) and K60 (2026-10-30, not committed)
+
+Correctness fixes with repro tests, no timing (see `pr-466-review.md` section 17). `structural-edit-prep.test.ts`: 9 of 16 failed with the load step removed, 16 of 16 pass with it (peer-added cross-tab formula, peer-changed cross-tab formula, peer value edit, open-then-undo, each loaded and unloaded again at undo time). `formula-tab-load.test.ts`: 2 of 4 failed without `recordLoadedSheetSize` (size not recorded; flag cleared by a commit on the loaded tab), 4 of 4 pass. One-window browser run: undo and redo right in the engine and in Yjs, a simulated peer's cells kept. Cost of scanning unloaded tabs for formulas that name the edited tab, once per structural edit, not measured.
+
+Unit suite after round 5: 68 files, 638 tests pass; `tsc --noEmit` clean.
+

@@ -1816,6 +1816,25 @@ export function finishFullFormulaPass(
   formulaCache.depGraphComplete = true;
 }
 
+/**
+ * A tab that is loaded after the graph was completed keeps the flag on (K60,
+ * PR 466): loading builds the grid from `celldata` and does not change the
+ * tab's structure, and the text index already treated a whole-row or column
+ * reference to a tab with no grid as wide. Without a recorded size the first
+ * commit on the tab would take the full pass and clear the flag.
+ */
+export function recordLoadedSheetSize(
+  ctx: Context,
+  sheetId: string | undefined,
+  data: CellMatrix | null | undefined,
+) {
+  const { formulaCache } = ctx;
+  const size = sheetGridSize(data);
+  if (!formulaCache?.depGraphComplete || !sheetId || !size) return;
+  if (formulaCache.depGraphSheetSizes.has(sheetId)) return;
+  formulaCache.depGraphSheetSizes.set(sheetId, size);
+}
+
 /** False once the edited tab's grid has grown or shrunk since the graph was completed. */
 function depGraphCoversSheetSize(
   ctx: Context,

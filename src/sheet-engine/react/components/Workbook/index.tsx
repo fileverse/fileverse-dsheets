@@ -95,6 +95,7 @@ import {
 } from '@sheet-engine/core/modules/history-calc-chain';
 import { gridSizeChangesFromPatches } from '@sheet-engine/core/modules/history-grid-size';
 import { celldataArrayChanges } from '@sheet-engine/core/modules/history-celldata';
+import { loadTabsReadingSheet } from '@sheet-engine/core/modules/structural-edit-prep';
 import React, {
   useMemo,
   useState,
@@ -658,6 +659,13 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           if (options.noHistory) {
             return produce(ctx_, runWithDraft);
           }
+
+          // Tabs a row/column edit will rewrite are loaded first, outside the
+          // recorded change, so undo and redo replay the rewrite cell by cell.
+          ctx_ = loadTabsReadingSheet(
+            ctx_,
+            options.insertRowColOp?.id ?? options.deleteRowColOp?.id,
+          );
 
           const [result, patches, inversePatches] = produceWithPatches(
             ctx_,
