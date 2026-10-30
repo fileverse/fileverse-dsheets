@@ -73,6 +73,7 @@ import {
   handleFormulaInput,
   rangeDragColumn,
   rangeDragRow,
+  resetFormulaArrowSession,
 } from '../modules/formula';
 import {
   showLinkCard,
@@ -386,6 +387,7 @@ export function handleCellAreaMouseDown(
       target?.id === 'luckysheet-functionbox-cell';
     if (!clickedInEditor) {
       ctx.luckysheetCellUpdate = [];
+      resetFormulaArrowSession(ctx);
       globalCache.enteredEditByTyping = false;
       delete globalCache.pendingTypeOverCell;
     }
@@ -5637,6 +5639,7 @@ export function handleColFreezeHandleMouseDown(
   cancelActiveImgItem(ctx, globalCache);
 
   ctx.luckysheetCellUpdate = [];
+  resetFormulaArrowSession(ctx);
 
   // let mouse = mouseposition(event.pageX, event.pageY);
   const { scrollLeft } = ctx;
@@ -5693,6 +5696,7 @@ export function handleRowFreezeHandleMouseDown(
   cancelActiveImgItem(ctx, globalCache);
 
   ctx.luckysheetCellUpdate = [];
+  resetFormulaArrowSession(ctx);
 
   // let mouse = mouseposition(event.pageX, event.pageY);
   const { scrollLeft } = ctx;
