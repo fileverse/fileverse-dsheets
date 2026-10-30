@@ -662,10 +662,7 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
 
           // Tabs a row/column edit will rewrite are loaded first, outside the
           // recorded change, so undo and redo replay the rewrite cell by cell.
-          ctx_ = loadTabsReadingSheet(
-            ctx_,
-            options.insertRowColOp?.id ?? options.deleteRowColOp?.id,
-          );
+          ctx_ = loadTabsReadingSheet(ctx_, options);
 
           const [result, patches, inversePatches] = produceWithPatches(
             ctx_,
@@ -1611,27 +1608,35 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
           if (e.code === 'KeyR') {
             [st_index, ed_index] = getSelection()[0].row;
             const range = context.luckysheet_select_save;
-            setContextWithProduce((draftCtx) => {
-              deleteRowCol(draftCtx, {
-                type: 'row',
-                start: st_index,
-                end: ed_index,
-                id: context.currentSheetId,
-              });
-              draftCtx.luckysheet_select_save = range;
-            });
+            const deleteRowColOp: SetContextOptions['deleteRowColOp'] = {
+              type: 'row',
+              start: st_index,
+              end: ed_index,
+              id: context.currentSheetId,
+            };
+            setContextWithProduce(
+              (draftCtx) => {
+                deleteRowCol(draftCtx, deleteRowColOp);
+                draftCtx.luckysheet_select_save = range;
+              },
+              { deleteRowColOp },
+            );
           } else {
             [st_index, ed_index] = getSelection()[0].column;
             const range = context.luckysheet_select_save;
-            setContextWithProduce((draftCtx) => {
-              deleteRowCol(draftCtx, {
-                type: 'column',
-                start: st_index,
-                end: ed_index,
-                id: context.currentSheetId,
-              });
-              draftCtx.luckysheet_select_save = range;
-            });
+            const deleteRowColOp: SetContextOptions['deleteRowColOp'] = {
+              type: 'column',
+              start: st_index,
+              end: ed_index,
+              id: context.currentSheetId,
+            };
+            setContextWithProduce(
+              (draftCtx) => {
+                deleteRowCol(draftCtx, deleteRowColOp);
+                draftCtx.luckysheet_select_save = range;
+              },
+              { deleteRowColOp },
+            );
           }
 
           waitingForDelRow = false; // Reset the waiting state

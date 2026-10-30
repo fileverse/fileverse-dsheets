@@ -77,3 +77,5 @@ Two spec deviations from the audit are closed: C8 now builds its index from form
 - Unit suite 68 files, 638 tests; `tsc` clean.
 - **Section 2 now:** K18, K12, K10, K29, K28 (K17 done). New limits from this work are K56 to K61 in `KNOWN-ISSUES.md`.
 - **Still not done:** the whole-branch diff review, the browser targets of spec section 6, two-window QA (K39, K43, K57, K60, K61), and the app side (dsheets.new).
+
+- **Round 6** (re-check at `531d235`, not committed): tab-loading check shares the rewrite's test (`=C1-A!B5`); two keyboard deletes pass the op. K60 confirmed. Unit suite 68 files, 648 tests. `pr-466-review.md` section 18.

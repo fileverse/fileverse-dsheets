@@ -75,3 +75,4 @@ C8 and B3 now follow the ticket text. C8: the warm-up builds the index from form
 
 PR 466 round 5 (reviewer's re-check at `ed0adf4`): the N1 fix is reworked (tabs that read the edited tab are loaded before a user-driven row/column edit, so undo and redo replay `data` cell patches) and K60 is fixed (a tab's size is recorded when it loads while the graph is complete). Not committed. Unit suite 68 files, 638 tests; `tsc` clean; one-window browser run. See `pr-466-review.md` section 17.
 
+Round 6 (2026-10-30, not committed): the tab-loading check shares the rewrite's test and the two keyboard deletes pass `deleteRowColOp`. Unit suite 68 files, 648 tests. See `pr-466-review.md` section 18.

@@ -1336,3 +1336,6 @@ Correctness fixes with repro tests, no timing (see `pr-466-review.md` section 17
 
 Unit suite after round 5: 68 files, 638 tests pass; `tsc --noEmit` clean.
 
+### PR 466 round 6: N1 detection and keyboard deletes (2026-10-30, not committed)
+
+Correctness fixes (see `pr-466-review.md` section 18). `structural-edit-prep.test.ts`: 4 of 26 failed with the rewrite-based check switched off (`=C1-A!B5` and `=B2-A!B5`, found and undo), 26 of 26 pass. Unit suite 68 files, 648 tests pass; `tsc --noEmit` clean. No timing.

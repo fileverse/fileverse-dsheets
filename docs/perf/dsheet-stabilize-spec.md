@@ -28,7 +28,7 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 
 Former open finding, fixed (K1 and K2, `037248b`; gaps closed in `a7abbed`): formula text rewritten by a row insert was not carried to a second client in the same room. It bears on B5 and on part 2's removal of the rewrite. K6 (inactive or unhydrated tabs) was fixed in `9f614a5`; K8 is accepted for P1 (the part 2 case above). Details in `docs/perf/NEXT.md`.
 
-PR 466 review: all 18 first-round comments (`a7abbed`, `a5dcd88`, `291c398`) and the ten round-4 comments (`b046b97`, `5f0cb23`, `24fabfc`) are fixed; see `docs/perf/pr-466-review.md`. Round 5 (reviewer's re-check at `ed0adf4`: N1 twice, K60) is fixed and not committed, see section 17 of that file. Unit suite 68 files, 638 tests (2026-10-30). Open: the whole-branch diff review, the browser targets of section 6, two-window QA, and the app side.
+PR 466 review: all 18 first-round comments (`a7abbed`, `a5dcd88`, `291c398`) and the ten round-4 comments (`b046b97`, `5f0cb23`, `24fabfc`) are fixed; see `docs/perf/pr-466-review.md`. Rounds 5 and 6 (reviewer's re-checks at `ed0adf4` and `531d235`: N1, K60, tab-loading check, keyboard deletes) are fixed and not committed, see sections 17 and 18 of that file. Unit suite 68 files, 648 tests (2026-10-30). Open: the whole-branch diff review, the browser targets of section 6, two-window QA, and the app side.
 
 Line numbers refer to fileverse-dsheet origin/main 9411d95 (package 4.1.21), dsheets.new origin/staging db44e94 and ddocs.new origin/staging 62723dca, except where a line is marked `origin/main` for ddocs.new.
 

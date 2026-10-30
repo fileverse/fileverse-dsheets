@@ -254,6 +254,55 @@ const markCellRefError = (cell: Cell) => {
  * (PR 466 N1). The array is replaced as a whole instead, and only when an
  * entry changed. Only a formula that contains `!` can name another tab.
  */
+const rewrittenCelldataFormula = (
+  entry: any,
+  sheet: Sheet,
+  mode: 'add' | 'del',
+  rc: 'row' | 'col',
+  orient: 'lefttop' | 'rightbottom' | null,
+  stindex: number,
+  step: number,
+  editedTab: string,
+): string | null => {
+  const f = entry?.v?.f;
+  if (typeof f !== 'string' || !f.includes('!')) return null;
+  const newF = `=${functionStrChange(f, mode, rc, orient, stindex, step, {
+    editedTab,
+    formulaTab: sheet.name,
+  })}`;
+  return newF === f ? null : newF;
+};
+
+/**
+ * True when the edit would change a cross-tab formula in the tab's celldata.
+ * It is the test the rewrite below applies, so the tabs loaded before an edit
+ * are the ones it would rewrite (PR 466 N1: `=C1-A!B5` names tab A, but the
+ * sheet-name regex reads `C1-A`).
+ */
+export const celldataFormulaWouldChange = (
+  sheet: Sheet,
+  mode: 'add' | 'del',
+  rc: 'row' | 'col',
+  orient: 'lefttop' | 'rightbottom' | null,
+  stindex: number,
+  step: number,
+  editedTab: string,
+) =>
+  Array.isArray(sheet.celldata) &&
+  sheet.celldata.some(
+    (entry: any) =>
+      rewrittenCelldataFormula(
+        entry,
+        sheet,
+        mode,
+        rc,
+        orient,
+        stindex,
+        step,
+        editedTab,
+      ) != null,
+  );
+
 const rewriteFormulasInCelldata = (
   sheet: Sheet,
   mode: 'add' | 'del',
@@ -266,13 +315,17 @@ const rewriteFormulasInCelldata = (
   if (!Array.isArray(sheet.celldata)) return;
   let changed = false;
   const next = sheet.celldata.map((entry: any) => {
-    const f = entry?.v?.f;
-    if (typeof f !== 'string' || !f.includes('!')) return entry;
-    const newF = `=${functionStrChange(f, mode, rc, orient, stindex, step, {
+    const newF = rewrittenCelldataFormula(
+      entry,
+      sheet,
+      mode,
+      rc,
+      orient,
+      stindex,
+      step,
       editedTab,
-      formulaTab: sheet.name,
-    })}`;
-    if (newF === f) return entry;
+    );
+    if (newF == null) return entry;
     changed = true;
     const cell = { ...entry.v, f: newF };
     if (newF.includes('#REF!')) markCellRefError(cell);

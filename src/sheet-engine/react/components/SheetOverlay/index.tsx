@@ -631,6 +631,20 @@ const SheetOverlay: React.FC = () => {
       if (isDeleteByMinusShortcut) {
         const selection = context.luckysheet_select_save?.[0];
         if (selection?.column_select || selection?.row_select) {
+          const deleteRowColOp: SetContextOptions['deleteRowColOp'] =
+            selection.column_select
+              ? {
+                  type: 'column',
+                  start: selection.column[0],
+                  end: selection.column[1],
+                  id: context.currentSheetId,
+                }
+              : {
+                  type: 'row',
+                  start: selection.row[0],
+                  end: selection.row[1],
+                  id: context.currentSheetId,
+                };
           setContext((draftCtx) => {
             const sheetIndex = getSheetIndex(draftCtx, draftCtx.currentSheetId);
             const sheet =
@@ -640,12 +654,7 @@ const SheetOverlay: React.FC = () => {
             if (selection.column_select) {
               const deleteStart = selection.column[0];
               const deleteEnd = selection.column[1];
-              deleteRowCol(draftCtx, {
-                type: 'column',
-                start: deleteStart,
-                end: deleteEnd,
-                id: context.currentSheetId,
-              });
+              deleteRowCol(draftCtx, deleteRowColOp);
               const currentColCount = sheet.data[0]?.length ?? 0;
               if (currentColCount > 0) {
                 const targetCol = Math.min(deleteStart, currentColCount - 1);
@@ -663,12 +672,7 @@ const SheetOverlay: React.FC = () => {
             } else {
               const deleteStart = selection.row[0];
               const deleteEnd = selection.row[1];
-              deleteRowCol(draftCtx, {
-                type: 'row',
-                start: deleteStart,
-                end: deleteEnd,
-                id: context.currentSheetId,
-              });
+              deleteRowCol(draftCtx, deleteRowColOp);
               const currentRowCount = sheet.data.length;
               if (currentRowCount > 0) {
                 const targetRow = Math.min(deleteStart, currentRowCount - 1);
@@ -684,7 +688,7 @@ const SheetOverlay: React.FC = () => {
                 ];
               }
             }
-          });
+          }, { deleteRowColOp });
         } else if (selection) {
           const workbookRect =
             refs.workbookContainer.current?.getBoundingClientRect();

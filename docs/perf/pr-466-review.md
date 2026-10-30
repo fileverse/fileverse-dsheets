@@ -496,6 +496,7 @@ Notes.
 | 4 | N1, N9, N6 | `5f0cb23` |
 | 4 | N3, N7, N10 | `24fabfc` |
 | 5 | N1 (two comments), K60 | not committed (section 17) |
+| 6 | N1 detection (`=C1-A!B5`), two keyboard deletes | not committed (section 18) |
 
 Unit suite at the end: 66 files, 618 tests pass; `tsc --noEmit` clean. No browser check and no two-client check of any round-4 change or of the C8 spec changes.
 
@@ -523,3 +524,19 @@ Limits.
 - K60: the size is recorded at load from the dense grid built from `celldata`; a remote structural change that arrived while the tab was unloaded clears the flag as before.
 
 Commit for this round: not committed yet.
+
+## 18. Sixth round: reviewer's re-check at `531d235` (2026-10-30)
+
+The reviewer confirmed K60 (commit after a tab switch 0.08 to 0.3 ms against 12 to 17 ms at `ed0adf4`) and N1 for edits that carry the op, and left two comments that block merge, both the same N1 bug on two more paths. The host API path (K56) may stay as documented.
+
+| Comment | Status | Change | Tests |
+|---|---|---|---|
+| `structural-edit-prep.ts` check disagrees with the rewrite: `FORMULA_SHEET_REF_RE` lets `-` continue an unquoted name, so `=C1-A!B5` reads as tab `C1-A`, B is not loaded and the whole-array path runs (peer-added C3 deleted by undo; B!B1 stays `=C1-A!B7` after open then undo). `=B2-Inputs!B5` the same. | Fixed | `loadTabsReadingSheet` takes the op. A tab is loaded when the rewrite itself would change one of its `!` formulas (`celldataFormulaWouldChange` in `rowcol.ts`, which `rewriteFormulasInCelldata` now shares through `rewrittenCelldataFormula`), or when a formula names the edited tab (the old test, kept as a union because a delete can be split into segments). | `structural-edit-prep.test.ts` 26 tests (16 before). `=C1-A!B5` and `=B2-A!B5`, plus `=C1+A!B5` and `=C1-'A'!B5` as controls: found, rewritten, undo keeps a peer-added formula. 4 failed with the new check switched off, 26 pass. |
+| Two keyboard deletes call `setContextWithProduce` without `deleteRowColOp`: Ctrl+Option+- then R or C (`Workbook/index.tsx`) and Cmd+Option+- / Ctrl+Alt+- with whole rows or columns selected (`SheetOverlay/index.tsx`). | Fixed | Both pass `{ deleteRowColOp }`, the same object given to `deleteRowCol`, as the context menu does. Audit of every `insertRowCol` / `deleteRowCol` call in `src/sheet-engine/react`: all user-driven ones now carry the op; `Workbook/api.ts` is the remote `applyOp` path (`noHistory`). | 3 tests in `structural-edit-prep.test.ts` for a delete op (finds the tab, `=A!B9` and `=C1-A!B9` rewritten as cell patches, undo keeps a peer-added formula). The two handlers themselves have no test (no React renderer). |
+
+Unit suite 68 files, 648 tests; `tsc --noEmit` clean. Not committed. No browser run for this round.
+
+Limits and side effects.
+
+- The two keyboard deletes now carry `deleteRowColOp` in their history entry, so `emitOp` sends the structural op to peers the way the context menu delete does. Before, they sent only the patches. Not checked with two clients.
+- A formula the rewrite would not change (for example one that names the edited tab but sits above the edit) still loads the tab through the second test; this is the same cost as before.

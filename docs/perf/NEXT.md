@@ -28,6 +28,8 @@ PR 466 round 4 (2026-10-29, ten new comments N1 to N10 on `f0c7334`, all fixed):
 
 PR 466 round 5 (2026-10-30, reviewer's re-check at `ed0adf4`, not committed): two blocking N1 comments and K60 fixed. Unloaded tabs that name the edited tab are loaded before a user-driven row/column edit (`structural-edit-prep.ts`, called in `setContextWithProduce`), so undo and redo replay the rewrite cell by cell and leave a collaborator's edits alone; K60: `recordLoadedSheetSize` in `initSheetData`. Unit suite 68 files, 638 tests; `tsc` clean. Browser-checked in one window with a simulated peer (see section 17); no two-window run. The warm-up reader and wide-walk comments are follow-up tickets, not in this PR. Details: `pr-466-review.md` section 17.
 
+PR 466 round 6 (2026-10-30, re-check at `531d235`, not committed): the tab-loading check now asks the rewrite itself (`celldataFormulaWouldChange`), so `=C1-A!B5` and `=B2-Inputs!B5` are found; the two keyboard deletes pass `deleteRowColOp`. K60 and N1 for op-carrying edits confirmed by the reviewer. Unit suite 68 files, 648 tests; `tsc` clean; no browser run. Details: `pr-466-review.md` section 18.
+
 | Order | Group | Task | What | Reviewer |
 |---|---|---|---|---|
 | done | G4 | 17 | B5 compares tab prefixes exactly and case-sensitively (spec says so; the shipped code is case-insensitive) | opus |

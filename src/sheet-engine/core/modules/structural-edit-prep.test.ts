@@ -10,10 +10,10 @@ import { defaultContext } from '../context';
 import { loadLocale } from '../locale';
 import { dataToCelldata } from '../api/common';
 import { ensureSheetFlowdata } from '../api/sheet';
-import { insertRowCol } from './rowcol';
+import { deleteRowCol, insertRowCol } from './rowcol';
 import {
   loadTabsReadingSheet,
-  unloadedTabsReadingSheet,
+  unloadedTabsRewrittenBy,
 } from './structural-edit-prep';
 
 const produce = immerProduce as (base: any, recipe: (d: any) => void) => any;
@@ -25,6 +25,15 @@ beforeAll(() => loadLocale('en'));
 // loaded before the edit, so the rewrite is recorded as `data` cell patches.
 // Undo and redo then touch only those cells, whether the tab is unloaded,
 // loaded, or unloaded again by the time they run.
+
+const INSERT_OP = {
+  type: 'row' as const,
+  index: 2,
+  count: 2,
+  direction: 'lefttop' as const,
+  id: 's1',
+};
+const DELETE_OP = { type: 'row' as const, start: 2, end: 3, id: 's1' };
 
 const makeCtx = () => {
   const ctx: any = defaultContext({
@@ -70,7 +79,7 @@ const makeCtx = () => {
 
 /** What Workbook does for a user insert: load, then record the edit. */
 const insertWithPrep = (base: any) => {
-  const prepared = loadTabsReadingSheet(base, 's1');
+  const prepared = loadTabsReadingSheet(base, { insertRowColOp: INSERT_OP });
   const [after, patches, inverse] = (produceWithPatches as any)(
     prepared,
     (d: any) => {
@@ -132,19 +141,19 @@ const setCell = (ctx: any, r: number, c: number, v: any) =>
 describe('loading the tabs a structural edit rewrites', () => {
   it('finds only unloaded tabs that name the edited tab', () => {
     const base = makeCtx();
-    expect(unloadedTabsReadingSheet(base, 's1')).toEqual([1]);
+    expect(unloadedTabsRewrittenBy(base, { insertRowColOp: INSERT_OP })).toEqual([1]);
     const other = produce(base, (d: any) => {
       d.luckysheetfile[1].celldata = [{ r: 0, c: 0, v: { f: '=B2*2' } }];
     });
-    expect(unloadedTabsReadingSheet(other, 's1')).toEqual([]);
+    expect(unloadedTabsRewrittenBy(other, { insertRowColOp: INSERT_OP })).toEqual([]);
   });
 
   it('returns the same state when nothing needs loading', () => {
     const base = produce(makeCtx(), (d: any) => {
       d.luckysheetfile[1].celldata = [{ r: 0, c: 0, v: { f: '=B2*2' } }];
     });
-    expect(loadTabsReadingSheet(base, 's1')).toBe(base);
-    expect(loadTabsReadingSheet(base, undefined)).toBe(base);
+    expect(loadTabsReadingSheet(base, { insertRowColOp: INSERT_OP })).toBe(base);
+    expect(loadTabsReadingSheet(base, {})).toBe(base);
   });
 
   it('keeps the load out of the recorded patches', () => {
@@ -230,5 +239,86 @@ describe('undo after the tab was opened (the reviewer\'s repro)', () => {
     const undoneAgain = replay(redone, inverse);
     expect(f(undoneAgain, 0, 0)).toBe('=A!B5');
     expect(undoneAgain.luckysheetfile[1].data[5][5].v).toBe(7);
+  });
+});
+
+// PR 466 N1 (third review): the check that picks the tabs to load must be the
+// test the rewrite uses. FORMULA_SHEET_REF_RE lets `-` continue an unquoted
+// name, so it reads `=C1-A!B5` as a tab called `C1-A`.
+describe.each([
+  '=C1-A!B5',
+  '=B2-A!B5',
+  '=C1+A!B5',
+  "=C1-'A'!B5",
+])('formula %s on an unloaded tab', (text) => {
+  const withFormula = () =>
+    produce(makeCtx(), (d: any) => {
+      d.luckysheetfile[1].celldata = [{ r: 1, c: 1, v: { v: 1, f: text } }];
+    });
+
+  it('is found by the check', () => {
+    expect(
+      unloadedTabsRewrittenBy(withFormula(), { insertRowColOp: INSERT_OP }),
+    ).toEqual([1]);
+  });
+
+  it('is rewritten, and undo keeps a peer-added formula', () => {
+    const { after, patches, inverse } = insertWithPrep(withFormula());
+    expect(after.luckysheetfile[1].data[1][1].f).toBe(
+      text.replace('B5', 'B7'),
+    );
+    const peer = setCell(after, 2, 2, { v: 1, f: '=A!B9' });
+    const undone = replay(peer, inverse);
+    expect(undone.luckysheetfile[1].data[1][1].f).toBe(text);
+    expect(undone.luckysheetfile[1].data[2][2].f).toBe('=A!B9');
+    expect(replay(undone, patches).luckysheetfile[1].data[2][2].f).toBe(
+      '=A!B9',
+    );
+  });
+});
+
+describe('delete rows on A while B is unloaded', () => {
+  const del = (base: any) => {
+    const prepared = loadTabsReadingSheet(base, { deleteRowColOp: DELETE_OP });
+    return {
+      prepared,
+      ...(() => {
+        const [after, patches, inverse] = (produceWithPatches as any)(
+          prepared,
+          (d: any) => {
+            deleteRowCol(d, DELETE_OP);
+          },
+        );
+        return { after, patches, inverse };
+      })(),
+    };
+  };
+  const base = () =>
+    produce(makeCtx(), (d: any) => {
+      d.luckysheetfile[1].celldata = [
+        { r: 0, c: 0, v: { v: 1, f: '=A!B9' } },
+        { r: 1, c: 1, v: { v: 1, f: '=C1-A!B9' } },
+      ];
+    });
+
+  it('finds the tab for a delete op, with either spelling', () => {
+    expect(
+      unloadedTabsRewrittenBy(base(), { deleteRowColOp: DELETE_OP }),
+    ).toEqual([1]);
+  });
+
+  it('records cell patches, and undo keeps a peer-added formula', () => {
+    const { after, patches, inverse } = del(base());
+    expect(after.luckysheetfile[1].data[0][0].f).toBe('=A!B7');
+    expect(after.luckysheetfile[1].data[1][1].f).toBe('=C1-A!B7');
+    expect(
+      patches
+        .filter((p: any) => p.path[1] === 1)
+        .every((p: any) => p.path[2] === 'data' && p.path.length > 3),
+    ).toBe(true);
+    const peer = setCell(after, 2, 2, { v: 1, f: '=A!B9' });
+    const undone = replay(peer, inverse);
+    expect(undone.luckysheetfile[1].data[0][0].f).toBe('=A!B9');
+    expect(undone.luckysheetfile[1].data[2][2].f).toBe('=A!B9');
   });
 });
