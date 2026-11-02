@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import cn from 'classnames';
 
 const pulseAnimation = 'animate-[pulse_2s_ease-in-out_infinite]';
 
@@ -177,14 +178,21 @@ export const SkeletonGrid = () => {
   );
 };
 
-// Main skeleton loader component
+// Main skeleton loader component. It stays mounted under the workbook; once the
+// workbook shows, its pulse stops and it hides after the workbook's 1s fade-in.
 const SkeletonLoader = ({
   isReadOnly,
+  active = true,
 }: {
   isReadOnly: boolean | undefined;
+  active?: boolean;
 }) => (
   <div
-    className="dsheet-skeleton-loader w-full h-full flex flex-col"
+    className={cn(
+      'dsheet-skeleton-loader w-full h-full flex flex-col',
+      !active &&
+        'invisible [transition:visibility_0s_linear_1200ms] [&_*]:!animate-none',
+    )}
     data-testid="skeleton-loader"
   >
     <SkeletonToolbar isReadOnly={isReadOnly} />

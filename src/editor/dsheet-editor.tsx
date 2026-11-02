@@ -555,7 +555,7 @@ const EditorContent = ({
         data-testid="dsheet-editor-main"
       >
         <TransitionWrapper show={true}>
-          <SkeletonLoader isReadOnly={isReadOnly} />
+          <SkeletonLoader isReadOnly={isReadOnly} active={showSkeletonOnly} />
         </TransitionWrapper>
 
         <TransitionWrapper show={!loading && shouldRenderSheet} duration={1000}>
