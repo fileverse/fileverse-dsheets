@@ -39,6 +39,8 @@ export const useEditorSync = (
   onIndexedDbError?: (error: Error) => void,
   localStoreId?: string,
 ) => {
+  // Names the local database and labels snapshots; dsheetId stays the root key.
+  const storeId = localStoreId ?? dsheetId;
   // Match dDoc: one Y.Doc is owned by this provider for its entire lifetime.
   // A dsheetId change remounts EditorProvider at the component boundary.
   // The fingerprint tracker attaches here, before IndexedDB replay, the
@@ -172,12 +174,12 @@ export const useEditorSync = (
       // attaches, so attaching to a pre-filled doc appended the whole sheet on
       // every open. Merging afterwards stores only the parts IndexedDB did not
       // already have. Yjs merges commute, so the resulting doc is the same.
-      if (!isReadOnly && enableIndexeddbSync && dsheetId) {
+      if (!isReadOnly && enableIndexeddbSync && storeId) {
         // Held outside the try: a rebuild may have replaced persistenceRef by
         // the time this run fails, and the catch must only touch its own.
         let persistence: IndexeddbPersistence | null = null;
         try {
-          persistence = new IndexeddbPersistence(dsheetId, ydoc);
+          persistence = new IndexeddbPersistence(storeId, ydoc);
           // Capture before replay so SyncManager can identify this origin.
           persistenceRef.current = persistence;
           persistence.on('error', (error: unknown) => {
@@ -239,7 +241,7 @@ export const useEditorSync = (
     }
   }, [
     completeBootstrapContent,
-    dsheetId,
+    storeId,
     enableIndexeddbSync,
     isReadOnly,
     ydoc,
@@ -261,7 +263,7 @@ export const useEditorSync = (
    * new provider is destroyed and the call rejects.
    */
   const rebuildLocalStore = useCallback((): Promise<void> => {
-    if (isReadOnly || !enableIndexeddbSync || !dsheetId) {
+    if (isReadOnly || !enableIndexeddbSync || !storeId) {
       return Promise.resolve();
     }
     if (unmountedRef.current) {
@@ -303,7 +305,7 @@ export const useEditorSync = (
       let next: IndexeddbPersistence | null = null;
       try {
         next = await rebuildIndexedDbStore(
-          dsheetId,
+          storeId,
           ydoc,
           persistenceRef.current,
           (created) => {
@@ -339,7 +341,7 @@ export const useEditorSync = (
     return promise;
   }, [
     completeBootstrapContent,
-    dsheetId,
+    storeId,
     enableIndexeddbSync,
     isReadOnly,
     ydoc,
@@ -348,13 +350,13 @@ export const useEditorSync = (
   const getContentSnapshot = useCallback(
     () =>
       ydocRef.current
-        ? snapshotDsheetDocument(localStoreId as string, ydocRef.current)
+        ? snapshotDsheetDocument(storeId, ydocRef.current)
         : unavailableDsheetContentSnapshot(
-            localStoreId as string,
+            storeId,
             'unavailable',
             new Error('dSheet document is not ready'),
           ),
-    [localStoreId],
+    [storeId],
   );
 
   /**
@@ -382,12 +384,8 @@ export const useEditorSync = (
 
   const mergeContent = useCallback(
     (encodedState: string) =>
-      mergeDsheetContentIntoDocument(
-        localStoreId as string,
-        encodedState,
-        ydocRef.current,
-      ),
-    [localStoreId],
+      mergeDsheetContentIntoDocument(storeId, encodedState, ydocRef.current),
+    [storeId],
   );
 
   // Doc-lifecycle effect: this exact document is also owned by SyncManager.

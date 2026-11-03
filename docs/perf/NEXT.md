@@ -6,7 +6,7 @@ Written 2026-10-26, updated 2026-11-03 (PR 466 round 7: false `#CIRC!` after ins
 
 Done and committed: A1–A5, B1–B6, C1–C8 (with the C8 warm-up). Done and committed: G4 = Task 17 (`782aacd`, B5 case-sensitive) and Task 16 (`627aeda`, narrow only when `depGraphComplete`). Last commits before G4: `1587101` B3, `8b18a94` B5, `f2f0972` results doc. At G3 the unit suite had 39 files and 318 tests passing and `tsc` showed no errors in touched files. [Not re-run after the docs edits; they touch only `.md` files.]
 
-Package version on the branch: `4.1.24-stabilise-package-1` (`4465358`); the branch also carries the opaque-sheets merge (`9940d0c`) and the formula arrow-mode feature (#467, `21e2f4c`), which are not part of P1.
+Package version on the branch: `4.1.24-stabilise-package-2` (earlier `-1` at `4465358`). **`-2` has a store-name regression** (2026-11-03): `useEditorSync` opened y-indexeddb under the root key instead of `localStoreId` after merge `9940d0c`, which breaks opaque sheets in ddocs.new (shared database, empty-sheet publish block). Fixed in `use-editor-sync.tsx`, not committed; release a new prerelease and bump ddocs.new's pin. See `final-review.md`. The branch also carries the opaque-sheets merge (`9940d0c`) and the formula arrow-mode feature (#467, `21e2f4c`), which are not part of P1.
 
 Done and committed: G5 = Task 6 (`4d181b5`, `rebuildLocalStore`, D3 package side) and Task 7 (`4603bd9`, `appendDsheetUpdate`, D5 package side, S12); docs `0c55ba4`. Unit suite 43 files, 334 tests; `tsc` clean.
 
