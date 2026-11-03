@@ -73,6 +73,12 @@ C8 and B3 now follow the ticket text. C8: the warm-up builds the index from form
 
 ## Update 2026-10-30
 
-PR 466 round 5 (reviewer's re-check at `ed0adf4`): the N1 fix is reworked (tabs that read the edited tab are loaded before a user-driven row/column edit, so undo and redo replay `data` cell patches) and K60 is fixed (a tab's size is recorded when it loads while the graph is complete). Not committed. Unit suite 68 files, 638 tests; `tsc` clean; one-window browser run. See `pr-466-review.md` section 17.
+PR 466 round 5 (reviewer's re-check at `ed0adf4`): the N1 fix is reworked (tabs that read the edited tab are loaded before a user-driven row/column edit, so undo and redo replay `data` cell patches) and K60 is fixed (a tab's size is recorded when it loads while the graph is complete). Committed in `a35fdce`. Unit suite 68 files, 638 tests; `tsc` clean; one-window browser run. See `pr-466-review.md` section 17.
 
-Round 6 (2026-10-30, not committed): the tab-loading check shares the rewrite's test and the two keyboard deletes pass `deleteRowColOp`. Unit suite 68 files, 648 tests. See `pr-466-review.md` section 18.
+Round 6 (2026-10-30, committed in `83826dc`): the tab-loading check shares the rewrite's test and the two keyboard deletes pass `deleteRowColOp`. Unit suite 68 files, 648 tests. See `pr-466-review.md` section 18.
+
+Section 1 item 9 (app side): implemented on both consumer branches on 2026-10-30. dsheets.new covers D0 to D6; ddocs.new covers its owner dSheet editor. Neither has the section 6 browser measurements; ddocs.new recorded Node numbers for D5 steps 3 and 4. See `NEXT.md` "App-side work".
+
+## Update 2026-11-03
+
+PR 466 round 7 (reviewer's re-check at `4465358`, not committed): section 2 item 1 (C8 index) and the "When the flag turns false" rule are tightened. A row or column insert or delete now resets the dependency indexes (edges and flag), not just the flag, so a moved formula no longer keeps edges under the cells it left; before, a formula could show `#CIRC!` with no cycle and the value was saved to Yjs. Cell shift had the same bug and is fixed in the same push; sort and drag-move were not probed (K62). See `pr-466-review.md` section 19.

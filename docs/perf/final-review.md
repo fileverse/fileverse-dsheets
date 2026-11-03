@@ -73,9 +73,16 @@ Two spec deviations from the audit are closed: C8 now builds its index from form
 
 ## Update 2026-10-30
 
-- **PR 466 round 5** (reviewer's re-check at `ed0adf4`, not committed): the two blocking N1 comments and K60 are fixed (`pr-466-review.md` section 17). Two non-blocking comments go to follow-up tickets, not this PR: the warm-up text reader re-indexes `celldata` per slice (`formula-warmup.ts`), and the wide-formula walk cost (`formula-transitive-deps.ts`). K56 narrowed to the host API path; K60 closed.
+- **PR 466 round 5** (reviewer's re-check at `ed0adf4`, committed in `a35fdce`): the two blocking N1 comments and K60 are fixed (`pr-466-review.md` section 17). Two non-blocking comments go to follow-up tickets, not this PR: the warm-up text reader re-indexes `celldata` per slice (`formula-warmup.ts`), and the wide-formula walk cost (`formula-transitive-deps.ts`). K56 narrowed to the host API path; K60 closed.
 - Unit suite 68 files, 638 tests; `tsc` clean.
 - **Section 2 now:** K18, K12, K10, K29, K28 (K17 done). New limits from this work are K56 to K61 in `KNOWN-ISSUES.md`.
-- **Still not done:** the whole-branch diff review, the browser targets of spec section 6, two-window QA (K39, K43, K57, K60, K61), and the app side (dsheets.new).
+- **Still not done:** the whole-branch diff review, the browser targets of spec section 6, two-window QA (K39, K43, K57, K60, K61), and the browser/two-window QA of the app side (both consumer branches are implemented, see `NEXT.md` "App-side work").
 
-- **Round 6** (re-check at `531d235`, not committed): tab-loading check shares the rewrite's test (`=C1-A!B5`); two keyboard deletes pass the op. K60 confirmed. Unit suite 68 files, 648 tests. `pr-466-review.md` section 18.
+- **Round 6** (re-check at `531d235`, committed in `83826dc`): tab-loading check shares the rewrite's test (`=C1-A!B5`); two keyboard deletes pass the op. K60 confirmed. Unit suite 68 files, 648 tests. `pr-466-review.md` section 18.
+
+## Update 2026-11-03
+
+- **PR 466 round 7** (reviewer's re-check at `4465358`, not committed): both N1 gaps confirmed closed; one new blocking comment fixed: a false `#CIRC!` after a row or column insert or delete (stale dependency edges; `rowcol.ts` now resets the index instead of only clearing the flag). `pr-466-review.md` section 19.
+- **Cell shift fixed in the same push** (`cell-shift.ts`, 5 tests, all failed before): the same stale-edge bug, reproduced in all four shift directions. **K62 open:** sort and drag-move (not probed). **K63 added:** cell shift does not move calc chain entries (older, not changed). Tell the reviewer about the second fix; K62 is recommended before merge because a false `#CIRC!` is written for everyone.
+- The 3 failing tests in `use-editor-sync.test.ts` (`localStoreId`, from the opaque-sheets merge) fail with and without this work; they need an owner.
+- Not done: the whole-branch diff review, the browser targets of spec section 6, two-window QA (now also K62, and the new cases in checklist 1.24), and the packages' consumer QA.

@@ -1,10 +1,12 @@
 # P1 Stabilise: where we are and what to do next
 
-Written 2026-10-26, updated 2026-10-29 (after the C8 spec changes and PR 466 round 4). Branch `maitra/stabilize-package`. Plan: `docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md` (Status and Next sections at the top). Spec: `docs/perf/dsheet-stabilize-spec.md` (Implementation status table near the top). Numbers: `docs/perf/stabilize-bench-results.md`. Triage of open findings and what is left: `docs/perf/final-review.md`.
+Written 2026-10-26, updated 2026-11-03 (PR 466 round 7: false `#CIRC!` after insert/delete and cell shift fixed, not committed; K62, K63 open); 2026-10-30 (PR 466 rounds 5 and 6 committed; both consumer apps adopted the package, see "App-side work"). Branch `maitra/stabilize-package`. Plan: `docs/superpowers/plans/2026-10-26-p1-stabilise-remaining.md` (Status and Next sections at the top). Spec: `docs/perf/dsheet-stabilize-spec.md` (Implementation status table near the top). Numbers: `docs/perf/stabilize-bench-results.md`. Triage of open findings and what is left: `docs/perf/final-review.md`.
 
 ## State
 
 Done and committed: A1–A5, B1–B6, C1–C8 (with the C8 warm-up). Done and committed: G4 = Task 17 (`782aacd`, B5 case-sensitive) and Task 16 (`627aeda`, narrow only when `depGraphComplete`). Last commits before G4: `1587101` B3, `8b18a94` B5, `f2f0972` results doc. At G3 the unit suite had 39 files and 318 tests passing and `tsc` showed no errors in touched files. [Not re-run after the docs edits; they touch only `.md` files.]
+
+Package version on the branch: `4.1.24-stabilise-package-1` (`4465358`); the branch also carries the opaque-sheets merge (`9940d0c`) and the formula arrow-mode feature (#467, `21e2f4c`), which are not part of P1.
 
 Done and committed: G5 = Task 6 (`4d181b5`, `rebuildLocalStore`, D3 package side) and Task 7 (`4603bd9`, `appendDsheetUpdate`, D5 package side, S12); docs `0c55ba4`. Unit suite 43 files, 334 tests; `tsc` clean.
 
@@ -26,9 +28,11 @@ C8 spec changes (2026-10-29, committed in `7847262`): a wide formula joins a com
 
 PR 466 round 4 (2026-10-29, ten new comments N1 to N10 on `f0c7334`, all fixed): `b046b97` N2 (warm-up reads unloaded tabs' formulas from celldata, so `depGraphComplete` turns on with formulas on two tabs), N4 (digit-only tab names), N5 (backslash in strings), N8 (accented tab names); `5f0cb23` N1 (an unloaded tab's `celldata` is replaced as a whole array, so undo and redo replay it, plus the Yjs write), N9 (a refused insert or delete keeps the graph), N6 (cut-paste runs its pass); `24fabfc` N3 (hover predicate covers the drag states), N7 (pinned comment key follows position, size and text), N10 (compaction retries). Unit suite 66 files, 618 tests; `tsc` clean. Not browser-checked. Details: `docs/perf/pr-466-review.md` sections 12 to 16; limits K56 to K61 in `KNOWN-ISSUES.md`.
 
-PR 466 round 5 (2026-10-30, reviewer's re-check at `ed0adf4`, not committed): two blocking N1 comments and K60 fixed. Unloaded tabs that name the edited tab are loaded before a user-driven row/column edit (`structural-edit-prep.ts`, called in `setContextWithProduce`), so undo and redo replay the rewrite cell by cell and leave a collaborator's edits alone; K60: `recordLoadedSheetSize` in `initSheetData`. Unit suite 68 files, 638 tests; `tsc` clean. Browser-checked in one window with a simulated peer (see section 17); no two-window run. The warm-up reader and wide-walk comments are follow-up tickets, not in this PR. Details: `pr-466-review.md` section 17.
+PR 466 round 5 (2026-10-30, reviewer's re-check at `ed0adf4`, committed in `a35fdce`): two blocking N1 comments and K60 fixed. Unloaded tabs that name the edited tab are loaded before a user-driven row/column edit (`structural-edit-prep.ts`, called in `setContextWithProduce`), so undo and redo replay the rewrite cell by cell and leave a collaborator's edits alone; K60: `recordLoadedSheetSize` in `initSheetData`. Unit suite 68 files, 638 tests; `tsc` clean. Browser-checked in one window with a simulated peer (see section 17); no two-window run. The warm-up reader and wide-walk comments are follow-up tickets, not in this PR. Details: `pr-466-review.md` section 17.
 
-PR 466 round 6 (2026-10-30, re-check at `531d235`, not committed): the tab-loading check now asks the rewrite itself (`celldataFormulaWouldChange`), so `=C1-A!B5` and `=B2-Inputs!B5` are found; the two keyboard deletes pass `deleteRowColOp`. K60 and N1 for op-carrying edits confirmed by the reviewer. Unit suite 68 files, 648 tests; `tsc` clean; no browser run. Details: `pr-466-review.md` section 18.
+PR 466 round 6 (2026-10-30, re-check at `531d235`, committed in `83826dc`): the tab-loading check now asks the rewrite itself (`celldataFormulaWouldChange`), so `=C1-A!B5` and `=B2-Inputs!B5` are found; the two keyboard deletes pass `deleteRowColOp`. K60 and N1 for op-carrying edits confirmed by the reviewer. Unit suite 68 files, 648 tests; `tsc` clean; no browser run. Details: `pr-466-review.md` section 18.
+
+PR 466 round 7 (2026-11-03, reviewer's re-check at `4465358`, not committed): both N1 gaps confirmed closed. One new blocking comment: after a row or column insert or delete a formula could show `#CIRC!` with no cycle, and it was saved to Yjs. Cause: moved formulas kept their dependency edges under the cells they left, and the cycle check walks them. Fix: `insertRowCol` and `deleteRowCol` call `resetDependencyIndexes()` instead of `markDepGraphIncomplete()` (`rowcol.ts`). Tests: `rowcol-dep-graph.test.ts` (8; 6 failed before). Unit suite 73 files, 782 tests, 3 failing and unrelated (`use-editor-sync.test.ts`, `localStoreId`; they also fail with the fix reverted); `tsc` clean. The same bug was in cell shift; fixed in the same push (`cell-shift.ts`, `cell-shift-dep-graph.test.ts`, 5 tests, all failed before; unit suite then 74 files, 787 tests, the same 3 unrelated failures). Sort and drag-move are not probed (K62); cell shift also does not move calc chain entries (K63, older, not changed). Details: `pr-466-review.md` section 19.
 
 | Order | Group | Task | What | Reviewer |
 |---|---|---|---|---|
@@ -85,7 +89,14 @@ The complete list with evidence labels, locations and next steps is `docs/perf/K
 
 ## App-side work (outside this repo)
 
-D0–D2, D4 and D6 live in dsheets.new and are not part of this plan. Tasks 6 and 7 only add the package APIs (`rebuildLocalStore`, `appendDsheetUpdate`) that D3 and D5 call.
+Both consumers have adopted `4.1.24-stabilise-package-1` on their own branches (2026-10-30). Their plans, decisions, numbers and open items are in each repo's `docs/dsheet-stabilize-consumer-spec.md`. Tasks 6 and 7 only add the package APIs (`rebuildLocalStore`, `appendDsheetUpdate`) that D3 and D5 call.
+
+| Consumer | Branch | State |
+|---|---|---|
+| dsheets.new | `maitra/stabilise-package` | D0 to D6 implemented, one commit each (D0 `9be847fb` to D5 step 3 `f927626e`), unit tests in `tests/unit`, 213 passing when written. No before/after measurements were taken. Browser: core path, clear-all, collaborator edit, rtc check and an old-sheet open tried by hand. |
+| ddocs.new | `maitra/stabilise-dsheet-package` | Owner/collab dSheet editor only (ddoc paths untouched): version bump and D4 `ded2753e`, D1 `fc32caba`, D2 `371ed64a`, D6 part 1 `2b79b4b0`, D5 step 2 `7d510aa8`, step 3 `af96eb80`, D3 `941d12ed` and pre-mount heal `c6239870`, D5 step 4 (decode memo) `ac68f5bb`, review follow-ups `9be233bc` and `18c46fff`. Vitest specs in `utils/__tests__`. Before/after numbers for D5 steps 3 and 4 are in its spec. Deferred on purpose: D0 (persist stays on `onContentUpdate`), D6 part 2 (live-fingerprint shortcut), a metadata-only read in the collab provider. |
+
+What the consumers needed beyond the package (so a third host can plan for it): a fingerprint-aware published marker with a bare-vector fallback (no republish on upgrade), a row field recording the merged on-chain content CID, a dirty check that returns dirty, clean or unknown, a pre-publish merge that refuses an undecodable or failed remote, and an IndexedDB error callback that rebuilds through `rebuildLocalStore` (the handle only exists once the Workbook has mounted, which is after a failed init is reported).
 
 ## Regression test list
 

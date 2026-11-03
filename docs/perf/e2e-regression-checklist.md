@@ -319,6 +319,18 @@ Use a workbook with formulas on two tabs (`A` and `B`, with `B` holding `=A!B5`)
 
 ---
 
+### 1.24 False `#CIRC!` after insert, delete and cell shift [PR 466 round 7, K62, K63]
+
+Not run in a browser yet. Use a fresh sheet, one tab.
+
+1. B1 `5`, C1 `=E1`, D1 `=SUM(B1:C3)`. Insert one column to the left of C (context menu). D1 reads `=F1` and E1 reads `=SUM(B1:D3)`. Type `7` in B1 → E1 shows `7` and D1 shows `0`, no `#CIRC!`. Reload → the same values. [insert]
+2. B1 `5`, D1 `=F1`, E1 `=SUM(B1:D3)`. Delete column C. Wait about 3 seconds (the warm-up), then type `7` in B1 → D1 shows `7` and C1 shows `0`, no `#CIRC!`. [delete]
+3. Repeat 1 and 2 with a row insert and a row delete (formulas down column B). [rows]
+4. Repeat 1 and 2 with a second window in the same room → the second window shows the same values, never `#CIRC!`. [collaboration: the false value was saved to Yjs]
+5. After 1, press Ctrl+Z (undo the insert) and type `7` in B1 again → C1 shows `0` and D1 shows `7`. [undo]
+6. B1 `5`, C1 `=E1`. Right-click C1, insert cells and shift right. Type `=SUM(B1:C1)` in E1 → `5`, no `#CIRC!`. Repeat with shift down, and with delete cells shift left and up. [cell shift, K62] Known and not fixed: the moved formula (D1 `=E1`) stays `0` instead of following E1 (K63). Not probed: sort a range of formulas, or drag-move a formula, and then type a SUM over the vacated cell (K62).
+7. Try to insert into a read-only column, then edit an unrelated cell → refused, and the edit is instant. [N9, unchanged]
+
 ## 2. Owner ↔ Collaborator
 
 Notation: **Owner** = owner window, **Collaborator** = collaborator window. After each case wait 2 s, then compare both windows; where it matters, reload the collaborator and compare again.

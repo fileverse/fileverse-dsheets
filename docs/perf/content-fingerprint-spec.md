@@ -248,6 +248,6 @@ wait for a cycle, expect a publish.
    `Y.mergeUpdates` (T9 covers that) or by another route? It already decodes the
    body; can it return
    `fingerprintFromUpdate` from that pass instead of decoding twice?
-2. ddocs.new: does its sheet publish path also compare state vectors? Not traced.
+2. *(Answered 2026-10-30: yes. ddocs.new compared `contentStateVector` with `lastPublishedSnapshot.stateVector`; it now stores and compares the fingerprint for the owner dSheet editor and keeps comparing a bare-vector marker by vector until the next publish or open-time hydration replaces it.)* ddocs.new: does its sheet publish path also compare state vectors?
 3. Should the debug `[sv]` logger in `editor-workbook.tsx` be kept behind a flag
    for QA, or removed before this lands?

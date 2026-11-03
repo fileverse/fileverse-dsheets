@@ -24,11 +24,11 @@ Status: accepted by the team, 2026-10-23. Revised 2026-10-26 (teammate update: A
 | E1–E6 | done (E2 and E5 partly meet their targets, see the results doc) | 8b639d1, 756e442, e081c39, 96d9ab0 | Plan Tasks 9–14. E1 `hover-tracker`, E2 selector store with a scroll ignore list, E3 stable handle, E4 paste listener bound once, E5 shown-comment key, E6 `innerText` guards. |
 | Audit fixes (2026-10-27) | done | 750bb33 | `DSheetContentSnapshot.fingerprint` (A1/D5); A4 undo/redo keeps a collaborator's calcChain entries and the calcChain hook never deletes a key whose cell still holds a formula; C8 walk seeded with the very-large-range and named-range formulas; C8 flag turned off by HTML-table paste and cut-paste; C2 cache key includes today; legacy `onContentUpdate` per-edit flush restored. See `docs/perf/stabilize-spec-audit.md`. |
 | `fingerprintFromUpdate` (2026-10-27 fix) | done | d96a8bd | Now builds a temporary document and scans its delete set, as A1 says; the `Y.decodeUpdate` version undercounted GC structs in raw rows (test T9b: 2 against 22). S5: 34.9 ms to 60.8 ms. See results doc. |
-| D0–D2, D4, D6 (app side, dsheets.new) | not in this repo | | See NEXT.md. |
+| D0–D6 (app side) | not in this repo; implemented on both consumer branches (2026-10-30) | | dsheets.new D0 to D6; ddocs.new the owner dSheet editor (D1 to D5, D6 part 1). See NEXT.md "App-side work" and each repo's `docs/dsheet-stabilize-consumer-spec.md`. |
 
 Former open finding, fixed (K1 and K2, `037248b`; gaps closed in `a7abbed`): formula text rewritten by a row insert was not carried to a second client in the same room. It bears on B5 and on part 2's removal of the rewrite. K6 (inactive or unhydrated tabs) was fixed in `9f614a5`; K8 is accepted for P1 (the part 2 case above). Details in `docs/perf/NEXT.md`.
 
-PR 466 review: all 18 first-round comments (`a7abbed`, `a5dcd88`, `291c398`) and the ten round-4 comments (`b046b97`, `5f0cb23`, `24fabfc`) are fixed; see `docs/perf/pr-466-review.md`. Rounds 5 and 6 (reviewer's re-checks at `ed0adf4` and `531d235`: N1, K60, tab-loading check, keyboard deletes) are fixed and not committed, see sections 17 and 18 of that file. Unit suite 68 files, 648 tests (2026-10-30). Open: the whole-branch diff review, the browser targets of section 6, two-window QA, and the app side.
+PR 466 review: all 18 first-round comments (`a7abbed`, `a5dcd88`, `291c398`) and the ten round-4 comments (`b046b97`, `5f0cb23`, `24fabfc`) are fixed; see `docs/perf/pr-466-review.md`. Rounds 5 and 6 (reviewer's re-checks at `ed0adf4` and `531d235`: N1, K60, tab-loading check, keyboard deletes) are fixed and committed (`a35fdce`, `83826dc`), see sections 17 and 18 of that file. Round 7 (2026-11-03, reviewer's re-check at `4465358`): a row or column insert or delete now resets the formula dependency indexes instead of only clearing `depGraphComplete`, because moved formulas kept edges under the cells they left and the cycle check showed a false `#CIRC!` that was saved to Yjs (section 19 of that file; the same bug in cell shift is K62). Unit suite 68 files, 648 tests (2026-10-30). Open: the whole-branch diff review, the browser targets of section 6, two-window QA, and the app side.
 
 Line numbers refer to fileverse-dsheet origin/main 9411d95 (package 4.1.21), dsheets.new origin/staging db44e94 and ddocs.new origin/staging 62723dca, except where a line is marked `origin/main` for ddocs.new.
 
@@ -306,7 +306,7 @@ The same misses are an existing bug. Right after open, while the graph is empty,
 - Checked against what `execfunction` records: same-tab cells and ranges, quoted tab names and named ranges give the same edges. Tab names match exactly, case-sensitive.
 - **Rejected:** a forced pass on open. It would re-run network and time-dependent formulas (data blocks, prices, `NOW`) on every open and write their results.
 
-**When the flag turns false.** Whenever the indexes are reset (mount, A4, structural changes) and whenever a formula enters the chain locally without going through `execfunction`:
+**When the flag turns false.** Whenever the indexes are reset (mount, A4, and a row or column insert or delete, which move formulas without evaluating them, so their edges must not stay under the cells they left: PR 466 round 7) and whenever a formula enters the chain locally without going through `execfunction`:
 
 - an HTML-table paste (formula cells are written raw and never added to the chain, `paste-internals.ts:519`);
 - a cut-paste, which moves formula cells without updating the chain or evaluating them (an existing bug).
@@ -403,7 +403,7 @@ Changes, keeping the cycle's steps, order and gates:
 
 **Result:** when the sheet has changes and the on-chain body is unchanged, a publish costs one IndexedDB read, gzip and encryption. When the remote changed, it adds the download and one diff.
 
-ddocs.new: its sheet publish path was not traced in the deep dive and is not changed here. Checking it for the same repeated passes is a separate item.
+ddocs.new: its sheet publish path was not traced in the deep dive. It was traced and adopted afterwards (2026-10-30): it had the same vector-only dirty check and one decode per check per publish cycle; see `docs/dsheet-stabilize-consumer-spec.md` in ddocs.new (D5 step 4 measured 9 decodes per first-publish cycle, 3 per cycle for a published sheet, cut to 3 and 2 by a one-entry memo).
 
 #### D6. Clear-only sessions are published
 
@@ -424,7 +424,7 @@ Today `hasUnpublishedSheetChanges` (`utils/dsheet-body.ts:117`) calls a sheet di
 - **Upgrade.** Values stored by older versions are bare state vectors. A bare vector is compared with the body's vector, as today, until the open-time load replaces it with the on-chain body's fingerprint. No sheet publishes again only because of the upgrade. Until a sheet is opened once, a clear-only change made before the upgrade stays unpublished, as it would today.
   - **Rejected:** replacing a matching bare vector with the local body's fingerprint, which marks such a clear as published.
 - D4's `already_confirmed` case stores nothing.
-- **Not covered:** ddocs.new has its own vector-only checks (`components/dsheet/dsheet-page-content.tsx:832-836`, `utils/workspace-file-publish-adapter.ts:628-633`) and edits some sheets with no y-indexeddb at all (viewer-edit invitees), where only the live fingerprint works. A separate item.
+- **Not covered:** ddocs.new has its own vector-only checks (`components/dsheet/dsheet-page-content.tsx:832-836`, `utils/workspace-file-publish-adapter.ts:628-633`) and edits some sheets with no y-indexeddb at all (viewer-edit invitees), where only the live fingerprint works. Adopted in ddocs.new for the owner dSheet editor (fingerprint marker with a bare-vector fallback); viewer-edit invitees have no y-indexeddb and no publish path there, so they needed nothing.
 
 **Rejected:** a change counter kept in Dexie. It isn't derived from the document, needs a list of origins to ignore, and loses a change whose counter write doesn't land before the page closes.
 
@@ -505,7 +505,7 @@ ddocs.new gets it with the package version bump.
 | `DSheetContentSnapshot.fingerprint` (from `readDsheetContent` and `mergeDsheetContent`) | new (A1) | additive |
 | Format gate on `meta.format` | new (F) | no effect on today's sheets |
 
-**Release:** package minor version. Then dsheets.new adopts it with D0-D6. ddocs.new bumps the version with no code change (A2-A5, B, C and F apply automatically). No Yjs data change, so mixed-version sessions work; clients still on the old version keep the data-loss bugs that B1 and B2 fix until they update.
+**Release:** package minor version. Then dsheets.new adopts it with D0-D6. ddocs.new bumps the version (A2-A5, B, C and F apply automatically) and, for its dSheet publish path, needs the app-side changes too (marker, dirty check, pre-publish merge, IndexedDB heal); its plan is in its own `docs/dsheet-stabilize-consumer-spec.md`. No Yjs data change, so mixed-version sessions work; clients still on the old version keep the data-loss bugs that B1 and B2 fix until they update.
 
 ## 6. Verification
 

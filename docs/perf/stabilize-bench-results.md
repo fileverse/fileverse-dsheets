@@ -1339,3 +1339,32 @@ Unit suite after round 5: 68 files, 638 tests pass; `tsc --noEmit` clean.
 ### PR 466 round 6: N1 detection and keyboard deletes (2026-10-30, not committed)
 
 Correctness fixes (see `pr-466-review.md` section 18). `structural-edit-prep.test.ts`: 4 of 26 failed with the rewrite-based check switched off (`=C1-A!B5` and `=B2-A!B5`, found and undo), 26 of 26 pass. Unit suite 68 files, 648 tests pass; `tsc --noEmit` clean. No timing.
+
+## Consumer side: ddocs.new (2026-10-30)
+
+Numbers for the changes made in the ddocs.new owner dSheet editor are kept with their plan in that repo's `docs/dsheet-stabilize-consumer-spec.md`; the two perf items are summarised here so this file stays the index. Method: Node (vitest), the real old and new functions on the same bodies, medians; no browser, no real IndexedDB.
+
+| Change | Sheet | Before | After |
+|---|---|---|---|
+| D5 step 3: pre-publish merge cuts and appends only the missing delta (`computeRemoteDelta`) instead of two temporary documents and a full-copy row | 100 rows x 10 cols, 100 sessions of history (209 KB body) | 46.0 ms, a full copy (about 209 KB) written | 19.6 ms, 312 B written |
+| | 4000 x 25, 100k cells (5.3 MB body) | 903 ms, about 5.3 MB written | 744 ms, 49 B written |
+| D5 step 4: one-entry memo on the three whole-body checks, decodes per dirty publish cycle (published / never published) | 100 rows, history | 3 decodes, 37.0 ms / 9 decodes, 115.1 ms | 2 decodes, 28.5 ms / 3 decodes, 36.9 ms |
+| | 100k cells | 3 decodes, 767 ms / 9 decodes, 2,340 ms | 2 decodes, 502 ms / 3 decodes, 789 ms |
+
+Limits: the step 3 "before" is a lower bound (the package's `mergeDsheetContent` also reads every row into a document before it writes, which the script did not run); IndexedDB write latency and the body read at the start of a cycle were not measured. D1, D2, D4, D6 part 1, D5 step 2 and D3 are correctness or skip-work changes recorded with failing and passing test runs, not timings; the saving of D5 step 2 (no IPFS download, decrypt or merge while the head is unchanged) was not timed.
+
+### PR 466 round 7: false `#CIRC!` after row or column insert or delete (2026-11-03, not committed)
+
+Correctness fix, so the record is the failing and passing run of the reviewer's repros (`rowcol-dep-graph.test.ts`), not a timing.
+
+| Case (one tab, type 7 in B1 after the edit) | Before | After |
+|---|---|---|
+| insert 1 column left of C (B1 `5`, C1 `=E1`, D1 `=SUM(B1:C3)`), no warm-up | E1 `#CIRC!` (want 7) | 7 |
+| same, after the warm-up | E1 `#CIRC!` | 7 |
+| delete column C (B1 `5`, D1 `=F1`, E1 `=SUM(B1:D3)`), no warm-up | already correct (D1 7, C1 0) | 7 and 0 |
+| same, after the warm-up | C1 and D1 `#CIRC!` (want 0 and 7) | 7 and 0 |
+| insert a row (B1 `5`, B2 `=B4`, B3 `=SUM(B1:B2)`), with and without the warm-up | `#CIRC!` (2 cases) | 7 (2 cases) |
+| edges in `depsByCell` right after an insert | 2 | 0 |
+| a refused insert (read-only column) | edges and flag untouched | edges and flag untouched |
+
+Run: 6 failed / 2 passed before, 8 passed after. Cell shift (same bug, `cell-shift.ts`, fixed in the same push): `cell-shift-dep-graph.test.ts`, 5 tests, all 5 failed before (`#CIRC!` after insert right, insert down, delete left, delete up; 1 leftover edge) and pass after. Unit suite after: 74 files, 787 tests, 3 failing in `use-editor-sync.test.ts` that also fail with the fix reverted. Not measured: the cost of the warm-up re-reading every formula after each structural edit (it already restarted after each one), and undo of an insert (the reviewer found it correct; not covered by the new tests).

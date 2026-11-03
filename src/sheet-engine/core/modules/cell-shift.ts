@@ -43,8 +43,11 @@ const shiftCells = (
     rect.c2,
   );
   mutate(data, totalRows, totalCols);
-  // Formula cells may have moved without being evaluated (C8).
-  ctx.formulaCache.markDepGraphIncomplete();
+  // Formula cells moved without being evaluated (C8), so the index still holds
+  // their edges under the cells they left, and the cycle check would follow
+  // them and report #CIRC! with no cycle (PR 466 round 7, K62). Drop the index,
+  // not just the flag; the next full pass or the warm-up rebuilds it.
+  ctx.formulaCache.resetDependencyIndexes();
   emitCelldataRangeDiffToYdoc(
     ctx,
     ctx.currentSheetId,

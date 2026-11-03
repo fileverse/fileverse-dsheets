@@ -486,9 +486,13 @@ export function insertRowCol(
     throw new Error('maxExceeded');
   }
 
-  // Formulas shift and are rewritten without being evaluated (C8). Only once
-  // the edit is certain: a refused insert changes nothing (PR 466 N9).
-  ctx.formulaCache.markDepGraphIncomplete();
+  // Formulas shift and are rewritten without being evaluated (C8), so the
+  // edges the index holds are keyed by the cells they left: the cycle check
+  // would follow them and report #CIRC! with no cycle (PR 466 round 7). Drop
+  // the index, not just the flag; the next full pass or warm-up rebuilds it
+  // from where the formulas are now. Only once the edit is certain: a refused
+  // insert changes nothing (PR 466 N9).
+  ctx.formulaCache.resetDependencyIndexes();
 
   const insertSnapBounds = getInsertRowColSnapshotBounds(
     type,
@@ -1934,9 +1938,10 @@ export function deleteRowCol(
   const d = file.data;
   if (!d) return;
 
-  // Formulas shift and are rewritten without being evaluated (C8). Only once
-  // the edit is certain: a refused delete changes nothing (PR 466 N9).
-  ctx.formulaCache.markDepGraphIncomplete();
+  // Formulas shift and are rewritten without being evaluated (C8); drop the
+  // index for the reason given in insertRowCol (PR 466 round 7). Only once the
+  // edit is certain: a refused delete changes nothing (PR 466 N9).
+  ctx.formulaCache.resetDependencyIndexes();
 
   if (start < 0) {
     start = 0;

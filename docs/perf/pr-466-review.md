@@ -495,8 +495,9 @@ Notes.
 | 4 | N2, N4, N5, N8 | `b046b97` |
 | 4 | N1, N9, N6 | `5f0cb23` |
 | 4 | N3, N7, N10 | `24fabfc` |
-| 5 | N1 (two comments), K60 | not committed (section 17) |
-| 6 | N1 detection (`=C1-A!B5`), two keyboard deletes | not committed (section 18) |
+| 5 | N1 (two comments), K60 | `a35fdce` (section 17) |
+| 6 | N1 detection (`=C1-A!B5`), two keyboard deletes | `83826dc` (section 18) |
+| 7 | false `#CIRC!` after a row or column insert or delete (section 19) | not committed |
 
 Unit suite at the end: 66 files, 618 tests pass; `tsc --noEmit` clean. No browser check and no two-client check of any round-4 change or of the C8 spec changes.
 
@@ -523,7 +524,7 @@ Limits.
 - The Yjs write for undo/redo goes through the existing `data` cell branch of `emitYjsFromPatches`; it has no test (no React renderer). The tests check the engine state after replaying the patches.
 - K60: the size is recorded at load from the dense grid built from `celldata`; a remote structural change that arrived while the tab was unloaded clears the flag as before.
 
-Commit for this round: not committed yet.
+Commit for this round: `a35fdce`.
 
 ## 18. Sixth round: reviewer's re-check at `531d235` (2026-10-30)
 
@@ -534,9 +535,36 @@ The reviewer confirmed K60 (commit after a tab switch 0.08 to 0.3 ms against 12 
 | `structural-edit-prep.ts` check disagrees with the rewrite: `FORMULA_SHEET_REF_RE` lets `-` continue an unquoted name, so `=C1-A!B5` reads as tab `C1-A`, B is not loaded and the whole-array path runs (peer-added C3 deleted by undo; B!B1 stays `=C1-A!B7` after open then undo). `=B2-Inputs!B5` the same. | Fixed | `loadTabsReadingSheet` takes the op. A tab is loaded when the rewrite itself would change one of its `!` formulas (`celldataFormulaWouldChange` in `rowcol.ts`, which `rewriteFormulasInCelldata` now shares through `rewrittenCelldataFormula`), or when a formula names the edited tab (the old test, kept as a union because a delete can be split into segments). | `structural-edit-prep.test.ts` 26 tests (16 before). `=C1-A!B5` and `=B2-A!B5`, plus `=C1+A!B5` and `=C1-'A'!B5` as controls: found, rewritten, undo keeps a peer-added formula. 4 failed with the new check switched off, 26 pass. |
 | Two keyboard deletes call `setContextWithProduce` without `deleteRowColOp`: Ctrl+Option+- then R or C (`Workbook/index.tsx`) and Cmd+Option+- / Ctrl+Alt+- with whole rows or columns selected (`SheetOverlay/index.tsx`). | Fixed | Both pass `{ deleteRowColOp }`, the same object given to `deleteRowCol`, as the context menu does. Audit of every `insertRowCol` / `deleteRowCol` call in `src/sheet-engine/react`: all user-driven ones now carry the op; `Workbook/api.ts` is the remote `applyOp` path (`noHistory`). | 3 tests in `structural-edit-prep.test.ts` for a delete op (finds the tab, `=A!B9` and `=C1-A!B9` rewritten as cell patches, undo keeps a peer-added formula). The two handlers themselves have no test (no React renderer). |
 
-Unit suite 68 files, 648 tests; `tsc --noEmit` clean. Not committed. No browser run for this round.
+Unit suite 68 files, 648 tests; `tsc --noEmit` clean. Committed in `83826dc`. No browser run for this round.
 
 Limits and side effects.
 
 - The two keyboard deletes now carry `deleteRowColOp` in their history entry, so `emitOp` sends the structural op to peers the way the context menu delete does. Before, they sent only the patches. Not checked with two clients.
 - A formula the rewrite would not change (for example one that names the edited tab but sits above the edit) still loads the tab through the second test; this is the same cost as before.
+
+## 19. Seventh round: reviewer's re-check at `4465358` (2026-11-03)
+
+The reviewer confirmed both N1 gaps closed after the merges of main and nk/opaque-sheets (all N1 cases pass in the engine and in Yjs) and raised one new problem, which blocks merge. He tested the branch in the dsheets.new preview and in the engine. It is outside the frozen scope, but it writes a wrong value to Yjs for everyone, so he raised it on the PR; he will re-check only this on the next push.
+
+| Comment | Status | Change | Tests |
+|---|---|---|---|
+| `rowcol.ts:491` (and the same line in `deleteRowCol`, about `:1939`): after a row or column insert or delete a formula can show `#CIRC!` with no cycle, and the `#CIRC!` is saved to Yjs | Fixed | `insertRowCol` and `deleteRowCol` call `ctx.formulaCache.resetDependencyIndexes()` instead of `markDepGraphIncomplete()`. Still after the `readOnly` / `maxExceeded` / missing-grid checks, so a refused edit changes nothing (N9). | `rowcol-dep-graph.test.ts`, 8 tests: before the fix 6 failed and 2 passed; after, 8 pass. |
+| Same bug in `shiftCells` (`cell-shift.ts:47`: insert or delete cells and shift right, down, left or up), found while checking the other paths that move formulas; not in the review | Fixed in the same push, at the owner's request | `shiftCells` calls `resetDependencyIndexes()` instead of `markDepGraphIncomplete()`. | `cell-shift-dep-graph.test.ts`, 5 tests: before the fix all 5 failed (`#CIRC!` in the four shift directions, 1 leftover edge); after, 5 pass. |
+
+**Cause.** Insert and delete move formulas and rewrite their text without evaluating them (C8). Their edges in `depsByCell` / `revDepsByCell` stayed keyed by the cells the formulas had left. `markDepGraphIncomplete()` only clears the flag, so the next commits take the full pass, but the cycle check (`findCycleNodesFrom` in `formula.ts`) walks `depsByCell` as it is, and the warm-up merge only rewrites keys that hold a formula, so an edge on a vacated cell was never removed. A leftover edge `C1 -> E1` plus a real range edge `E1 -> C1` looks like a cycle. `main` has no index, so it cannot happen there. `resetDependencyIndexes()` clears the edges and the flag, so the next full pass or the warm-up rebuilds the index from where the formulas are now. The state after the fix is the same as a fresh mount, which is what the spec already says for "structural changes" in C8 ("Whenever the indexes are reset (mount, A4, structural changes)").
+
+**Repros (the reviewer's, now tests).** One tab, a formula built with `updateCell`, then the edit, then typing 7 in B1.
+- Insert: B1 `5`, C1 `=E1`, D1 `=SUM(B1:C3)`. Insert 1 column left of C; D1 is `=F1`, E1 is `=SUM(B1:D3)`. Typing 7 in B1 gave `#CIRC!` in E1 (want 7), with and without the warm-up.
+- Delete: B1 `5`, D1 `=F1`, E1 `=SUM(B1:D3)`. Delete column C, run the warm-up; typing 7 in B1 gave `#CIRC!` in C1 and D1 (want 0 and 7). Without the warm-up this case already passed before the fix, as the reviewer's wording implies.
+- Row insert (added, same shape): B1 `5`, B2 `=B4`, B3 `=SUM(B1:B2)`, insert a row above row 2, type 7 in B1: `#CIRC!` before, 7 after, with and without the warm-up.
+- Index state: after an insert the test asserts `depsByCell` and `revDepsByCell` are empty and `depGraphComplete` is false (before the fix `depsByCell` held 2 edges); a refused insert (read-only column) leaves the edges and the flag alone.
+
+**Evidence.** Failing run on the unfixed code: 6 failed, 2 passed (5 of the 6 failures `expected '#CIRC!' to be 7`, one `expected 2 to be 0` for the leftover edges). After: 8 of 8 pass, and `rowcol-refused-edit.test.ts` (6) still passes. Full unit suite: 73 files, 782 tests, 3 failing, all in `src/editor/hooks/use-editor-sync.test.ts` ("dSheet editor local store id", from the `localStoreId` work merged from nk/opaque-sheets); the same 3 fail with `rowcol.ts` reverted, so they are not from this change. `tsc --noEmit` clean. `eslint` on `rowcol.ts` reports 95 errors, the same 95 as at HEAD; the new test file is clean. The reviewer reports the same six cases (insert, delete, insert then undo, each with and without the warm-up) match a full recompute with this change.
+
+**Limits and side effects.**
+- Undo of an insert is not in the new tests: the reviewer found it correct before the change (undo re-registers the restored cells), and the real undo path needs the Workbook component. Not re-run here.
+- The index is empty after every insert or delete until the warm-up (debounced 2 s after the flag clears) or a full pass rebuilds it. Before, the stale edges stayed and commits already took the full pass because the flag was off, so the commit path is unchanged; what is new is that the warm-up re-reads every formula after each structural edit, as it already did after the flag was cleared. No timing was taken for that.
+- **The same bug was in cell shift; fixed in the same push.** A probe (temporary test, deleted) showed `insertCellsShift` and `deleteCellsShift` (`cell-shift.ts`) left the same stale edges: B1 `5`, C1 `=E1`, insert cells shifting C1 right (D1 is now `=E1`), then `=SUM(B1:C1)` in E1 gave `#CIRC!` (want 5). `cell-shift-dep-graph.test.ts` covers all four directions (right, down, left, up) and the index state; all 5 tests failed before and pass after. The reviewer asked to add nothing else to the PR, so he should be told about this second one-line change; it is the same fix on the same bug and is easy to drop if he prefers a follow-up.
+- **Checked and not affected:** cut-paste of a formula followed by a SUM over the vacated cell gave 5 (correct), so it was not changed.
+- **Not probed, still open (K62):** sort (`sort.ts:91`) and drag-move (`moveCells.ts:411`) move formulas the same way and call `markDepGraphIncomplete()`.
+- **A different, older bug seen on the way (K63):** cell shift does not move the calc chain entry of a moved formula, so the moved formula is not recalculated when its precedent changes (after the right shift above, D1 `=E1` stays 0 when E1 becomes 5). It is not about the dependency index and was not changed; the new tests deliberately do not assert the moved cell's value.
