@@ -331,6 +331,13 @@ Not run in a browser yet. Use a fresh sheet, one tab.
 6. B1 `5`, C1 `=E1`. Right-click C1, insert cells and shift right. Type `=SUM(B1:C1)` in E1 → `5`, no `#CIRC!`. Repeat with shift down, and with delete cells shift left and up. [cell shift, K62] Known and not fixed: the moved formula (D1 `=E1`) stays `0` instead of following E1 (K63). Not probed: sort a range of formulas, or drag-move a formula, and then type a SUM over the vacated cell (K62).
 7. Try to insert into a read-only column, then edit an unrelated cell → refused, and the edit is instant. [N9, unchanged]
 
+### 1.25 Known bugs to retest when their tickets are done [K64, K65]
+
+Both fail today on this branch and on staging. They are not part of PR 466.
+
+1. **Dropdown sourced from another tab [K64].** Import an xlsx with tab `Lists` (`opt1` to `opt500` in A1:A500) and tab `Dropdowns` with a list validation on D2:D2001, source `Lists!$A$1:$A$500`, D filled from the list, using "Replace dSheet", and stay on `Dropdowns` → after the fix: the cells show no invalid marker, the dropdown lists all 500 options, `opt7` is accepted. Today: every cell shows the invalid marker, the list is empty and any value is refused. Then switch to `Lists`, edit `opt7`, return → the dropdown shows the edit. Also add a new list rule that points at a third tab → its options appear without a reload (the fingerprint case).
+2. **Conditional-format fill from xlsx [K65].** Import an xlsx whose rule `C2:C2000` greater than 500 has a solid fill with the colour only in `bgColor` → after the fix: matching cells are pink. Today: no fill. Repeat with a file saved by Excel itself, with a rule whose fill has no pattern type, and with a rule that has the colour in both `fgColor` and `bgColor` (must keep working).
+
 ## 2. Owner ↔ Collaborator
 
 Notation: **Owner** = owner window, **Collaborator** = collaborator window. After each case wait 2 s, then compare both windows; where it matters, reload the collaborator and compare again.
