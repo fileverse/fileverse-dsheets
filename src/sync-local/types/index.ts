@@ -72,6 +72,8 @@ export interface CollabConnectionConfig {
   ownerEdSecret?: string;
   contractAddress?: string;
   ownerAddress?: string;
+  /** Host signal (opaque-link sheets): the on-chain dsheetId, sent to the server as ddocId alongside the public room id. */
+  appFileId?: string;
   roomInfo?: {
     documentTitle: string;
     portalAddress: string;
@@ -182,7 +184,8 @@ export interface SyncManagerConfig {
   ydoc: Y.Doc;
   services?: CollabServices;
   callbacks?: CollabCallbacks;
-  onLocalUpdate?: (updatedDocContent: string, updateChunk: string) => void;
+  /** Called after a remote update is applied, with that update only. */
+  onRemoteApplied?: (update: Uint8Array) => void;
   /** Origins to ignore in the ydoc update handler (e.g. IndexedDB provider) */
   ignoredOrigins?: Array<{ current: unknown }>;
 }
@@ -299,6 +302,7 @@ export interface IAuthArgs {
   ownerToken?: string;
   ownerAddress?: string;
   contractAddress?: string;
+  ddocId?: string;
   sessionDid?: string;
   roomInfo?: string;
   identityToken?: string;

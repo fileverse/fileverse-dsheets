@@ -3,6 +3,7 @@ import { getSheetIndex } from '../utils';
 import { Context, getFlowdata } from '../context';
 import { Cell, Sheet } from '../types';
 import { setRowHeight, setColumnWidth } from '../api';
+import { getFontSet } from '../modules/text';
 
 const DEFAULT_FONT_FAMILY =
   'Helvetica Neue, system-ui, Roboto, Lato, Segoe UI, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Arial, sans-serif';
@@ -46,6 +47,93 @@ const applyFontOnMeasurer = (
   return fontSizePx;
 };
 
+
+type Measure2d = {
+  measureText(t: string): { width: number };
+  font: string;
+};
+
+const SINGLE_LINE_CACHE_MAX = 50000;
+const SINGLE_LINE_TEXT_MAX = 200;
+let singleLineCache = new Map<string, number>();
+
+/** Drop cached widths, e.g. after web fonts load and change the metrics. */
+export function clearSingleLineCache() {
+  singleLineCache = new Map();
+}
+
+const fontsApi = (): any =>
+  typeof document !== 'undefined' ? (document as any).fonts : undefined;
+
+if (typeof document !== 'undefined') {
+  fontsApi()?.addEventListener?.('loadingdone', clearSingleLineCache);
+}
+
+/**
+ * Width of one line of text in `font`, from canvas measureText, cached by
+ * (font, text). No DOM layout is involved.
+ */
+export function measureSingleLine(
+  font: string,
+  text: string,
+  ctx2d: Measure2d,
+): number {
+  const key = `${font}\u0000${text}`;
+  const hit = singleLineCache.get(key);
+  if (hit !== undefined) return hit;
+  if (ctx2d.font !== font) ctx2d.font = font;
+  const { width } = ctx2d.measureText(text);
+  // Widths measured while fonts load use fallback metrics; long texts rarely
+  // repeat and make large keys.
+  if (text.length <= SINGLE_LINE_TEXT_MAX && fontsApi()?.status !== 'loading') {
+    if (singleLineCache.size >= SINGLE_LINE_CACHE_MAX) {
+      singleLineCache = new Map();
+    }
+    singleLineCache.set(key, width);
+  }
+  return width;
+}
+
+const getMeasureContext2d = (): Measure2d | null => {
+  const canvas = document.createElement('canvas');
+  return (canvas.getContext?.('2d') as Measure2d | null) ?? null;
+};
+
+type WrapJob = {
+  font: string;
+  text: string;
+  whiteSpace: string;
+  width: string;
+  onResult: (el: HTMLDivElement) => void;
+};
+
+/**
+ * Measure wrapped cells in the DOM with all writes before the first read:
+ * one absolutely positioned element per job inside the measurer, then a read
+ * pass. One layout per batch instead of one per cell.
+ */
+const measureWrappedBatch = (
+  measurer: HTMLDivElement,
+  jobs: WrapJob[],
+) => {
+  if (jobs.length === 0) return;
+  const els = jobs.map((job) => {
+    const el = document.createElement('div');
+    el.style.font = job.font;
+    el.style.position = 'absolute';
+    el.style.whiteSpace = job.whiteSpace;
+    el.style.width = job.width;
+    el.style.lineHeight = '1.3';
+    el.style.wordBreak = 'normal';
+    el.style.overflowWrap = 'break-word';
+    measurer.appendChild(el);
+    el.textContent = job.text;
+    return el;
+  });
+  jobs.forEach((job, i) => job.onResult(els[i]));
+  els.forEach((el) => el.remove());
+};
+
 export function calculateRangeCellSize(
   ctx: Context,
   sheetId: string,
@@ -83,61 +171,94 @@ export function calculateRangeCellSize(
 
   const defaultRowHeight = sheetFile.defaultRowHeight ?? 19;
 
-  // First, calculate max widths for each column
+  const measure2d = getMeasureContext2d();
+  // getFontSet per cell is the grid's draw font; memoize per attribute set.
+  const fontByAttrs = new Map<string, string>();
+  const fontFor = (cell: Cell | null | undefined) => {
+    const key = `${cell?.ff}|${cell?.fs}|${cell?.bl}|${cell?.it}`;
+    let font = fontByAttrs.get(key);
+    if (font === undefined) {
+      font = getFontSet(cell ?? {}, ctx.defaultFontSize, ctx);
+      fontByAttrs.set(key, font);
+    }
+    return font;
+  };
+
+  // First, calculate max widths for each column. Single-line cells use canvas
+  // measureText; wrapped cells are measured in the DOM in one batch.
+  const widthJobs: WrapJob[] = [];
   for (let col = startCol; col <= endCol; col++) {
-    let requiredWidth = getColumnWidth(col, ctx, sheetFile);
+    maxColumnWidths[col] = getColumnWidth(col, ctx, sheetFile);
 
     for (let row = startRow; row <= endRow; row++) {
       const cell = gridData?.[row]?.[col];
       if (cell?.mc && cell.mc.rs == null) continue;
 
       const text = getCellDisplayText(cell);
-      applyFontOnMeasurer(cell, cellSizeMeasurer);
-      cellSizeMeasurer!.style.whiteSpace = 'pre';
-      cellSizeMeasurer!.style.width = 'auto';
-      cellSizeMeasurer!.textContent = text;
-      const intrinsicWidth = Math.ceil(cellSizeMeasurer!.scrollWidth + 12);
-      if (intrinsicWidth > requiredWidth) requiredWidth = intrinsicWidth;
+      if (measure2d && !isCellWrapped(cell)) {
+        if (text === '') continue;
+        const font = fontFor(cell);
+        const intrinsicWidth = Math.ceil(
+          measureSingleLine(font, text, measure2d) + 12,
+        );
+        if (intrinsicWidth > maxColumnWidths[col])
+          maxColumnWidths[col] = intrinsicWidth;
+      } else {
+        widthJobs.push({
+          font: fontFor(cell),
+          text,
+          whiteSpace: 'pre',
+          width: 'auto',
+          onResult: (el) => {
+            const intrinsicWidth = Math.ceil(el.scrollWidth + 12);
+            if (intrinsicWidth > maxColumnWidths[col])
+              maxColumnWidths[col] = intrinsicWidth;
+          },
+        });
+      }
     }
-
-    maxColumnWidths[col] = Math.min(requiredWidth, maxColumnWidth);
+  }
+  measureWrappedBatch(cellSizeMeasurer, widthJobs);
+  for (let col = startCol; col <= endCol; col++) {
+    maxColumnWidths[col] = Math.min(maxColumnWidths[col], maxColumnWidth);
   }
 
-  // Then, calculate max heights for each row based on the determined column widths
+  // Then, calculate max heights for each row based on the determined column
+  // widths. Wrapped cells are measured in one batch (writes, then reads).
+  const heightJobs: WrapJob[] = [];
   for (let row = startRow; row <= endRow; row++) {
-    let requiredHeight = defaultRowHeight;
+    maxRowHeights[row] = defaultRowHeight;
 
     for (let col = startCol; col <= endCol; col++) {
       const cell = gridData?.[row]?.[col];
       if (cell?.mc && cell.mc.rs == null) continue;
 
       const text = getCellDisplayText(cell);
-      const fontSizePx = applyFontOnMeasurer(cell, cellSizeMeasurer);
-
       if (isCellWrapped(cell)) {
         const finalColumnWidth = Math.max(
           getColumnWidth(col, ctx, sheetFile),
           maxColumnWidths[col] || 0,
         );
-        cellSizeMeasurer!.style.whiteSpace = /[\r\n]/.test(text)
-          ? 'pre-wrap'
-          : 'normal';
-        cellSizeMeasurer!.style.width = `${Math.max(
-          5,
-          finalColumnWidth - 8,
-        )}px`;
-        cellSizeMeasurer!.textContent = text;
-        const wrappedHeight = Math.ceil(cellSizeMeasurer!.scrollHeight + 6);
-        if (wrappedHeight > requiredHeight) requiredHeight = wrappedHeight;
+        heightJobs.push({
+          font: fontFor(cell),
+          text,
+          whiteSpace: /[\r\n]/.test(text) ? 'pre-wrap' : 'normal',
+          width: `${Math.max(5, finalColumnWidth - 8)}px`,
+          onResult: (el) => {
+            const wrappedHeight = Math.ceil(el.scrollHeight + 6);
+            if (wrappedHeight > maxRowHeights[row])
+              maxRowHeights[row] = wrappedHeight;
+          },
+        });
       } else {
+        const fontSizePx = (cell?.fs as number | undefined) ?? DEFAULT_FONT_SIZE;
         const singleLineHeight = Math.ceil(fontSizePx * 1.3 + 6);
-        if (singleLineHeight > requiredHeight)
-          requiredHeight = singleLineHeight;
+        if (singleLineHeight > maxRowHeights[row])
+          maxRowHeights[row] = singleLineHeight;
       }
     }
-
-    maxRowHeights[row] = requiredHeight;
   }
+  measureWrappedBatch(cellSizeMeasurer, heightJobs);
   return { rowMax: maxRowHeights, colMax: maxColumnWidths };
 }
 

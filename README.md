@@ -86,6 +86,7 @@ function App() {
 | `isCollaborative` | `boolean` | `false` | Enable collaborative features |
 | `enableWebrtc` | `boolean` | `true` | Enable WebRTC for P2P collaboration |
 | `enableIndexeddbSync` | `boolean` | `true` | Enable local IndexedDB persistence |
+| `onIndexedDbError` | `(error: Error) => void` | - | Called when local persistence fails, or when the first read of the local store does not finish within 15 s. The editor continues with the in-memory document; call `rebuildLocalStore()` to recreate the store |
 | `isTemplateOpen` | `boolean` | - | Template sidebar state |
 | `selectedTemplate` | `string` | - | Selected template identifier |
 | `onboardingComplete` | `boolean` | - | Onboarding completion status |
@@ -114,6 +115,15 @@ function App() {
 | `setFetchingURLData` | `(fetching: boolean) => void` | URL fetching state setter |
 | `setInputFetchURLDataBlock` | `Dispatch<SetStateAction<string>>` | URL input state setter |
 | `setForceSheetRender` | `Dispatch<SetStateAction<number>>` | Force re-render trigger |
+
+### Editor handle methods
+
+`sheetEditorRef` is a `DSheetEditorHandle`: the workbook instance plus these methods.
+
+| Method | Description |
+|--------|-------------|
+| `rebuildLocalStore()` | `Promise<void>`. Deletes this sheet's IndexedDB database and rewrites it from the live document, so local edits are kept. A no-op when read-only or when `enableIndexeddbSync` is off. Rejects if the rebuild fails, the new store does not sync within 15 s, or a refresh or unmount supersedes it. Concurrent calls share one rebuild. |
+| `getContentFingerprint()` | `string \| null`. Changes on every document change, deletes included; compare with `===` only. `null` until local persistence has synced. |
 
 ## Examples
 

@@ -1,5 +1,4 @@
 import React, {
-  useContext,
   useCallback,
   useRef,
   useEffect,
@@ -55,7 +54,7 @@ import {
 } from '@fileverse/ui';
 import { useRemoveDuplicatesDialog } from '../RemoveDuplicates';
 // import DataVerification from "../DataVerification";
-import WorkbookContext from '../../context';
+import { useWorkbookContextIgnoringScroll } from '../../context/use-workbook-store';
 import './index.css';
 import Button from './Button';
 import Divider, { MenuDivider } from './Divider';
@@ -170,7 +169,7 @@ export const CurrencySelector = ({
   defaultTextFormat: string;
   toolTipText: string;
 }) => {
-  const { context, setContext, refs } = useContext(WorkbookContext);
+  const { context, setContext, refs } = useWorkbookContextIgnoringScroll();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [decimals, setDecimals] = useState(2);
@@ -481,7 +480,7 @@ const Toolbar: React.FC<{
   trailingContent,
 }) => {
     const { context, setContext, refs, settings, handleUndo, handleRedo } =
-      useContext(WorkbookContext);
+      useWorkbookContextIgnoringScroll();
 
     const restoreEditorFocusAfterToolbarAction = useCallback(() => {
       if (context.luckysheetCellUpdate.length === 0) return;
@@ -2349,4 +2348,4 @@ const Toolbar: React.FC<{
     );
   };
 
-export default Toolbar;
+export default React.memo(Toolbar);

@@ -87,6 +87,8 @@ export function sortDataRange(
   stc: number,
   edc: number,
 ) {
+  // Formula rows move and are remapped without being evaluated (C8).
+  ctx.formulaCache.markDepGraphIncomplete();
   const { sortedData, rowMap } = orderbydata(isAsc, index, dataRange);
 
   for (let r = str; r <= edr; r += 1) {

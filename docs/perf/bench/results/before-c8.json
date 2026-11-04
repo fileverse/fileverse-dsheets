@@ -1,0 +1,20 @@
+{
+  "label": "before-c8",
+  "date": "2026-10-26T06:24:55.329Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S9 warm-up full pass": {
+    "formulasEvaluated": 500,
+    "depGraphComplete": "n/a"
+  },
+  "S9 commit to unreferenced cell: formulas processed": {
+    "formulasRead": 500,
+    "formulasEvaluated": 0
+  },
+  "S9 commit to unreferenced cell (updateCell)": {
+    "median": 3.929,
+    "p95": 4.896,
+    "min": 3.6569,
+    "runs": 50
+  }
+}

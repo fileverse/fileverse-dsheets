@@ -27,6 +27,10 @@ import { checkCF, getComputeMap } from './ConditionFormat';
 import { clampIndicesToUsedBounds } from './copy-range-bounds';
 import { isClipboardMetadataRedundant } from '../utils/cell-persist-utils';
 import {
+  emitCelldataRangeDiffToYdoc,
+  snapshotPersistedCelldataInRange,
+} from '../utils/ydoc-celldata-changes';
+import {
   escapeHTMLTag,
   getSheetIndex,
   isAllowEdit,
@@ -3740,6 +3744,17 @@ export function fillSelectionWithActiveValue(
   const srcC = last.column_focus ?? last.column[0];
   const sourceCell = d[srcR]?.[srcC];
 
+  // Snapshot before filling so the Yjs write is a diff of each range (B6).
+  const before = selection.map((sel) =>
+    snapshotPersistedCelldataInRange(
+      d,
+      sel.row[0],
+      sel.row[1],
+      sel.column[0],
+      sel.column[1],
+    ),
+  );
+
   for (let s = 0; s < selection.length; s += 1) {
     const r1 = selection[s].row[0];
     const r2 = selection[s].row[1];
@@ -3758,6 +3773,19 @@ export function fillSelectionWithActiveValue(
       }
     }
   }
+
+  selection.forEach((sel, i) => {
+    emitCelldataRangeDiffToYdoc(
+      ctx,
+      ctx.currentSheetId,
+      d,
+      sel.row[0],
+      sel.row[1],
+      sel.column[0],
+      sel.column[1],
+      before[i],
+    );
+  });
 
   return true;
 }

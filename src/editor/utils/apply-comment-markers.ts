@@ -33,7 +33,9 @@ const resolveComment = (
  * `null`, so a tiny `{ ps }` object is created in the live view only so the
  * triangle can render. Row/column drag still owns real cell data.
  *
- * Mutates in place and returns the same array.
+ * Updates the given arrays in place and returns them. Sparse celldata entries
+ * are replaced with copies, never written into, because they may be Yjs
+ * content (see ySheetArrayToPlain).
  */
 export const applyCommentMarkers = <T>(
   sheets: T | null | undefined,
@@ -112,16 +114,24 @@ export const applyCommentMarkers = <T>(
       return;
     }
 
-    // Inactive sheets / plain snapshots: sparse celldata.
+    // Inactive sheets / plain snapshots: sparse celldata. Entries from
+    // ySheetArrayToPlain are the Yjs content itself (Y.Map#toJSON returns
+    // stored references), so never write into them: replace the array slot
+    // with a copy, and only for cells whose marker changes (a comment, or a
+    // stale `ps` to hide).
     if (Array.isArray(sheet.celldata)) {
-      sheet.celldata.forEach((entry: any) => {
-        if (!entry?.v) return;
+      const celldata = sheet.celldata as any[];
+      for (let i = 0; i < celldata.length; i += 1) {
+        const entry = celldata[i];
+        if (!entry?.v || typeof entry.v !== 'object') continue;
+        const ps = markerFor(entry.r, entry.c);
+        if (ps === undefined && entry.v.ps === undefined) continue;
         try {
-          entry.v.ps = markerFor(entry.r, entry.c);
+          celldata[i] = { ...entry, v: { ...entry.v, ps } };
         } catch {
           // Frozen snapshot — do not clone or replace sheet data.
         }
-      });
+      }
       const present = new Set(
         (sheet.celldata as any[]).map((e) => `${e?.r}_${e?.c}`),
       );

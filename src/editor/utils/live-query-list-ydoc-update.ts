@@ -24,10 +24,11 @@ export const liveQueryListYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'liveQueryList',
   });
   if (!syncContext) return;
 
-  const newData = sheetEditorRef.current?.getSheet()?.liveQueryList || {};
+  const newData = syncContext.newValue || {};
   const oldData = syncContext.oldSheet.liveQueryList || {};
 
   const changes = buildMapFieldChanges({

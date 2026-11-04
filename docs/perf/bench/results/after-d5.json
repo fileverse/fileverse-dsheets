@@ -1,0 +1,129 @@
+{
+  "label": "after-d5",
+  "date": "2026-10-26T17:34:18.357Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S4 old 100x10 store": {
+    "structs": 113913,
+    "deletedLen": 112810,
+    "clients": 101,
+    "bodyBytes": 1083406
+  },
+  "S4 fresh copy store": {
+    "structs": 1105,
+    "deletedLen": 0,
+    "clients": 1,
+    "bodyBytes": 88136
+  },
+  "S4 old full encode": {
+    "median": 8.881,
+    "p95": 22.001,
+    "min": 8.2865,
+    "runs": 20
+  },
+  "S4 fresh full encode": {
+    "median": 1.029,
+    "p95": 1.135,
+    "min": 1.0115,
+    "runs": 20
+  },
+  "S4 old full decode (new doc + apply)": {
+    "median": 57.366,
+    "p95": 58.821,
+    "min": 53.9316,
+    "runs": 10
+  },
+  "S4 fresh full decode (new doc + apply)": {
+    "median": 2.523,
+    "p95": 5.622,
+    "min": 2.4006,
+    "runs": 10
+  },
+  "S4 old write + handleOnChange body": {
+    "median": 9.352,
+    "p95": 22.984,
+    "min": 8.6856,
+    "runs": 20
+  },
+  "S5 old encodeStateVector+base64": {
+    "median": 0.026,
+    "p95": 0.049,
+    "min": 0.0246,
+    "runs": 50
+  },
+  "S5 old Y.snapshot+encodeSnapshot": {
+    "median": 0.337,
+    "p95": 0.455,
+    "min": 0.289,
+    "runs": 30
+  },
+  "S5 old fingerprint getFingerprint()": {
+    "median": 0.018,
+    "p95": 0.029,
+    "min": 0.0172,
+    "runs": 50
+  },
+  "S5 old fingerprintFromUpdate(body)": {
+    "median": 30.943,
+    "p95": 72.972,
+    "min": 28.7805,
+    "runs": 20
+  },
+  "S5 old write with tracker attached": {
+    "median": 0.028,
+    "p95": 0.053,
+    "min": 0.0262,
+    "runs": 50
+  },
+  "S5 old write without tracker": {
+    "median": 0.022,
+    "p95": 0.03,
+    "min": 0.0195,
+    "runs": 50
+  },
+  "S5 old open (apply body) with tracker": {
+    "median": 59.844,
+    "p95": 136.967,
+    "min": 56.856,
+    "runs": 10
+  },
+  "S5 old open (apply body) without tracker": {
+    "median": 59.592,
+    "p95": 65.88,
+    "min": 56.868,
+    "runs": 10
+  },
+  "D3 before: destroy + delete + reopen fresh doc (heal, loses live-only edits)": {
+    "median": 0.509,
+    "p95": 4.369,
+    "min": 0.2885,
+    "runs": 10
+  },
+  "D3 after: rebuildIndexedDbStore (live doc re-persisted)": {
+    "median": 9.008,
+    "p95": 9.888,
+    "min": 8.8384,
+    "runs": 10
+  },
+  "S12 sizes": {
+    "localBodyBytes": 1083431,
+    "remoteBodyBytes": 1083447,
+    "deltaBytes": 1580
+  },
+  "S12 before: mergeDsheetContent (remote body, full-copy row)": {
+    "median": 110.036,
+    "p95": 162.497,
+    "min": 106.4961,
+    "runs": 12,
+    "bytesWritten": 1083447,
+    "rowsWritten": 1
+  },
+  "S12 after: appendDsheetUpdate(diffUpdate delta)": {
+    "median": 0.235,
+    "p95": 3.924,
+    "min": 0.1808,
+    "runs": 12,
+    "bytesWritten": 1580,
+    "rowsWritten": 1
+  }
+}

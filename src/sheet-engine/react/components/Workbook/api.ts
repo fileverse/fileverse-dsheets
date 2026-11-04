@@ -58,6 +58,8 @@ export function generateAPIs(
     applyOp: (ops: Op[]) => {
       setContext(
         (ctx_) => {
+          // A remote op can move or rewrite formulas without evaluating them (C8).
+          ctx_.formulaCache.markDepGraphIncomplete();
           const [patches, specialOps] = opToPatch(ctx_, ops);
           if (specialOps.length > 0) {
             const [specialOp] = specialOps;
@@ -277,6 +279,27 @@ export function generateAPIs(
     ) =>
       setContext((draftCtx) =>
         api.applyRemoteCellValue(draftCtx, row, column, value, options),
+      ),
+
+    /** Remote formula-list change, applied in place (A4). */
+    setSheetCalcChain: (
+      calcChain: Sheet['calcChain'],
+      options: api.CommonOptions = {},
+    ) =>
+      setContext(
+        (draftCtx) => api.setSheetCalcChain(draftCtx, calcChain, options),
+        { noHistory: true },
+      ),
+
+    /** Remote cell batch: one quiet update, off the local undo stack (A5). */
+    applyRemoteCells: (
+      cells: api.RemoteCellChange[],
+      options: api.CommonOptions = {},
+      onSkip?: (cell: api.RemoteCellChange, error: unknown) => void,
+    ) =>
+      setContext(
+        (draftCtx) => api.applyRemoteCells(draftCtx, cells, options, onSkip),
+        { noHistory: true },
       ),
 
     setCellError: (

@@ -7,6 +7,7 @@ import {
   GlobalCache,
   PatchOptions,
 } from '@sheet-engine/core';
+import { createWorkbookStore, WorkbookStore } from './workbook-store';
 
 export type RefValues = {
   globalCache: GlobalCache;
@@ -60,6 +61,41 @@ const WorkbookContext = React.createContext<{
     cellArea: React.createRef<HTMLDivElement | null>(),
     workbookContainer: React.createRef<HTMLDivElement | null>(),
   },
+});
+
+/**
+ * The parts of the workbook that rarely change (setters, settings, refs) plus
+ * the store holding the latest context. Components that must not render on
+ * every update read this instead of `WorkbookContext` (E2).
+ */
+export type WorkbookStable = {
+  store: WorkbookStore<Context>;
+  setContext: (
+    recipe: (ctx: Context) => void,
+    options?: SetContextOptions,
+  ) => void;
+  settings: Required<Settings>;
+  refs: RefValues;
+  handleUndo: () => void;
+  handleRedo: () => void;
+};
+
+export const WorkbookStableContext = React.createContext<WorkbookStable>({
+  store: createWorkbookStore(defaultContext(defaultRefs)),
+  setContext: () => {},
+  settings: defaultSettings,
+  refs: {
+    globalCache: { undoList: [], redoList: [] },
+    cellInput: React.createRef<HTMLDivElement | null>(),
+    fxInput: React.createRef<HTMLDivElement | null>(),
+    canvas: React.createRef<HTMLCanvasElement | null>(),
+    scrollbarX: React.createRef<HTMLDivElement | null>(),
+    scrollbarY: React.createRef<HTMLDivElement | null>(),
+    cellArea: React.createRef<HTMLDivElement | null>(),
+    workbookContainer: React.createRef<HTMLDivElement | null>(),
+  },
+  handleUndo: () => {},
+  handleRedo: () => {},
 });
 
 export default WorkbookContext;

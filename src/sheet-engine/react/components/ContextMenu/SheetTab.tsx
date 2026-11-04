@@ -1,14 +1,13 @@
 import { locale, deleteSheet, api } from '@sheet-engine/core';
 import _ from 'lodash';
 import React, {
-  useContext,
   useRef,
   useState,
   useLayoutEffect,
   useCallback,
 } from 'react';
 import { LucideIcon } from '@fileverse/ui';
-import WorkbookContext from '../../context';
+import { useWorkbookContextIgnoringScroll } from '../../context/use-workbook-store';
 import { useAlert } from '../../hooks/useAlert';
 import { useOutsideClick } from '../../hooks/useOutsideClick';
 import { ChangeColor } from '../ChangeColor';
@@ -22,7 +21,7 @@ import {
 } from './sheet-tab-menu-items';
 
 const SheetTabContextMenu: React.FC = () => {
-  const { context, setContext, settings } = useContext(WorkbookContext);
+  const { context, setContext, settings } = useWorkbookContextIgnoringScroll();
   const { x, y, sheet, onRename } = context.sheetTabContextMenu;
   const { sheetconfig } = locale(context);
   const [position, setPosition] = useState({ x: -1, y: -1 });
@@ -284,4 +283,4 @@ const SheetTabContextMenu: React.FC = () => {
   );
 };
 
-export default SheetTabContextMenu;
+export default React.memo(SheetTabContextMenu);

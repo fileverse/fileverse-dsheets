@@ -26,6 +26,7 @@ export const dataBlockListYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'dataBlockCalcFunction',
   });
   if (!syncContext) return;
 

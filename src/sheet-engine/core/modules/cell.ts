@@ -1286,6 +1286,30 @@ function spilledMatrixFormulaDisplay(matrix: unknown): string {
 }
 
 // formula.updatecell
+/**
+ * Write a committed cell to Yjs inside the commit, on the sheet that held it
+ * at commit time (B2). Before this, typed cells reached Yjs only through the
+ * later afterUpdateCell timer, which skips the write whenever data-block work
+ * is gated off, and read the current sheet when the timer fired.
+ */
+function emitCommittedCell(
+  ctx: Context,
+  sheetId: string,
+  r: number,
+  c: number,
+  v: Cell | null | undefined,
+) {
+  ctx.hooks.updateCellYdoc?.([
+    {
+      sheetId,
+      path: ['celldata'],
+      key: `${r}_${c}`,
+      value: { r, c, v: v ?? null },
+      type: 'update',
+    },
+  ]);
+}
+
 export function updateCell(
   ctx: Context,
   r: number,
@@ -1900,14 +1924,22 @@ export function updateCell(
       if (isValueArray) {
         if (spillSortResult(ctx, r, c, value, d)) {
           cancelNormalSelected(ctx);
+          const commitSheetId = ctx.currentSheetId as string;
+          const newValue = _.cloneDeep(d[r][c]);
+          emitCommittedCell(ctx, commitSheetId, r, c, newValue);
           if (ctx.hooks.afterUpdateCell) {
-            const newValue = _.cloneDeep(d[r][c]);
             // Genuine user-driven edit (typed/committed via updateCell) — flag it
             // so RTC joiners persist + broadcast it. Remote applies use
             // setCellValueInternal and never reach here.
             ctx.hooks.onLocalCellEdit?.();
             setTimeout(() =>
-              ctx.hooks.afterUpdateCell?.(r, c, oldValue, newValue),
+              ctx.hooks.afterUpdateCell?.(
+                r,
+                c,
+                oldValue,
+                newValue,
+                commitSheetId,
+              ),
             );
           }
           if (!isFormulaEvalPending(ctx)) {
@@ -2012,15 +2044,17 @@ export function updateCell(
       };
     }
     */
+    const commitSheetId = ctx.currentSheetId as string;
+    const newValue = _.cloneDeep(flowdata[r][c]);
+    emitCommittedCell(ctx, commitSheetId, r, c, newValue);
     if (ctx.hooks.afterUpdateCell) {
-      const newValue = _.cloneDeep(flowdata[r][c]);
       const { afterUpdateCell } = ctx.hooks;
       // Genuine user-driven edit (typed/committed via updateCell) — flag it so
       // RTC joiners persist + broadcast it. Remote applies use
       // setCellValueInternal and never reach here.
       ctx.hooks.onLocalCellEdit?.();
       setTimeout(() => {
-        afterUpdateCell?.(r, c, oldValue, newValue);
+        afterUpdateCell?.(r, c, oldValue, newValue, commitSheetId);
       });
     }
 

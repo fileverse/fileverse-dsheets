@@ -8,6 +8,9 @@ import { CollaborationProps } from '../sync-local/types';
 import { CommentsConfig } from './types/comments';
 import type { SmartContractConfig } from './types/smart-contract';
 import type { ApiKeyStorage } from './utils/api-key-storage';
+import type { DSheetContentChange } from './utils/content-change';
+
+export type { DSheetContentChange } from './utils/content-change';
 import type { ThemeKey } from '@sheet-engine/core/theme';
 import type { DSheetContentSnapshot } from '../persistence';
 import type { NavigateToSheetOptions } from './utils/navigate-to-sheet';
@@ -39,6 +42,20 @@ export interface EditorValues {
 
 export type DSheetEditorHandle = WorkbookInstance & {
   refreshIndexedDB: () => Promise<void>;
+  /**
+   * Delete this sheet's IndexedDB database and rewrite it from the live
+   * document (same Y.Doc, never replaced), so local edits are kept. Resolves
+   * once the new store has synced. Resolves as a no-op when the editor is
+   * read-only, local persistence is disabled or there is no sheet id. Rejects
+   * if the rebuild fails, if the new store does not sync within 15 s, or if a
+   * refresh/unmount supersedes it. Concurrent calls share one rebuild.
+   *
+   * A bootstrap that is still waiting on an unreadable store (the case this
+   * heals) is abandoned after 3 s: the rebuild then finishes the bootstrap
+   * itself, merging the published content into the document, so the editor
+   * leaves "syncing" once the rebuild resolves.
+   */
+  rebuildLocalStore: () => Promise<void>;
   terminateSession: () => void;
   updateCollaboratorName: (name: string) => void;
   updateSessionTitle: (args: {
@@ -50,6 +67,13 @@ export type DSheetEditorHandle = WorkbookInstance & {
     sheetId: string,
     opts?: NavigateToSheetOptions,
   ) => Promise<boolean>;
+  /**
+   * Content fingerprint: base64 state vector + ":" + deleted count. Changes
+   * on every change, deletes included; compare with === only. null until
+   * y-indexeddb is attached and synced; use fingerprintFromUpdate of the
+   * IndexedDB body then.
+   */
+  getContentFingerprint: () => string | null;
 };
 
 export interface PanelConfig {
@@ -109,15 +133,35 @@ export interface DsheetProps {
   showFormulaBar?: boolean;
   enableIndexeddbSync?: boolean;
   dsheetId: string;
+  /** Names the local IndexedDB database and labels content snapshots
+   * (default `dsheetId`). `dsheetId` stays the Yjs root key. */
+  localStoreId?: string;
   /**
    * Cheap change signal for hosts that persist sheet bodies through Yjs.
    * Unlike `onChange`, this does not build a plain sheet or encode the Y.Doc.
    */
   onContentUpdate?: () => void;
+  /**
+   * Cheap change signal (Stabilize A1): `hasContent`, `userEdited` and the
+   * content `fingerprint`, computed without encoding the Y.Doc. At most one
+   * call per second (trailing), flushed on pagehide, beforeunload and unmount.
+   * Read full state on demand with `editorStateRef.getContentSnapshot()`.
+   */
+  onContentChange?: (change: DSheetContentChange) => void;
+  /**
+   * @deprecated Encodes the whole Y.Doc and rebuilds a plain workbook per
+   * call. Use `onContentChange` and read full state on demand. Called at most
+   * once per second (trailing), flushed only on unload and unmount. The latest
+   * `onChange` you pass is the one called, so an inline function is safe: a new
+   * identity does not cancel a pending call.
+   */
   onChange?: (updateData: SheetUpdateData, encodedUpdate?: string) => void;
   collaboration?: CollaborationProps;
   /** Called when local IndexedDB persistence fails. The editor and durable
-   * collaboration continue using the in-memory Y.Doc, matching dDoc. */
+   * collaboration continue using the in-memory Y.Doc, matching dDoc. Also
+   * called when the first read of the local store does not finish within 15 s
+   * (the editor then continues without local persistence, and
+   * `rebuildLocalStore()` can recreate the store). */
   onIndexedDbError?: (error: Error) => void;
   username?: string;
   portalContent?: string;

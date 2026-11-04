@@ -108,6 +108,8 @@ export {
   execFunctionGroup,
   runFormulaEvalChunk,
   applyWorkerFormulaChunkResults,
+  finishFullFormulaPass,
+  resetFormulaDependencyIndexes,
   isFormulaEvalPending,
   FORMULA_ASYNC_CHUNK_SIZE,
   FORMULA_ASYNC_EVAL_THRESHOLD,
@@ -369,6 +371,9 @@ export {
   hideCRCount,
   // cell (internal)
   getdatabyselection,
+  // cell shift (internal)
+  deleteCellsShift,
+  insertCellsShift,
 } from './modules';
 export type { FilterDate, FilterValue, FilterColor } from './modules';
 

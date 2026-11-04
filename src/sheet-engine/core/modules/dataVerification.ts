@@ -1,3 +1,4 @@
+import { isDraft } from 'immer';
 import {
   colLocationByIndex,
   Context,
@@ -113,6 +114,70 @@ export function getDropdownList(ctx: Context, txt: string) {
   return list;
 }
 
+type DropdownOptions = {
+  list: (string | number | boolean)[];
+  set: Set<unknown>;
+};
+
+const DROPDOWN_LITERAL_CACHE_MAX = 500;
+const literalDropdownCache = new Map<string, DropdownOptions>();
+/** Range-based option lists, per source sheet `data` identity. */
+const rangeDropdownCache = new WeakMap<object, Map<string, DropdownOptions>>();
+
+const toDropdownOptions = (
+  list: (string | number | boolean)[],
+): DropdownOptions => ({ list, set: new Set(list) });
+
+/**
+ * Parsed dropdown options, cached per option text (C7). The canvas validates
+ * every visible dropdown cell on every draw, and getDropdownList re-splits
+ * and de-duplicates with list.includes, O(L^2) per cell. When the options
+ * come from a cell range, the key also includes the identity of the source
+ * sheet's data, so an edit there re-reads the range. Shared and read-only.
+ */
+export function getDropdownOptions(ctx: Context, txt: string): DropdownOptions {
+  // Literal lists are the common case: look them up before the range test,
+  // which runs a regex over the whole option text.
+  const literal = literalDropdownCache.get(txt);
+  if (literal) return literal;
+  if (iscelldata(txt)) {
+    const range = getcellrange(ctx, txt);
+    const index = range ? getSheetIndex(ctx, range.sheetId) : null;
+    const d = index == null ? null : ctx.luckysheetfile[index]?.data;
+    if (!d || isDraft(d)) return toDropdownOptions(getDropdownList(ctx, txt));
+    let perData = rangeDropdownCache.get(d);
+    if (!perData) rangeDropdownCache.set(d, (perData = new Map()));
+    let options = perData.get(txt);
+    if (!options) {
+      options = toDropdownOptions(getDropdownList(ctx, txt));
+      perData.set(txt, options);
+    }
+    return options;
+  }
+  if (literalDropdownCache.size >= DROPDOWN_LITERAL_CACHE_MAX) {
+    literalDropdownCache.clear();
+  }
+  const options = toDropdownOptions(getDropdownList(ctx, txt));
+  literalDropdownCache.set(txt, options);
+  return options;
+}
+
+const DROPDOWN_SPLIT_CACHE_MAX = 500;
+const dropdownSplitCache = new Map<string, string[]>();
+
+/** `value1.split(',')`, memoized for the canvas pill colours (C7). */
+export function splitDropdownOptions(value1: string): string[] {
+  let parts = dropdownSplitCache.get(value1);
+  if (!parts) {
+    if (dropdownSplitCache.size >= DROPDOWN_SPLIT_CACHE_MAX) {
+      dropdownSplitCache.clear();
+    }
+    parts = value1.split(',');
+    dropdownSplitCache.set(value1, parts);
+  }
+  return parts;
+}
+
 // 身份证
 export function validateIdCard(ctx: Context, idCard: string) {
   // 15位和18位身份证号码的正则表达式
@@ -156,28 +221,17 @@ export function validateCellData(ctx: Context, item: any, cellValue: any) {
   let { value1, value2 } = item;
   const { type, type2 } = item;
   if (type === 'dropdown') {
-    const list = getDropdownList(ctx, value1);
+    const { set } = getDropdownOptions(ctx, value1);
 
     // 多选的情况 检查每个都在下拉列表中
     if (type2 && cellValue) {
       return cellValue
         .toString()
         .split(',')
-        .every((i: any) => {
-          return list.indexOf(i) !== -1;
-        });
+        .every((i: any) => set.has(i));
     }
 
-    let result = false;
-
-    for (let i = 0; i < list.length; i += 1) {
-      if (list[i] === cellValue) {
-        result = true;
-        break;
-      }
-    }
-
-    return result;
+    return set.has(cellValue);
   }
   if (type === 'checkbox') {
   } else if (

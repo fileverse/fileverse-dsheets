@@ -1,4 +1,5 @@
 import _ from 'lodash';
+import { isDraft } from 'immer';
 import { Context, getFlowdata } from '../context';
 import { CellMatrix, Sheet } from '../types';
 import { getSheetIndex } from '../utils';
@@ -1923,7 +1924,74 @@ function buildLivePreviewConditionValue(cr: any): any[] {
   return [cr.rulesValue || ''];
 }
 
+type ComputeMapCacheEntry = {
+  luckysheetfile: unknown;
+  definedNames: unknown;
+  rules: unknown;
+  conditionRules: unknown;
+  draftActive: boolean;
+  selection: unknown;
+  today: number;
+  result: ReturnType<typeof compute> | null;
+};
+
+/**
+ * Last compute map per sheet (C2). drawMain asks for it on every repaint,
+ * up to four times with frozen panes, and compute walks every rule's full
+ * range. Keyed by identity: Immer gives luckysheetfile (and so the sheet's
+ * data, rules and conditionRules) a new identity on any change, so a hit is
+ * exact. luckysheetfile rather than data alone, because formula rules can
+ * read other sheets, and definedNames because a rule such as `=lim>7` reads a
+ * name that lives outside luckysheetfile. The draft selection counts only
+ * while a live preview is active. Callers only read the map. Frozen
+ * (committed) state only.
+ *
+ * Held per sheet object in a WeakMap: an entry holds the whole luckysheetfile,
+ * and a Map keyed by sheet id kept every sheet opened in a session alive after
+ * its editor unmounted.
+ */
+const computeMapCache = new WeakMap<object, ComputeMapCacheEntry>();
+
 export function getComputeMap(ctx: Context) {
+  const sheetIndex = getSheetIndex(ctx, ctx.currentSheetId);
+  const sheet = sheetIndex == null ? undefined : ctx.luckysheetfile[sheetIndex];
+  // Inside an Immer recipe the draft keeps its identity while it changes:
+  // never cache there.
+  if (!sheet || isDraft(ctx.luckysheetfile)) return computeMapUncached(ctx);
+  const draftActive = Boolean(
+    ctx.conditionFormatDraftActive &&
+    ctx.luckysheet_select_save &&
+    hasLivePreviewCondition(sheet.conditionRules),
+  );
+  const key = {
+    luckysheetfile: ctx.luckysheetfile,
+    definedNames: ctx.definedNames,
+    rules: sheet.luckysheet_conditionformat_save,
+    conditionRules: sheet.conditionRules,
+    draftActive,
+    selection: draftActive ? ctx.luckysheet_select_save : null,
+    // Date rules compare with today: a new day must miss.
+    today: getLocalTodaySerial(),
+  };
+  const cached = computeMapCache.get(sheet);
+  if (
+    cached &&
+    cached.luckysheetfile === key.luckysheetfile &&
+    cached.definedNames === key.definedNames &&
+    cached.rules === key.rules &&
+    cached.conditionRules === key.conditionRules &&
+    cached.draftActive === key.draftActive &&
+    cached.selection === key.selection &&
+    cached.today === key.today
+  ) {
+    return cached.result;
+  }
+  const result = computeMapUncached(ctx);
+  computeMapCache.set(sheet, { ...key, result });
+  return result;
+}
+
+function computeMapUncached(ctx: Context) {
   const index = getSheetIndex(ctx, ctx.currentSheetId) as number;
   const ruleArr = ctx.luckysheetfile[index]?.luckysheet_conditionformat_save
     ? [...(ctx.luckysheetfile[index]?.luckysheet_conditionformat_save as any[])]

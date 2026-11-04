@@ -11,8 +11,13 @@ import {
 import { getColumnWidth } from './api';
 import { isInlineStringCell } from './modules/inline-string';
 import { getSheetIndex, indexToColumnChar } from './utils';
-import { getBorderInfoComputeRange } from './modules/border';
-import { checkCF, getComputeMap, validateCellData } from './modules';
+import { getBorderInfoComputeRangeCached } from './modules/border';
+import {
+  checkCF,
+  getComputeMap,
+  splitDropdownOptions,
+  validateCellData,
+} from './modules';
 import { cellFadeAnimator } from './animate';
 import { isNumericCellType } from './modules/validation';
 import { activePalette, SELECTION_ACCENT } from './theme';
@@ -1314,7 +1319,7 @@ export class Canvas {
         canvas.restore();
       };
 
-      const borderInfoCompute = getBorderInfoComputeRange(
+      const borderInfoCompute = getBorderInfoComputeRangeCached(
         this.sheetCtx,
         rowStart,
         rowEnd,
@@ -2001,7 +2006,9 @@ export class Canvas {
     if (isDataVlidationAvailable) {
       const option = cell?.m ?? cell?.v;
       const color = dataVerification?.[`${r}_${c}`]?.color;
-      const allOptions = dataVerification?.[`${r}_${c}`]?.value1.split(',');
+      const value1 = dataVerification?.[`${r}_${c}`]?.value1;
+      const allOptions =
+        typeof value1 === 'string' ? splitDropdownOptions(value1) : undefined;
 
       // const color = context.dataVerification!.dataRegulation!.color.split(",")
       const colorValues = color?.split(',').map((v: any) => v.trim());

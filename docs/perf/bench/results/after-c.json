@@ -1,0 +1,234 @@
+{
+  "label": "after-c",
+  "date": "2026-10-23T18:19:03.267Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S1 1x(4000x25) Yjs write only": {
+    "median": 0.027,
+    "p95": 0.193,
+    "min": 0.0189,
+    "runs": 30
+  },
+  "S1 1x(4000x25) write + handleOnChange body": {
+    "median": 135.061,
+    "p95": 173.038,
+    "min": 127.5905,
+    "runs": 15
+  },
+  "S1 1x(4000x25) write + A1 change built": {
+    "median": 0.025,
+    "p95": 0.113,
+    "min": 0.0215,
+    "runs": 30
+  },
+  "S1 1x(4000x25) encodeStateAsUpdate+base64": {
+    "median": 130.861,
+    "p95": 137.108,
+    "min": 104.9931,
+    "runs": 15
+  },
+  "S1 1x(4000x25) ySheetArrayToPlain": {
+    "median": 33.035,
+    "p95": 36.187,
+    "min": 31.5473,
+    "runs": 15
+  },
+  "S3 1x(4000x25) hook firing (Yjs side)": {
+    "median": 31.058,
+    "p95": 34.163,
+    "min": 29.1705,
+    "runs": 15
+  },
+  "S3 1x(4000x25) calcChainYdocUpdate (real hook)": {
+    "median": 0.005,
+    "p95": 0.097,
+    "min": 0.0022,
+    "runs": 15
+  },
+  "S3 1x(4000x25) dataVerificationYdocUpdate (real hook)": {
+    "median": 0.005,
+    "p95": 0.084,
+    "min": 0.0023,
+    "runs": 15
+  },
+  "S3 1x(4000x25) configYdocUpdate (real hook)": {
+    "median": 0.003,
+    "p95": 0.009,
+    "min": 0.0019,
+    "runs": 15
+  },
+  "S2 1x(4000x25) remote apply + full encode": {
+    "median": 147.229,
+    "p95": 204.971,
+    "min": 98.3913,
+    "runs": 40
+  },
+  "S2 1x(4000x25) remote apply only": {
+    "median": 0.011,
+    "p95": 0.019,
+    "min": 0.0087,
+    "runs": 30
+  },
+  "S1 3x(4000x25) Yjs write only": {
+    "median": 0.02,
+    "p95": 0.05,
+    "min": 0.0148,
+    "runs": 30
+  },
+  "S1 3x(4000x25) write + handleOnChange body": {
+    "median": 537.547,
+    "p95": 770.797,
+    "min": 483.7039,
+    "runs": 15
+  },
+  "S1 3x(4000x25) write + A1 change built": {
+    "median": 0.024,
+    "p95": 0.041,
+    "min": 0.0194,
+    "runs": 30
+  },
+  "S4 old 100x10 store": {
+    "structs": 113913,
+    "deletedLen": 112810,
+    "clients": 101,
+    "bodyBytes": 1083647
+  },
+  "S4 fresh copy store": {
+    "structs": 1105,
+    "deletedLen": 0,
+    "clients": 1,
+    "bodyBytes": 88136
+  },
+  "S4 old full encode": {
+    "median": 10.032,
+    "p95": 265.806,
+    "min": 8.2434,
+    "runs": 20
+  },
+  "S4 fresh full encode": {
+    "median": 1.023,
+    "p95": 1.203,
+    "min": 0.9951,
+    "runs": 20
+  },
+  "S4 old full decode (new doc + apply)": {
+    "median": 65.879,
+    "p95": 77.176,
+    "min": 60.0525,
+    "runs": 10
+  },
+  "S4 fresh full decode (new doc + apply)": {
+    "median": 2.567,
+    "p95": 6.133,
+    "min": 2.3803,
+    "runs": 10
+  },
+  "S4 old write + handleOnChange body": {
+    "median": 9.766,
+    "p95": 12.802,
+    "min": 8.9411,
+    "runs": 20
+  },
+  "S5 old encodeStateVector+base64": {
+    "median": 0.028,
+    "p95": 0.046,
+    "min": 0.0261,
+    "runs": 50
+  },
+  "S5 old Y.snapshot+encodeSnapshot": {
+    "median": 0.316,
+    "p95": 0.481,
+    "min": 0.2785,
+    "runs": 30
+  },
+  "S5 old fingerprint getFingerprint()": {
+    "median": 0.019,
+    "p95": 0.029,
+    "min": 0.0188,
+    "runs": 50
+  },
+  "S5 old fingerprintFromUpdate(body)": {
+    "median": 42.08,
+    "p95": 52.196,
+    "min": 35.9827,
+    "runs": 20
+  },
+  "S5 old write with tracker attached": {
+    "median": 0.024,
+    "p95": 0.033,
+    "min": 0.0209,
+    "runs": 50
+  },
+  "S5 old write without tracker": {
+    "median": 0.02,
+    "p95": 0.032,
+    "min": 0.0187,
+    "runs": 50
+  },
+  "S5 old open (apply body) with tracker": {
+    "median": 85.47,
+    "p95": 89.807,
+    "min": 75.1775,
+    "runs": 10
+  },
+  "S5 old open (apply body) without tracker": {
+    "median": 64.803,
+    "p95": 74.425,
+    "min": 60.9452,
+    "runs": 10
+  },
+  "S7 patchPlainCelldata, 50 cells into 100k (fresh copy each run)": {
+    "median": 1.367,
+    "p95": 4.016,
+    "runs": 15
+  },
+  "S7 engine apply, 50 cells: one produceWithPatches per cell": {
+    "median": 74.787,
+    "p95": 79.746,
+    "min": 72.6922,
+    "runs": 10
+  },
+  "S7 engine apply, 50 cells: one produce (applyRemoteCells)": {
+    "median": 2.293,
+    "p95": 3.731,
+    "min": 2.2232,
+    "runs": 10
+  },
+  "S8 C1 measureText calls, second frame of 1000 texts": {
+    "firstFrame": 1000,
+    "secondFrame": 0,
+    "secondFrameMs": 0.326
+  },
+  "S8 C2 getComputeMap per draw, 1 rule over 100k cells": {
+    "median": 0.002,
+    "p95": 0.013,
+    "min": 0.0004,
+    "runs": 15
+  },
+  "S8 C3 delFunctionGroup, cell not in 500-entry chain": {
+    "median": 0.004,
+    "p95": 0.012,
+    "min": 0.0034,
+    "runs": 200
+  },
+  "S8 C6 border compute per draw, 300 entries, 200 merges": {
+    "median": 0.001,
+    "p95": 0.017,
+    "min": 0.0005,
+    "runs": 30
+  },
+  "S8 C7 validateCellData for 400 dropdown cells, 200 options": {
+    "median": 0.044,
+    "p95": 0.063,
+    "min": 0.042,
+    "runs": 30
+  },
+  "S6 legacy onChange encodes, 4 edits 50 ms apart": {
+    "base": 4,
+    "stabilize": 1
+  },
+  "S6 legacy onChange encodes, 10 edits 50 ms apart": {
+    "base": 10,
+    "stabilize": 1
+  }
+}

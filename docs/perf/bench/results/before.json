@@ -1,0 +1,114 @@
+{
+  "label": "before",
+  "date": "2026-10-23T13:17:16.276Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S1 1x(4000x25) Yjs write only": {
+    "median": 0.025,
+    "p95": 0.138,
+    "min": 0.0183,
+    "runs": 30
+  },
+  "S1 1x(4000x25) write + handleOnChange body": {
+    "median": 142.956,
+    "p95": 163.499,
+    "min": 136.7731,
+    "runs": 15
+  },
+  "S1 1x(4000x25) encodeStateAsUpdate+base64": {
+    "median": 133.115,
+    "p95": 144.849,
+    "min": 108.0408,
+    "runs": 15
+  },
+  "S1 1x(4000x25) ySheetArrayToPlain": {
+    "median": 28.476,
+    "p95": 41.081,
+    "min": 26.9524,
+    "runs": 15
+  },
+  "S3 1x(4000x25) hook firing (Yjs side)": {
+    "median": 28.42,
+    "p95": 30.311,
+    "min": 26.6438,
+    "runs": 15
+  },
+  "S2 1x(4000x25) remote apply + full encode": {
+    "median": 110.523,
+    "p95": 242.041,
+    "min": 108.954,
+    "runs": 15
+  },
+  "S2 1x(4000x25) remote apply only": {
+    "median": 0.014,
+    "p95": 0.105,
+    "min": 0.0114,
+    "runs": 15
+  },
+  "S1 3x(4000x25) Yjs write only": {
+    "median": 0.015,
+    "p95": 0.02,
+    "min": 0.0136,
+    "runs": 30
+  },
+  "S1 3x(4000x25) write + handleOnChange body": {
+    "median": 509.653,
+    "p95": 516.826,
+    "min": 500.611,
+    "runs": 15
+  },
+  "S4 old 100x10 store": {
+    "structs": 113913,
+    "deletedLen": 112810,
+    "clients": 101,
+    "bodyBytes": 1084094
+  },
+  "S4 fresh copy store": {
+    "structs": 1105,
+    "deletedLen": 0,
+    "clients": 1,
+    "bodyBytes": 88136
+  },
+  "S4 old full encode": {
+    "median": 8.658,
+    "p95": 12.646,
+    "min": 8.3374,
+    "runs": 20
+  },
+  "S4 fresh full encode": {
+    "median": 1.017,
+    "p95": 2.647,
+    "min": 0.983,
+    "runs": 20
+  },
+  "S4 old full decode (new doc + apply)": {
+    "median": 64.208,
+    "p95": 181.995,
+    "min": 56.3764,
+    "runs": 10
+  },
+  "S4 fresh full decode (new doc + apply)": {
+    "median": 2.592,
+    "p95": 5.651,
+    "min": 2.3813,
+    "runs": 10
+  },
+  "S4 old write + handleOnChange body": {
+    "median": 9.082,
+    "p95": 10.759,
+    "min": 8.7326,
+    "runs": 20
+  },
+  "S5 old encodeStateVector+base64": {
+    "median": 0.033,
+    "p95": 0.079,
+    "min": 0.0274,
+    "runs": 50
+  },
+  "S5 old Y.snapshot+encodeSnapshot": {
+    "median": 0.302,
+    "p95": 0.385,
+    "min": 0.2709,
+    "runs": 30
+  }
+}

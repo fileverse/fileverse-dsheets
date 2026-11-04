@@ -6,6 +6,7 @@ import {
   functionHTMLGenerate,
   getTypeItemHide,
   insertUpdateFunctionGroup,
+  resetFormulaDependencyIndexes,
   setCellValue as setCellValueInternal,
   updateCell,
   updateDropCell,
@@ -15,6 +16,11 @@ import { Cell, CellStyle, SingleRange, Sheet } from '../types';
 import { CommonOptions, getSheet } from './common';
 import { SHEET_NOT_FOUND } from './errors';
 import { shouldPersistCelldataCell } from '../utils/cell-persist-utils';
+import { getSheetIndex } from '../utils';
+import {
+  markFormulaEdgesUnknown,
+  setFormulaEdgesFromText,
+} from '../modules/formula-edge-update';
 // @ts-ignore
 import SSF from '../modules/ssf';
 
@@ -245,6 +251,56 @@ function patchSparseCelldata(
   }
 }
 
+/** The formula text a cell holds before a remote value replaces it. */
+function formulaBeforeRemote(
+  sheet: Sheet,
+  row: number,
+  column: number,
+): string | null {
+  const cell = sheet.data
+    ? sheet.data[row]?.[column]
+    : sheet.celldata?.find((c) => c.r === row && c.c === column)?.v;
+  return cell != null && typeof cell === 'object' && cell.f != null
+    ? String(cell.f)
+    : null;
+}
+
+/** The formula text of a remote value, if it is a formula. */
+function remoteFormulaText(value: any): string | null {
+  if (value instanceof Object) return value.f != null ? String(value.f) : null;
+  if (value == null) return null;
+  const str = value.toString();
+  return str.substr(0, 1) === '=' || str.substr(0, 5) === '<span' ? str : null;
+}
+
+/**
+ * Keep a remote formula in the calc chain without running it, and replace the
+ * cell's dependency edges with the ones its text names (C8), so
+ * `depGraphComplete` stays on. Not when the cell already held the same
+ * formula and was already in the chain: a peer's recomputed value for it
+ * changes nothing the graph records.
+ */
+function registerUnevaluatedFormula(
+  ctx: Context,
+  row: number,
+  column: number,
+  sheetId: string,
+  previousFormula: string | null,
+  newFormula: string | null,
+) {
+  const file = ctx.luckysheetfile[getSheetIndex(ctx, sheetId) as number];
+  const alreadyRegistered =
+    previousFormula != null &&
+    previousFormula === newFormula &&
+    (file?.calcChain ?? []).some(
+      (calc) => calc?.r === row && calc.c === column && calc.id === sheetId,
+    );
+  insertUpdateFunctionGroup(ctx, row, column, sheetId);
+  if (!alreadyRegistered) {
+    setFormulaEdgesFromText(ctx, row, column, sheetId, newFormula);
+  }
+}
+
 export function applyRemoteCellValue(
   ctx: Context,
   row: number,
@@ -259,6 +315,17 @@ export function applyRemoteCellValue(
   const sheet = getSheet(ctx, options);
   const sheetId = (options.id ?? sheet.id ?? ctx.currentSheetId) as string;
   const { data } = sheet;
+  const previousFormula = formulaBeforeRemote(sheet, row, column);
+  const newFormula = remoteFormulaText(value);
+  const register = () =>
+    registerUnevaluatedFormula(
+      ctx,
+      row,
+      column,
+      sheetId,
+      previousFormula,
+      newFormula,
+    );
 
   if (!data) {
     patchSparseCelldata(sheet, row, column, value);
@@ -266,14 +333,14 @@ export function applyRemoteCellValue(
       delFunctionGroup(ctx, row, column, sheetId);
     } else if (value instanceof Object) {
       if ((value as Cell).f != null) {
-        insertUpdateFunctionGroup(ctx, row, column, sheetId);
+        register();
       } else {
         delFunctionGroup(ctx, row, column, sheetId);
       }
     } else {
       const str = value.toString();
       if (str.substr(0, 1) === '=' || str.substr(0, 5) === '<span') {
-        insertUpdateFunctionGroup(ctx, row, column, sheetId);
+        register();
       } else {
         delFunctionGroup(ctx, row, column, sheetId);
       }
@@ -306,7 +373,7 @@ export function applyRemoteCellValue(
       // Keep the formula registered so it stays reactive to future local edits.
       // We intentionally do NOT execute it here — the peer's computed v/m is
       // applied as-is.
-      insertUpdateFunctionGroup(ctx, row, column, sheetId);
+      register();
     } else {
       // No formula (value cleared or replaced) — drop any stale calc-chain /
       // dependency registration for this cell.
@@ -321,10 +388,97 @@ export function applyRemoteCellValue(
     // Bare formula string with no precomputed value (rare for remote celldata,
     // which normally sync as objects). Register it without executing.
     setCellValueInternal(ctx, row, column, data, { f: str } as Cell);
-    insertUpdateFunctionGroup(ctx, row, column, sheetId);
+    register();
   } else {
     delFunctionGroup(ctx, row, column, sheetId);
     setCellValueInternal(ctx, row, column, data, value);
+  }
+}
+
+const chainEntryKey = (entry: any, sheetId: string): string | null =>
+  entry != null &&
+  typeof entry === 'object' &&
+  Number.isFinite(entry.r) &&
+  Number.isFinite(entry.c)
+    ? `${entry.id ?? sheetId}:${entry.r}:${entry.c}`
+    : null;
+
+/**
+ * Replace a sheet's formula list with the collaborator's value from Yjs (A4).
+ * This is what the grid rebuild it replaces produced, without the rebuild. The
+ * caller runs it with noHistory.
+ *
+ * The dependency edges follow the change (C8): an entry that left the chain
+ * loses its edges, one that joined gets the edges its cell's text names (or
+ * runs on every commit until its cell arrives), and the rest are left alone, so
+ * `depGraphComplete` stays on. When the two chains can't be compared the
+ * indexes reset to a fresh mount's state.
+ */
+export function setSheetCalcChain(
+  ctx: Context,
+  calcChain: Sheet['calcChain'],
+  options: CommonOptions = {},
+) {
+  const sheet = getSheet(ctx, options);
+  const sheetId = sheet.id as string;
+  const previous = sheet.calcChain ?? [];
+  // The entries come from Yjs, which hands out the objects it stores. Immer
+  // deep-freezes whatever is assigned to a draft, so the engine gets copies.
+  const next = (calcChain ?? []).map((entry) =>
+    entry != null && typeof entry === 'object' ? { ...entry } : entry,
+  );
+  sheet.calcChain = next;
+
+  const previousKeys = new Map<string, any>();
+  const nextKeys = new Map<string, any>();
+  let comparable = sheetId != null;
+  previous.forEach((entry) => {
+    const key = chainEntryKey(entry, sheetId);
+    if (key == null) comparable = false;
+    else previousKeys.set(key, entry);
+  });
+  next.forEach((entry) => {
+    const key = chainEntryKey(entry, sheetId);
+    if (key == null) comparable = false;
+    else nextKeys.set(key, entry);
+  });
+  if (!comparable) {
+    resetFormulaDependencyIndexes(ctx);
+    return;
+  }
+  previousKeys.forEach((entry, key) => {
+    if (nextKeys.has(key)) return;
+    setFormulaEdgesFromText(ctx, entry.r, entry.c, entry.id ?? sheetId, null);
+  });
+  nextKeys.forEach((entry, key) => {
+    if (previousKeys.has(key)) return;
+    const id = entry.id ?? sheetId;
+    const f = formulaBeforeRemote(sheet, entry.r, entry.c);
+    if (f != null) setFormulaEdgesFromText(ctx, entry.r, entry.c, id, f);
+    else markFormulaEdgesUnknown(ctx, entry.r, entry.c, id);
+  });
+}
+
+export type RemoteCellChange = { r: number; c: number; v: unknown };
+
+/**
+ * Apply a remote batch of cells inside one draft (A5). The caller runs it in
+ * one setContext with noHistory, so a batch is one Immer pass and never
+ * lands on the local undo stack. A cell that fails is reported through
+ * onSkip and the rest still apply.
+ */
+export function applyRemoteCells(
+  ctx: Context,
+  cells: RemoteCellChange[],
+  options: CommonOptions = {},
+  onSkip?: (cell: RemoteCellChange, error: unknown) => void,
+) {
+  for (const cell of cells) {
+    try {
+      applyRemoteCellValue(ctx, cell.r, cell.c, cell.v, options);
+    } catch (error) {
+      onSkip?.(cell, error);
+    }
   }
 }
 
