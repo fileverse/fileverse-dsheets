@@ -599,12 +599,14 @@ export class FormulaCache {
             }
           } else {
             that.activeDepCollection.hasWideRangeDep = true;
+            // A whole row or column stays open-ended, so rows or columns
+            // added later are still inside it.
             that.activeDepCollection.wideRanges.push({
               sheetId: id,
               startRow,
-              endRow,
+              endRow: emptyRow ? Infinity : endRow,
               startCol,
-              endCol,
+              endCol: emptyCol ? Infinity : endCol,
             });
             if (originInRange) {
               // Still record self-in-range to detect circular refs.
@@ -1092,6 +1094,9 @@ export function getcellrange(ctx: Context, txt: string, formulaId?: string) {
   const rangetxtArr = rangetxt.split(':');
   const row = [];
   const col = [];
+  // A whole row or column is sized by the grid as it is now, so it is not
+  // cached: added rows or columns must be inside it on the next lookup.
+  let sizedByGrid = false;
   row[0] = parseInt(rangetxtArr[0].replace(/[^0-9]/g, ''), 10) - 1;
   row[1] = parseInt(rangetxtArr[1].replace(/[^0-9]/g, ''), 10) - 1;
   if (Number.isNaN(row[0])) {
@@ -1099,6 +1104,7 @@ export function getcellrange(ctx: Context, txt: string, formulaId?: string) {
   }
   if (Number.isNaN(row[1])) {
     row[1] = sheetdata.length - 1;
+    sizedByGrid = true;
   }
   if (row[0] > row[1]) {
     return null;
@@ -1110,6 +1116,7 @@ export function getcellrange(ctx: Context, txt: string, formulaId?: string) {
   }
   if (Number.isNaN(col[1])) {
     col[1] = sheetdata[0].length - 1;
+    sizedByGrid = true;
   }
   if (col[0] > col[1]) {
     return null;
@@ -1120,7 +1127,7 @@ export function getcellrange(ctx: Context, txt: string, formulaId?: string) {
     column: col,
     sheetId,
   };
-  addToCellIndexList(ctx, txt, item);
+  if (!sizedByGrid) addToCellIndexList(ctx, txt, item);
   return item;
 }
 

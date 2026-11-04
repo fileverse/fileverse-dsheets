@@ -153,6 +153,7 @@ export function collectFormulaTextDeps(
     endRow: number,
     startCol: number,
     endCol: number,
+    openEnded: { rows: boolean; cols: boolean } = { rows: false, cols: false },
   ) => {
     const originInRange =
       id === sheetId &&
@@ -169,12 +170,13 @@ export function collectFormulaTextDeps(
       }
     } else {
       wide = true;
+      // A whole row or column stays open-ended, as execfunction records it.
       wideRanges.push({
         sheetId: id,
         startRow,
-        endRow,
+        endRow: openEnded.rows ? Infinity : endRow,
         startCol,
-        endCol,
+        endCol: openEnded.cols ? Infinity : endCol,
       });
       if (originInRange) deps.add(originKey);
     }
@@ -213,7 +215,10 @@ export function collectFormulaTextDeps(
         endCol = data[0].length;
       }
     }
-    addRange(id, startRow, endRow, startCol, endCol);
+    addRange(id, startRow, endRow, startCol, endCol, {
+      rows: emptyRow,
+      cols: emptyCol,
+    });
   };
 
   const addName = (name: string) => {
