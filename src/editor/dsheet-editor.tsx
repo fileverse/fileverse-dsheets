@@ -653,6 +653,7 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
       showFormulaBar,
       enableIndexeddbSync,
       dsheetId = '',
+      localStoreId,
       portalContent,
       onContentUpdate,
       onChange,
@@ -696,11 +697,14 @@ const SpreadsheetEditor = React.forwardRef<DSheetEditorHandle, DsheetProps>(
 
     return (
       <EditorProvider
-        key={dsheetId}
+        key={
+          localStoreId === undefined ? dsheetId : `${localStoreId}:${dsheetId}`
+        }
         setSelectedTemplate={setSelectedTemplate}
         getDocumentTitle={getDocumentTitle}
         updateDocumentTitle={updateDocumentTitle}
         dsheetId={dsheetId}
+        localStoreId={localStoreId}
         username={username}
         portalContent={portalContent}
         enableIndexeddbSync={enableIndexeddbSync}
