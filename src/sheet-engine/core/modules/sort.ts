@@ -15,6 +15,10 @@ import {
   setCellValue,
 } from '..';
 import { jfrefreshgrid } from './refresh';
+import {
+  getDataVerificationColumnSpan,
+  permuteDataVerificationByRowMap,
+} from './sort-data-verification';
 
 export function orderbydata(
   isAsc: boolean,
@@ -133,6 +137,23 @@ export function sortDataRange(
     }
   }
 
+  // Data verification (dropdown rules, checkbox checked state) is keyed by
+  // cell position, so it must follow its cell to the new row.
+  let dvChanges: ReturnType<typeof permuteDataVerificationByRowMap>['changes'] =
+    [];
+  if (sheet) {
+    const dvResult = permuteDataVerificationByRowMap(
+      sheet.dataVerification,
+      absoluteRowMap,
+      stc,
+      edc,
+    );
+    if (dvResult.changes.length > 0) {
+      sheet.dataVerification = dvResult.next;
+      dvChanges = dvResult.changes;
+    }
+  }
+
   // Keep formula dependency locations aligned with row permutation.
   sheet?.calcChain?.forEach((item: any) => {
     const mapped = absoluteRowMap[item.r];
@@ -174,6 +195,15 @@ export function sortDataRange(
         });
       }
     }
+    dvChanges.forEach((change) => {
+      changes.push({
+        sheetId: ctx.currentSheetId,
+        path: ['dataVerification'],
+        key: change.key,
+        value: change.type === 'delete' ? null : change.value,
+        type: change.type,
+      });
+    });
     if (changes.length > 0) ctx.hooks.updateCellYdoc(changes);
   }
 }
@@ -305,6 +335,21 @@ export function sortSheetBySelectedColumn(ctx: Context, isAsc: boolean) {
   }
 
   if (str == null || edr == null || stc == null || edc == null) return;
+  // Columns holding only empty cells with validation rules must still move
+  // with their rows, so widen the column bounds to cover them.
+  const sortSheetIdx = getSheetIndex(ctx, ctx.currentSheetId);
+  const dvSpan = getDataVerificationColumnSpan(
+    sortSheetIdx == null
+      ? null
+      : ctx.luckysheetfile[sortSheetIdx]?.dataVerification,
+    str,
+    edr,
+  );
+  if (dvSpan) {
+    stc = Math.min(stc, dvSpan.minC);
+    edc = Math.max(edc, dvSpan.maxC);
+  }
+
   if (selectedColumn < stc || selectedColumn > edc) return;
 
   let hasMc = false;

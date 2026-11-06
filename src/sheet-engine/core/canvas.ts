@@ -2220,7 +2220,7 @@ export class Canvas {
 
       // 复选框
       renderCtx.lineWidth = 2;
-      renderCtx.strokeStyle = '#000';
+      renderCtx.strokeStyle = activePalette.cellText;
       renderCtx.beginPath();
       renderCtx.roundRect(
         horizonAlignPos,
@@ -2232,7 +2232,7 @@ export class Canvas {
       renderCtx.stroke();
 
       if (dataVerification[`${r}_${c}`].checked) {
-        // Fill the checkbox with black
+        // Fill the checkbox with the theme text color
         renderCtx.save();
         renderCtx.beginPath();
         renderCtx.roundRect(
@@ -2242,14 +2242,14 @@ export class Canvas {
           12,
           2,
         );
-        renderCtx.fillStyle = '#000';
+        renderCtx.fillStyle = activePalette.cellText;
         renderCtx.fill();
         renderCtx.restore();
 
-        // Draw the white tick
+        // Draw the tick in the cell background color (contrasts with the fill)
         renderCtx.save();
         renderCtx.beginPath();
-        renderCtx.strokeStyle = '#fff';
+        renderCtx.strokeStyle = activePalette.cellBg;
         renderCtx.lineWidth = 2;
         renderCtx.lineJoin = 'round';
         renderCtx.moveTo(horizonAlignPos + 3, verticalAlignPos_checkbox + 6);
