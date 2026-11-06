@@ -15,6 +15,7 @@ import {
   setCellValue,
 } from '..';
 import { jfrefreshgrid } from './refresh';
+import { permuteDataVerificationByRowMap } from './sort-data-verification';
 
 export function orderbydata(
   isAsc: boolean,
@@ -133,6 +134,23 @@ export function sortDataRange(
     }
   }
 
+  // Data verification (dropdown rules, checkbox checked state) is keyed by
+  // cell position, so it must follow its cell to the new row.
+  let dvChanges: ReturnType<typeof permuteDataVerificationByRowMap>['changes'] =
+    [];
+  if (sheet) {
+    const dvResult = permuteDataVerificationByRowMap(
+      sheet.dataVerification,
+      absoluteRowMap,
+      stc,
+      edc,
+    );
+    if (dvResult.changes.length > 0) {
+      sheet.dataVerification = dvResult.next;
+      dvChanges = dvResult.changes;
+    }
+  }
+
   // Keep formula dependency locations aligned with row permutation.
   sheet?.calcChain?.forEach((item: any) => {
     const mapped = absoluteRowMap[item.r];
@@ -174,6 +192,15 @@ export function sortDataRange(
         });
       }
     }
+    dvChanges.forEach((change) => {
+      changes.push({
+        sheetId: ctx.currentSheetId,
+        path: ['dataVerification'],
+        key: change.key,
+        value: change.type === 'delete' ? null : change.value,
+        type: change.type,
+      });
+    });
     if (changes.length > 0) ctx.hooks.updateCellYdoc(changes);
   }
 }
