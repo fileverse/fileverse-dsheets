@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { permuteDataVerificationByRowMap } from './sort-data-verification';
+import {
+  getDataVerificationColumnSpan,
+  permuteDataVerificationByRowMap,
+} from './sort-data-verification';
 
 const cb = (checked: boolean) => ({
   type: 'checkbox',
@@ -65,5 +68,45 @@ describe('permuteDataVerificationByRowMap', () => {
     );
     expect(next).toEqual({});
     expect(changes).toEqual([]);
+  });
+});
+
+describe('permuteDataVerificationByRowMap cost', () => {
+  it('returns the same map untouched when there are no rules in range', () => {
+    const empty = {};
+    const rowMap: Record<number, number> = {};
+    for (let i = 0; i < 100000; i += 1) rowMap[i] = 99999 - i;
+    const res = permuteDataVerificationByRowMap(empty, rowMap, 0, 9);
+    expect(res.next).toBe(empty);
+    expect(res.changes).toEqual([]);
+  });
+
+  it('ignores rules outside the sorted rows and columns', () => {
+    const dv = { '50_0': cb(true), '1_9': cb(true) };
+    const res = permuteDataVerificationByRowMap(dv, { 1: 2, 2: 1 }, 0, 3);
+    expect(res.next).toBe(dv);
+    expect(res.changes).toEqual([]);
+  });
+
+  it('ignores malformed keys', () => {
+    const dv = { foo: cb(true), '_1': cb(true), '1_': cb(true) } as any;
+    const res = permuteDataVerificationByRowMap(dv, { 1: 2, 2: 1 }, 0, 3);
+    expect(res.changes).toEqual([]);
+  });
+});
+
+describe('getDataVerificationColumnSpan', () => {
+  it('returns the column span of rules within the row range', () => {
+    const dv = { '2_4': cb(false), '3_6': cb(false), '99_20': cb(false) };
+    expect(getDataVerificationColumnSpan(dv, 1, 10)).toEqual({
+      minC: 4,
+      maxC: 6,
+    });
+  });
+
+  it('returns null when nothing matches', () => {
+    expect(getDataVerificationColumnSpan(undefined, 0, 5)).toBeNull();
+    expect(getDataVerificationColumnSpan({}, 0, 5)).toBeNull();
+    expect(getDataVerificationColumnSpan({ '9_1': cb(true) }, 0, 5)).toBeNull();
   });
 });

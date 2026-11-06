@@ -15,7 +15,10 @@ import {
   setCellValue,
 } from '..';
 import { jfrefreshgrid } from './refresh';
-import { permuteDataVerificationByRowMap } from './sort-data-verification';
+import {
+  getDataVerificationColumnSpan,
+  permuteDataVerificationByRowMap,
+} from './sort-data-verification';
 
 export function orderbydata(
   isAsc: boolean,
@@ -332,6 +335,21 @@ export function sortSheetBySelectedColumn(ctx: Context, isAsc: boolean) {
   }
 
   if (str == null || edr == null || stc == null || edc == null) return;
+  // Columns holding only empty cells with validation rules must still move
+  // with their rows, so widen the column bounds to cover them.
+  const sortSheetIdx = getSheetIndex(ctx, ctx.currentSheetId);
+  const dvSpan = getDataVerificationColumnSpan(
+    sortSheetIdx == null
+      ? null
+      : ctx.luckysheetfile[sortSheetIdx]?.dataVerification,
+    str,
+    edr,
+  );
+  if (dvSpan) {
+    stc = Math.min(stc, dvSpan.minC);
+    edc = Math.max(edc, dvSpan.maxC);
+  }
+
   if (selectedColumn < stc || selectedColumn > edc) return;
 
   let hasMc = false;
