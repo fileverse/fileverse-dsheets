@@ -744,8 +744,8 @@ const FxEditor: React.FC = () => {
           if (previousItem) {
             previousItem.classList.add('luckysheet-formula-search-item-active');
           }
+          e.preventDefault();
         }
-        e.preventDefault();
       } else if (
         !(e.metaKey || e.ctrlKey) &&
         e.key === 'ArrowDown' &&
@@ -775,8 +775,8 @@ const FxEditor: React.FC = () => {
           if (nextItem) {
             nextItem.classList.add('luckysheet-formula-search-item-active');
           }
+          e.preventDefault();
         }
-        e.preventDefault();
       }
 
       setContext((draftCtx) => {
