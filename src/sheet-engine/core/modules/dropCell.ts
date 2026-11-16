@@ -2429,7 +2429,6 @@ export function updateDropCell(ctx: Context) {
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
               });
-              afterHookCalled = true;
             }
           }
 
@@ -2544,7 +2543,6 @@ export function updateDropCell(ctx: Context) {
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
               });
-              afterHookCalled = true;
             }
           }
 
@@ -2668,7 +2666,6 @@ export function updateDropCell(ctx: Context) {
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
               });
-              afterHookCalled = true;
             }
           }
 
@@ -2782,7 +2779,6 @@ export function updateDropCell(ctx: Context) {
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
               });
-              afterHookCalled = true;
             }
           }
 
