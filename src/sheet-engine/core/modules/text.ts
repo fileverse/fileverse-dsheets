@@ -622,6 +622,10 @@ export function getCellTextInfo(
       value = cell;
     }
 
+    if (typeof value === 'number') {
+      value = String(value);
+    }
+
     if (_.isEmpty(value)) {
       return null;
     }

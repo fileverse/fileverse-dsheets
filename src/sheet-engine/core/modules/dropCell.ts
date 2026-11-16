@@ -2376,15 +2376,7 @@ export function updateDropCell(ctx: Context) {
 
             [, cell.v, cell.f] = v;
 
-            const { afterUpdateCell } = ctx.hooks;
-            if (afterUpdateCell) {
-              afterUpdateCell(j, i, null, {
-                ...cell,
-                v: v[1] instanceof Promise ? v[1] : cell.v,
-                m: v[1] instanceof Promise ? '[object Promise]' : v[1],
-              }, undefined, { skipPersist: true });
-            }
-
+            let displayValue = v[1];
             if (cell.spl != null) {
               cell.spl = v[3].data;
             } else if (cell.v != null) {
@@ -2406,16 +2398,15 @@ export function updateDropCell(ctx: Context) {
                     if (cell.ct?.fa === '##0.00') {
                       /* 如果是数字类型 */
                       mask = genarate(
-                        `${
-                          Math.round((cell.v as number) * 1000000000) /
-                          1000000000
+                        `${Math.round((cell.v as number) * 1000000000) /
+                        1000000000
                         }.00`,
                       );
                       cell.m = mask![0].toString();
                     } else {
                       mask = genarate(
                         Math.round((cell.v as number) * 1000000000) /
-                          1000000000,
+                        1000000000,
                       );
                       cell.m = mask![0].toString();
                     }
@@ -2428,6 +2419,17 @@ export function updateDropCell(ctx: Context) {
                 cell.m = mask![0].toString();
                 [, cell.ct] = mask!;
               }
+              displayValue = cell.m;
+            }
+
+            const { afterUpdateCell } = ctx.hooks;
+            if (afterUpdateCell) {
+              afterUpdateCell(j, i, null, {
+                ...cell,
+                v: v[1] instanceof Promise ? v[1] : cell.v,
+                m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
+              });
+              afterHookCalled = true;
             }
           }
 
@@ -2501,15 +2503,7 @@ export function updateDropCell(ctx: Context) {
 
             [, cell.v, cell.f] = v;
 
-            const { afterUpdateCell } = ctx.hooks;
-            if (afterUpdateCell) {
-              afterUpdateCell(j, i, null, {
-                ...cell,
-                v: v[1] instanceof Promise ? v[1] : cell.v,
-                m: v[1] instanceof Promise ? '[object Promise]' : v[1],
-              }, undefined, { skipPersist: true });
-            }
-
+            let displayValue = v[1];
             if (cell.spl != null) {
               cell.spl = v[3].data;
             } else if (cell.v != null) {
@@ -2540,6 +2534,17 @@ export function updateDropCell(ctx: Context) {
                 cell.m = mask![0].toString();
                 [, cell.ct] = mask!;
               }
+              displayValue = cell.m;
+            }
+
+            const { afterUpdateCell } = ctx.hooks;
+            if (afterUpdateCell) {
+              afterUpdateCell(j, i, null, {
+                ...cell,
+                v: v[1] instanceof Promise ? v[1] : cell.v,
+                m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
+              });
+              afterHookCalled = true;
             }
           }
 
@@ -2622,15 +2627,7 @@ export function updateDropCell(ctx: Context) {
 
             [, cell.v, cell.f] = v;
 
-            const { afterUpdateCell } = ctx.hooks;
-            if (afterUpdateCell) {
-              afterUpdateCell(i, j, null, {
-                ...cell,
-                v: v[1] instanceof Promise ? v[1] : cell.v,
-                m: v[1] instanceof Promise ? '[object Promise]' : v[1],
-              }, undefined, { skipPersist: true });
-            }
-
+            let displayValue = v[1];
             if (cell.spl != null) {
               cell.spl = v[3].data;
             } else if (cell.v != null) {
@@ -2661,6 +2658,17 @@ export function updateDropCell(ctx: Context) {
                 cell.m = mask![0].toString();
                 [, cell.ct] = mask!;
               }
+              displayValue = cell.m;
+            }
+
+            const { afterUpdateCell } = ctx.hooks;
+            if (afterUpdateCell) {
+              afterUpdateCell(i, j, null, {
+                ...cell,
+                v: v[1] instanceof Promise ? v[1] : cell.v,
+                m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
+              });
+              afterHookCalled = true;
             }
           }
 
@@ -2733,15 +2741,7 @@ export function updateDropCell(ctx: Context) {
 
             [, cell.v, cell.f] = v;
 
-            const { afterUpdateCell } = ctx.hooks;
-            if (afterUpdateCell) {
-              afterUpdateCell(i, j, null, {
-                ...cell,
-                v: v[1] instanceof Promise ? v[1] : cell.v,
-                m: v[1] instanceof Promise ? '[object Promise]' : v[1],
-              }, undefined, { skipPersist: true });
-            }
-
+            let displayValue = v[1];
             if (cell.spl != null) {
               cell.spl = v[3].data;
             } else if (cell.v != null) {
@@ -2772,6 +2772,17 @@ export function updateDropCell(ctx: Context) {
                 cell.m = mask![0].toString();
                 [, cell.ct] = mask!;
               }
+              displayValue = cell.m;
+            }
+
+            const { afterUpdateCell } = ctx.hooks;
+            if (afterUpdateCell) {
+              afterUpdateCell(i, j, null, {
+                ...cell,
+                v: v[1] instanceof Promise ? v[1] : cell.v,
+                m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
+              });
+              afterHookCalled = true;
             }
           }
 
