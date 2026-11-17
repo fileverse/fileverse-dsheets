@@ -26,7 +26,6 @@ import {
   applyWorkerFormulaChunkResults,
   insertDuneChart,
   getFlowdata,
-  api,
   handlePasteByClick,
   insertImage,
   loadImageFromFile,
@@ -839,53 +838,6 @@ const Workbook = React.forwardRef<WorkbookInstance, Settings & AdditionalProps>(
     }, []);
 
     useEffect(() => {
-      setContext((ctx: any) => {
-        const gridData = getFlowdata(ctx);
-        const cellData = api.dataToCelldata(gridData as any);
-        const denominatedUsed = (cellData ?? []).some((cell: any) => {
-          const value = cell?.v?.m?.toString();
-          return (
-            value?.includes('BTC') ||
-            value?.includes('ETH') ||
-            value?.includes('SOL')
-          );
-        });
-        const denoWarn = document.getElementById('denomination-warning');
-        const scrollBar = document.getElementsByClassName(
-          'luckysheet-scrollbar-x',
-        )[0] as HTMLElement;
-        const addRowBar = document.getElementById(
-          'luckysheet-bottom-controll-row',
-        );
-        if (denominatedUsed && denoWarn) {
-          denoWarn.style.display = 'block';
-          denoWarn.style.left = '0px';
-          if (scrollBar) {
-            scrollBar.setAttribute(
-              'style',
-              'bottom: 36px !important; width: calc(100% - 60px);',
-            );
-          }
-          // Lift add-row bar so its white band sits directly on top of the disclaimer bar (no grid gap).
-          if (addRowBar) {
-            addRowBar.style.bottom = '54px';
-          }
-        } else if (!denominatedUsed && denoWarn) {
-          denoWarn.style.display = 'none';
-          denoWarn.style.left = '-9999px';
-          if (scrollBar) {
-            scrollBar.setAttribute(
-              'style',
-              'bottom: 10px !important; width: calc(100% - 60px);',
-            );
-          }
-          if (addRowBar) {
-            addRowBar.style.bottom = '38px';
-          }
-        }
-        return ctx;
-      });
-
       if (context.luckysheet_select_save != null) {
         mergedSettings.hooks?.afterSelectionChange?.(
           context.currentSheetId,
