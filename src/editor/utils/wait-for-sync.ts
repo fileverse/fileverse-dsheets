@@ -12,7 +12,15 @@ export const INDEXEDDB_SYNC_TIMEOUT_MS = 15_000;
 export const REBUILD_BOOTSTRAP_WAIT_MS = 3_000;
 const SUPERSEDED_POLL_MS = 100;
 
+/**
+ * The first read of the local store did not finish in time. The store may
+ * still hold rows that were never replayed into the live Y.Doc, so deleting
+ * and rebuilding it from the doc can drop them. `localRowsUnread` is true so a
+ * host can tell this apart from a real read error and skip the rebuild.
+ */
 export class PersistenceSyncTimeoutError extends Error {
+  readonly localRowsUnread = true;
+
   constructor(ms: number) {
     super(`[DSheet] IndexedDB did not finish syncing within ${ms} ms`);
     this.name = 'PersistenceSyncTimeoutError';
@@ -86,3 +94,9 @@ export async function waitForBootstrapOrAbandon(
     clearTimeout(timer);
   }
 }
+
+export const isPersistenceSyncTimeoutError = (
+  error: unknown,
+): error is PersistenceSyncTimeoutError =>
+  error instanceof PersistenceSyncTimeoutError ||
+  (error instanceof Error && error.name === 'PersistenceSyncTimeoutError');

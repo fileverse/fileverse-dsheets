@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PersistenceSupersededError,
+  isPersistenceSyncTimeoutError,
   PersistenceSyncTimeoutError,
   waitForBootstrapOrAbandon,
   waitForPersistenceSynced,
@@ -78,5 +79,21 @@ describe('waitForBootstrapOrAbandon', () => {
     const result = waitForBootstrapOrAbandon(new Promise(() => {}), 1000);
     await vi.advanceTimersByTimeAsync(1000);
     await expect(result).resolves.toBe('stuck');
+  });
+});
+
+describe('isPersistenceSyncTimeoutError', () => {
+  it('marks the timeout error as one that left local rows unread', () => {
+    const error = new PersistenceSyncTimeoutError(1000);
+    expect(error.localRowsUnread).toBe(true);
+    expect(isPersistenceSyncTimeoutError(error)).toBe(true);
+  });
+
+  it('matches by name across package copies, and rejects other errors', () => {
+    const foreign = new Error('x');
+    foreign.name = 'PersistenceSyncTimeoutError';
+    expect(isPersistenceSyncTimeoutError(foreign)).toBe(true);
+    expect(isPersistenceSyncTimeoutError(new Error('QuotaExceeded'))).toBe(false);
+    expect(isPersistenceSyncTimeoutError(null)).toBe(false);
   });
 });

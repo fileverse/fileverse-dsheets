@@ -8,6 +8,11 @@ export { executeStringFunction } from './editor/utils/executeStringFunction';
 export { FLVURL } from '@fileverse-dev/formulajs';
 export { loadLocale } from '@sheet-engine/core';
 
+export {
+  PersistenceSyncTimeoutError,
+  isPersistenceSyncTimeoutError,
+} from './editor/utils/wait-for-sync';
+
 // Types
 export type {
   ErrorMessageHandlerReturnType,

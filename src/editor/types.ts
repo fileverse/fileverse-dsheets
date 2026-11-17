@@ -161,7 +161,10 @@ export interface DsheetProps {
    * collaboration continue using the in-memory Y.Doc, matching dDoc. Also
    * called when the first read of the local store does not finish within 15 s
    * (the editor then continues without local persistence, and
-   * `rebuildLocalStore()` can recreate the store). */
+   * `rebuildLocalStore()` can recreate the store). That timeout error is a
+   * `PersistenceSyncTimeoutError` (`localRowsUnread: true`): the store may hold
+   * rows the live doc never loaded, so rebuilding it can drop unpublished
+   * edits. Check with `isPersistenceSyncTimeoutError` before rebuilding. */
   onIndexedDbError?: (error: Error) => void;
   username?: string;
   portalContent?: string;
