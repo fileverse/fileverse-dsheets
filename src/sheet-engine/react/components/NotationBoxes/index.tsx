@@ -1,4 +1,4 @@
-import React, { useContext, useEffect } from 'react';
+import React, { useContext, useEffect, useRef } from 'react';
 import {
   getFlowdata,
   onCommentBoxMoveStart,
@@ -7,29 +7,29 @@ import {
 } from '@sheet-engine/core';
 import _ from 'lodash';
 import WorkbookContext from '../../context';
+import { collectShownCommentCells, shownCommentsKey } from './shown-comments';
 
 const NotationBoxes: React.FC = () => {
   const { context, setContext, refs, settings } = useContext(WorkbookContext);
   const flowdata = getFlowdata(context);
 
+  // Applied key of the shown-comment set; the second context update per commit
+  // is skipped while the set is unchanged (E5).
+  const appliedShownKey = useRef<string | null>(null);
+  const currentSheetId = context.currentSheetId;
+
   // TODO use patch to detect ps isShow change may be more effecient
   useEffect(() => {
     if (flowdata) {
-      const psShownCells: { r: number; c: number }[] = [];
-      for (let i = 0; i < flowdata.length; i += 1) {
-        for (let j = 0; j < flowdata[i].length; j += 1) {
-          const cell = flowdata[i][j];
-          if (!cell) continue;
-          if (cell.ps?.isShow) {
-            psShownCells.push({ r: i, c: j });
-          }
-        }
-      }
+      const psShownCells = collectShownCommentCells(flowdata);
+      const key = shownCommentsKey(currentSheetId, psShownCells);
+      if (key === appliedShownKey.current) return;
+      appliedShownKey.current = key;
       setContext((ctx) => {
         showComments(ctx, psShownCells);
       });
     }
-  }, [flowdata, setContext]);
+  }, [flowdata, currentSheetId, setContext]);
 
   // Escape closes the pinned (editingCommentBox) popup.
   useEffect(() => {

@@ -3,6 +3,7 @@ import type React from 'react';
 import * as Y from 'yjs';
 import { Sheet, WorkbookInstance } from '@sheet-engine/react';
 import { migrateSheetFactoryForImport } from '../utils/migrate-new-yjs';
+import { isFormatLocked } from '../utils/format-gate';
 import { ySheetArrayToPlain } from '../utils/update-ydoc';
 import {
   parseXlsxWorkbook,
@@ -284,6 +285,7 @@ export async function runXlsxFileUpload(
   });
 
   const ydoc = ydocRef.current;
+  if (isFormatLocked(ydoc, dsheetId)) return;
   ydoc.transact(() => {
     if (importType !== 'merge-current-dsheet') {
       sheetArray.delete(0, sheetArray.length);

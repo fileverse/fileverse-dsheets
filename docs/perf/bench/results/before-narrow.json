@@ -1,0 +1,32 @@
+{
+  "label": "before-narrow",
+  "date": "2026-10-26T14:12:00.339Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S15 flag-false (sparse tab): after warm-up pass": {
+    "depGraphComplete": false,
+    "revDepsSize": 10000
+  },
+  "S15 flag-false (sparse tab): commit to a cell 1 formula reads, formulas read": {
+    "formulasRead": 1
+  },
+  "S15 flag-false (sparse tab): commit (updateCell)": {
+    "median": 0.211,
+    "p95": 0.718,
+    "min": 0.1779,
+    "runs": 30
+  },
+  "S15 flag-true: after warm-up pass": {
+    "depGraphComplete": true,
+    "revDepsSize": 10000
+  },
+  "S15 flag-true: commit to a cell 1 formula reads, formulas read": {
+    "formulasRead": 1
+  },
+  "S15 flag-true: commit (updateCell)": {
+    "median": 0.155,
+    "p95": 0.212,
+    "min": 0.1496,
+    "runs": 30
+  }
+}

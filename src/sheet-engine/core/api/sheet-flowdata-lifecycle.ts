@@ -5,8 +5,15 @@ import { dataToCelldata } from './common';
 import { ensureSheetFlowdata } from './sheet';
 import { getSheetIdByName, getSheetIndex } from '../utils';
 
-/** Matches sheet-qualified refs in formulas: `Sheet2!A1`, `'My Sheet'!B2`. */
-const FORMULA_SHEET_REF_RE = /(?:'((?:[^']|'')*)'|([^'!\s()&+,{}]+))!/g;
+/**
+ * Matches sheet-qualified refs in formulas: `Sheet2!A1`, `'My Sheet'!B2`.
+ * An unquoted name stops at operators: with `=` or `*` allowed in it,
+ * `=A!B5` captured the name `=A` and `=2*A!B5` captured `2*A`, which no sheet
+ * has, so the reference was missed. A hyphen is allowed inside a name but not
+ * as its first character.
+ */
+const FORMULA_SHEET_REF_RE =
+  /(?:'((?:[^']|'')*)'|([^'!\s()&+,{}=*/<>^%;:-][^'!\s()&+,{}=*/<>^%;:]*))!/g;
 
 type SheetsRequiredDenseCache = {
   activeSheetId: string;
@@ -33,7 +40,7 @@ function toCellKey(sheetId: string, r: number, c: number): string {
   return `${sheetId}:${r}:${c}`;
 }
 
-function collectSheetIdsFromFormulaText(
+export function collectSheetIdsFromFormulaText(
   ctx: Context,
   formula: string,
 ): Set<string> {

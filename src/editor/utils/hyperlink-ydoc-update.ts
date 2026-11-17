@@ -24,10 +24,11 @@ export const hyperlinkYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'hyperlink',
   });
   if (!syncContext) return;
 
-  const newData = sheetEditorRef.current?.getSheet()?.hyperlink || {};
+  const newData = syncContext.newValue || {};
   const oldData = syncContext.oldSheet.hyperlink || {};
 
   const changes = buildMapFieldChanges({
