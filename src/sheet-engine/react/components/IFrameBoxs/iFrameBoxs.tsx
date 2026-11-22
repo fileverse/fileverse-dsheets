@@ -7,6 +7,7 @@ import {
   onIframeMoveEnd,
   onIframeResize,
   onIframeResizeEnd,
+  sanitizeDuneUrl,
 } from '@sheet-engine/core';
 import WorkbookContext from '../../context';
 import './iFrameBoxs.css';
@@ -15,7 +16,6 @@ const IframeBoxs: React.FC = () => {
   const { context, setContext, refs } = useContext(WorkbookContext);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Get current sheet's iframes
   const currentSheetIframes = useMemo(() => {
     const currentSheet = context.luckysheetfile.find(
       (sheet) => sheet.id === context.currentSheetId,
@@ -52,6 +52,7 @@ const IframeBoxs: React.FC = () => {
     <div id="fortune-iframe-boxes" ref={containerRef}>
       {currentSheetIframes?.map((frame: any) => {
         const isActive = frame.id === context.activeIframe;
+        const safeSrc = sanitizeDuneUrl(frame.src ?? '');
         const style = {
           width: frame.width * context.zoomRatio,
           height: frame.height * context.zoomRatio,
@@ -97,16 +98,38 @@ const IframeBoxs: React.FC = () => {
               className="luckysheet-modal-dialog-content"
               style={{ width: '100%', height: '100%', overflow: 'hidden' }}
             >
-              <iframe
-                title={`iframe-${frame.id}`}
-                src={frame.src}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  border: 'none',
-                  pointerEvents: 'none',
-                }}
-              />
+              {safeSrc ? (
+                <iframe
+                  title={`iframe-${frame.id}`}
+                  src={safeSrc}
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                  referrerPolicy="no-referrer"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                    pointerEvents: 'none',
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 12,
+                    boxSizing: 'border-box',
+                    fontSize: 12,
+                    color: '#666',
+                    background: '#f5f5f5',
+                    textAlign: 'center',
+                  }}
+                >
+                  Embed blocked: unsupported or disallowed source
+                </div>
+              )}
             </div>
 
             <div className="luckysheet-modal-dialog-border" />

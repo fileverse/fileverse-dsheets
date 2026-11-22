@@ -5,27 +5,47 @@ import { getSheetIndex } from '../utils';
 import { mergeBorder } from './cell';
 import { generateRandomId } from './image';
 
+// Allowlist Dune chart URLs only (HTTPS embeds / queries).
 export function sanitizeDuneUrl(input: string): string | null {
+  if (typeof input !== 'string') return null;
   const trimmed = input.trim();
+  if (!trimmed) return null;
 
-  // Match iframe embed src
-  const iframeMatch = trimmed.match(
-    /src=["']?(https:\/\/dune\.com\/embeds\/\d+\/\d+)/,
+  const iframeAttrMatch = trimmed.match(
+    /src=["']?(https:\/\/dune\.com\/embeds\/\d+\/\d+)/i,
   );
-  if (iframeMatch) {
-    return iframeMatch[1];
+  if (iframeAttrMatch) {
+    return iframeAttrMatch[1];
   }
 
-  // Match query-to-embed conversion
+  const embedMatch = trimmed.match(
+    /^https:\/\/dune\.com\/embeds\/(\d+)\/(\d+)\/?(?:\?.*)?$/i,
+  );
+  if (embedMatch) {
+    return `https://dune.com/embeds/${embedMatch[1]}/${embedMatch[2]}`;
+  }
+
   const queryMatch = trimmed.match(
-    /^https:\/\/dune\.com\/queries\/(\d+)\/(\d+)/,
+    /^https:\/\/dune\.com\/queries\/(\d+)\/(\d+)\/?(?:\?.*)?$/i,
   );
   if (queryMatch) {
-    const [, queryId, vizId] = queryMatch;
-    return `https://dune.com/embeds/${queryId}/${vizId}`;
+    return `https://dune.com/embeds/${queryMatch[1]}/${queryMatch[2]}`;
   }
 
-  return null; // Not a supported chart
+  return null;
+}
+
+export function sanitizeSheetIframes<T extends { src?: string }>(
+  iframes: T[] | null | undefined,
+): T[] {
+  if (!Array.isArray(iframes)) return [];
+  const out: T[] = [];
+  for (const frame of iframes) {
+    const safeSrc = sanitizeDuneUrl(frame?.src ?? '');
+    if (!safeSrc) continue;
+    out.push({ ...frame, src: safeSrc });
+  }
+  return out;
 }
 
 export function saveIframe(ctx: Context) {
@@ -37,6 +57,12 @@ export function saveIframe(ctx: Context) {
 
 export function insertIframe(ctx: Context, src: string) {
   try {
+    const safeSrc = sanitizeDuneUrl(src);
+    if (!safeSrc) {
+      console.warn('Unsupported iframe src:', src);
+      return;
+    }
+
     const last =
       ctx.luckysheet_select_save?.[ctx.luckysheet_select_save.length - 1];
     const rowIndex = last?.row_focus ?? last?.row?.[0] ?? 0;
@@ -55,7 +81,7 @@ export function insertIframe(ctx: Context, src: string) {
 
     const iframe = {
       id: generateRandomId('iframe'),
-      src,
+      src: safeSrc,
       left,
       top,
       width: 400,

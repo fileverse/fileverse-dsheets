@@ -383,6 +383,7 @@ export { jfrefreshgrid } from './refresh';
 // iframe
 export {
   sanitizeDuneUrl,
+  sanitizeSheetIframes,
   insertDuneChart,
   onIframeMoveStart,
   onIframeResizeStart,
