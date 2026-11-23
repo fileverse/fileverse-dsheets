@@ -1,8 +1,9 @@
 import { WorkbookInstance } from '@sheet-engine/react';
 import * as Y from 'yjs';
+import isEqual from 'lodash/isEqual';
+import { isValidFilterSelection } from '@sheet-engine/core/utils/filter-selection';
 import {
   applyYdocSheetChanges,
-  buildMapFieldChanges,
   getSheetYdocSyncContext,
 } from './sheet-ydoc-sync-utils';
 
@@ -28,21 +29,22 @@ export const filterSelectYdocUpdate = ({
   });
   if (!syncContext) return;
 
-  const newData =
-    (sheetEditorRef.current?.getSheet() as any)?.filter_select || {};
-  const oldData = syncContext.oldSheet.filter_select || {};
+  const selection = sheetEditorRef.current?.getSheet()?.filter_select;
+  const next = isValidFilterSelection(selection) ? selection : undefined;
+  if (isEqual(syncContext.oldSheet.filter_select, next)) return;
 
-  const changes = buildMapFieldChanges({
-    sheetId: syncContext.currentSheetId,
-    fieldPath: 'filter_select',
-    oldData: oldData || {},
-    newData: newData || {},
-  });
-
+  // Send both ranges together so concurrent edits cannot leave half a filter.
   applyYdocSheetChanges({
     ydoc: syncContext.ydoc,
     dsheetId,
-    changes,
+    changes: [
+      {
+        sheetId: syncContext.currentSheetId,
+        path: ['filter_select'],
+        value: next,
+        type: next ? 'update' : 'delete',
+      },
+    ],
     handleContentPortal,
   });
 };

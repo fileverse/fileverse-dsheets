@@ -14,6 +14,8 @@ import {
   type CellFormatRange,
 } from "../../sheet-engine/core/utils/range-format";
 import { expandSheetDataVerification } from "./import-compaction";
+import { isValidFilterSelection } from "@sheet-engine/core/utils/filter-selection";
+import { getFilterHiddenRowsUnionFromFilterMap } from "@sheet-engine/core/modules/rowVisibility";
 
 export type SheetChangePath = {
   sheetId: string;
@@ -50,6 +52,25 @@ function ensureConfigYMap(sheet: Y.Map<any>): Y.Map<any> {
   }
   sheet.set("config", configMap);
   return configMap;
+}
+
+function readMapField(
+  map: Y.Map<any> | Record<string, any> | undefined,
+  key: string,
+) {
+  const value = map instanceof Y.Map ? map.get(key) : map?.[key];
+  return value instanceof Y.Map ? value.toJSON() : value;
+}
+
+function unfilteredRows(config: Sheet["config"], filter: Sheet["filter"]) {
+  if (!config || (_.isEmpty(filter) && _.isEmpty(config.rowhidden_filter))) return;
+  const hiddenByFilter = {
+    ...getFilterHiddenRowsUnionFromFilterMap(filter),
+    ...config.rowhidden_filter,
+  };
+  const manual =
+    config.rowhidden_manual ?? _.omit(config.rowhidden, Object.keys(hiddenByFilter));
+  return { rowhidden: { ...manual }, rowhidden_manual: manual, rowhidden_filter: {} };
 }
 
 function cloneForYjs<T>(value: T): T {
@@ -454,17 +475,42 @@ export const updateYdocSheetData = (
         return;
       }
 
-      // filter_select
-      if (path.length === 1 && path[0] === "filter_select" && key) {
-        let cellMap = sheet.get("filter_select");
-        if (!(cellMap instanceof Y.Map)) {
-          cellMap = new Y.Map();
-          sheet.set("filter_select", cellMap);
+      if (path.length === 1 && path[0] === "filter_select") {
+        if (type === "delete") {
+          // The regular Clear Filter flow already syncs row visibility.
+          sheet.delete("filter_select");
+          sheet.delete("filter");
+          return;
+        }
+        if (!isValidFilterSelection(readMapField(sheet, "filter_select"))) {
+          const filter = readMapField(sheet, "filter");
+          const config = sheet.get("config");
+          const rowhidden_filter = readMapField(config, "rowhidden_filter");
+          // A clean sheet doesn't need to read or rewrite any other config.
+          if (!_.isEmpty(filter) || !_.isEmpty(rowhidden_filter)) {
+            const rows = unfilteredRows(
+              config && {
+                rowhidden_filter,
+                rowhidden_manual: readMapField(config, "rowhidden_manual"),
+                rowhidden: readMapField(config, "rowhidden"),
+              },
+              filter,
+            );
+            if (rows) {
+              const configMap = ensureConfigYMap(sheet);
+              for (const [key, entry] of Object.entries(rows)) {
+                setMapValueSafe(configMap, key, entry, { skipIfEqual: true });
+              }
+            }
+            if (!_.isEmpty(filter)) sheet.delete("filter");
+          }
         }
 
-        type === "delete"
-          ? cellMap.delete(key)
-          : setMapValueSafe(cellMap, key, value);
+        // Replace the whole range while keeping the Y.Map older clients read.
+        sheet.set(
+          "filter_select",
+          new Y.Map(Object.entries(normalizeForYjs(value))),
+        );
         return;
       }
 
@@ -720,6 +766,12 @@ export function ySheetArrayToPlain(
       : [];
     obj.calcChain = calcChainArray;
     expandSheetDataVerification(obj);
+    if (!isValidFilterSelection(obj.filter_select)) {
+      const rows = unfilteredRows(obj.config, obj.filter);
+      if (rows) obj.config = { ...obj.config, ...rows };
+      delete obj.filter_select;
+      delete obj.filter;
+    }
     return obj as Sheet;
   });
 }

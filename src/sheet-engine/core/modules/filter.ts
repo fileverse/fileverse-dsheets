@@ -3,6 +3,7 @@ import { locale } from '../locale';
 import { Context, getFlowdata } from '../context';
 import { Cell, CellMatrix } from '../types';
 import { getSheetIndex, isAllowEdit, rgbToHex } from '../utils';
+import { isValidFilterSelection } from '../utils/filter-selection';
 import { update } from './format';
 import { normalizeSelection } from './selection';
 import { isRealNull } from './validation';
@@ -136,7 +137,7 @@ export function createFilterOptions(
   if (sheetId != null && sheetId !== ctx.currentSheetId) return;
   const sheetIndex = getSheetIndex(ctx, ctx.currentSheetId);
   if (sheetIndex == null) return;
-  if (luckysheet_filter_save == null || _.size(luckysheet_filter_save) === 0) {
+  if (!isValidFilterSelection(luckysheet_filter_save)) {
     delete ctx.filterOptions;
     return;
   }
