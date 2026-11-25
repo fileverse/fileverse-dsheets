@@ -1,7 +1,6 @@
 import _ from 'lodash';
 import React, {
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -17,7 +16,7 @@ import {
 import { useMediaQuery } from 'usehooks-ts';
 import { updateCell, addSheet, calcSelectionInfo } from '@sheet-engine/core';
 // @ts-ignore
-import WorkbookContext from '../../context';
+import { useWorkbookContextIgnoringScroll } from '../../context/use-workbook-store';
 import './index.css';
 import SheetItem from './SheetItem';
 import ZoomControl from '../ZoomControl';
@@ -42,7 +41,8 @@ const STATS_LABELS = {
 
 const SheetTab: React.FC = () => {
   const isMobile = useMediaQuery('(max-width: 780px)', { defaultValue: true });
-  const { context, setContext, settings, refs } = useContext(WorkbookContext);
+  const { context, setContext, settings, refs } =
+    useWorkbookContextIgnoringScroll();
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const leftScrollRef = useRef<HTMLDivElement>(null);
   const rightScrollRef = useRef<HTMLDivElement>(null);
@@ -379,4 +379,4 @@ const SheetTab: React.FC = () => {
   );
 };
 
-export default SheetTab;
+export default React.memo(SheetTab);

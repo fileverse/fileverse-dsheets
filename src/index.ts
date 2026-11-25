@@ -8,6 +8,11 @@ export { executeStringFunction } from './editor/utils/executeStringFunction';
 export { FLVURL } from '@fileverse-dev/formulajs';
 export { loadLocale } from '@sheet-engine/core';
 
+export {
+  PersistenceSyncTimeoutError,
+  isPersistenceSyncTimeoutError,
+} from './editor/utils/wait-for-sync';
+
 // Types
 export type {
   ErrorMessageHandlerReturnType,
@@ -17,7 +22,12 @@ export type {
   DSheetEditorHandle,
   DSheetPermissionMode,
 } from './editor/types';
-export type { PanelConfig, PanelId, BuiltInPanelType } from './editor/types';
+export type {
+  PanelConfig,
+  PanelId,
+  BuiltInPanelType,
+  DSheetContentChange,
+} from './editor/types';
 export type {
   CommentThread,
   CommentReply,
@@ -76,7 +86,11 @@ export {
   type ImportSpreadsheetFileResult,
   type SpreadsheetImportFileType,
 } from './editor/utils/spreadsheet-import';
-export { handleExportToXLSX, handleExportToODS } from './editor/utils/xlsx-export';
+export {
+  handleExportToXLSX,
+  handleExportToODS,
+  exportToXLSXBytes,
+} from './editor/utils/xlsx-export';
 export { handleExportToCSV } from './editor/utils/csv-export';
 export { handleExportToJSON } from './editor/utils/json-export';
 export { useXLSXImport } from './editor/hooks/use-xlsx-import';

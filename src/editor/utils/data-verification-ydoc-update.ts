@@ -24,10 +24,11 @@ export const dataVerificationYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'dataVerification',
   });
   if (!syncContext) return;
 
-  const newData = sheetEditorRef.current?.getSheet()?.dataVerification || {};
+  const newData = syncContext.newValue || {};
   const oldData = syncContext.oldSheet.dataVerification || {};
 
   const changes = buildMapFieldChanges({

@@ -1,8 +1,8 @@
-import React, { useCallback, useContext, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import './index.css';
 import { locale } from '@sheet-engine/core';
 import _ from 'lodash';
-import WorkbookContext from '../../context';
+import { useWorkbookContextIgnoringScroll } from '../../context/use-workbook-store';
 import SVGIcon from '../SVGIcon';
 import { CustomColor } from './CustomColor';
 
@@ -88,7 +88,7 @@ type Props = {
 };
 
 const CustomBorder: React.FC<Props> = ({ onPick }) => {
-  const { context, refs } = useContext(WorkbookContext);
+  const { context, refs } = useWorkbookContextIgnoringScroll();
   const { border } = locale(context);
   const [changeColor, setchangeColor] = useState('#000000');
   const [changeStyle, setchangeStyle] = useState('1');

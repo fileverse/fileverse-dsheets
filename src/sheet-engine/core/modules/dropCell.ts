@@ -2362,7 +2362,6 @@ export function updateDropCell(ctx: Context) {
         for (let j = apply_str_r; j <= apply_end_r; j += 1) {
           if (hiddenRows.has(`${j}`)) continue;
           const cell = applyData[j - apply_str_r];
-          let afterHookCalled = false;
 
           if (cell?.f != null) {
             const f = `=${formula.functionCopy(
@@ -2399,16 +2398,15 @@ export function updateDropCell(ctx: Context) {
                     if (cell.ct?.fa === '##0.00') {
                       /* 如果是数字类型 */
                       mask = genarate(
-                        `${
-                          Math.round((cell.v as number) * 1000000000) /
-                          1000000000
+                        `${Math.round((cell.v as number) * 1000000000) /
+                        1000000000
                         }.00`,
                       );
                       cell.m = mask![0].toString();
                     } else {
                       mask = genarate(
                         Math.round((cell.v as number) * 1000000000) /
-                          1000000000,
+                        1000000000,
                       );
                       cell.m = mask![0].toString();
                     }
@@ -2431,21 +2429,19 @@ export function updateDropCell(ctx: Context) {
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
               });
-              afterHookCalled = true;
             }
           }
 
           d[j][i] = cell || null;
-          // If afterUpdateCell is used for this cell, it is expected to handle Yjs sync.
-          if (!afterHookCalled) {
-            cellChanges.push({
-              sheetId: ctx.currentSheetId,
-              path: ['celldata'],
-              value: { r: j, c: i, v: d[j][i] },
-              key: `${j}_${i}`,
-              type: 'update',
-            });
-          }
+          // Always in this fill's own batch write: afterUpdateCell skips its
+          // write when data-block work is gated off (B2).
+          cellChanges.push({
+            sheetId: ctx.currentSheetId,
+            path: ['celldata'],
+            value: { r: j, c: i, v: d[j][i] },
+            key: `${j}_${i}`,
+            type: 'update',
+          });
 
           // 边框
           const bd_r = copy_str_r + ((j - apply_str_r) % csLen);
@@ -2492,7 +2488,6 @@ export function updateDropCell(ctx: Context) {
         for (let j = apply_end_r; j >= apply_str_r; j -= 1) {
           if (hiddenRows.has(`${j}`)) continue;
           const cell = applyData[apply_end_r - j];
-          let afterHookCalled = false;
 
           if (cell?.f != null) {
             const f = `=${formula.functionCopy(
@@ -2548,21 +2543,19 @@ export function updateDropCell(ctx: Context) {
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
               });
-              afterHookCalled = true;
             }
           }
 
           d[j][i] = cell || null;
-          // If afterUpdateCell is used for this cell, it is expected to handle Yjs sync.
-          if (!afterHookCalled) {
-            cellChanges.push({
-              sheetId: ctx.currentSheetId,
-              path: ['celldata'],
-              value: { r: j, c: i, v: d[j][i] },
-              key: `${j}_${i}`,
-              type: 'update',
-            });
-          }
+          // Always in this fill's own batch write: afterUpdateCell skips its
+          // write when data-block work is gated off (B2).
+          cellChanges.push({
+            sheetId: ctx.currentSheetId,
+            path: ['celldata'],
+            value: { r: j, c: i, v: d[j][i] },
+            key: `${j}_${i}`,
+            type: 'update',
+          });
 
           // 边框
           const bd_r = copy_end_r - ((apply_end_r - j) % csLen);
@@ -2618,7 +2611,6 @@ export function updateDropCell(ctx: Context) {
         for (let j = apply_str_c; j <= apply_end_c; j += 1) {
           if (hiddenCols.has(`${j}`)) continue;
           const cell = applyData[j - apply_str_c];
-          let afterHookCalled = false;
 
           if (cell?.f != null) {
             const f = `=${formula.functionCopy(
@@ -2674,21 +2666,19 @@ export function updateDropCell(ctx: Context) {
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
               });
-              afterHookCalled = true;
             }
           }
 
           d[i][j] = cell || null;
-          // If afterUpdateCell is used for this cell, it is expected to handle Yjs sync.
-          if (!afterHookCalled) {
-            cellChanges.push({
-              sheetId: ctx.currentSheetId,
-              path: ['celldata'],
-              value: { r: i, c: j, v: d[i][j] },
-              key: `${i}_${j}`,
-              type: 'update',
-            });
-          }
+          // Always in this fill's own batch write: afterUpdateCell skips its
+          // write when data-block work is gated off (B2).
+          cellChanges.push({
+            sheetId: ctx.currentSheetId,
+            path: ['celldata'],
+            value: { r: i, c: j, v: d[i][j] },
+            key: `${i}_${j}`,
+            type: 'update',
+          });
 
           // 边框
           const bd_r = i;
@@ -2734,7 +2724,6 @@ export function updateDropCell(ctx: Context) {
         for (let j = apply_end_c; j >= apply_str_c; j -= 1) {
           if (hiddenCols.has(`${j}`)) continue;
           const cell = applyData[apply_end_c - j];
-          let afterHookCalled = false;
 
           if (cell?.f != null) {
             const f = `=${formula.functionCopy(
@@ -2790,21 +2779,19 @@ export function updateDropCell(ctx: Context) {
                 v: v[1] instanceof Promise ? v[1] : cell.v,
                 m: v[1] instanceof Promise ? '[object Promise]' : displayValue,
               });
-              afterHookCalled = true;
             }
           }
 
           d[i][j] = cell || null;
-          // If afterUpdateCell is used for this cell, it is expected to handle Yjs sync.
-          if (!afterHookCalled) {
-            cellChanges.push({
-              sheetId: ctx.currentSheetId,
-              path: ['celldata'],
-              value: { r: i, c: j, v: d[i][j] },
-              key: `${i}_${j}`,
-              type: 'update',
-            });
-          }
+          // Always in this fill's own batch write: afterUpdateCell skips its
+          // write when data-block work is gated off (B2).
+          cellChanges.push({
+            sheetId: ctx.currentSheetId,
+            path: ['celldata'],
+            value: { r: i, c: j, v: d[i][j] },
+            key: `${i}_${j}`,
+            type: 'update',
+          });
 
           // 边框
           const bd_r = i;

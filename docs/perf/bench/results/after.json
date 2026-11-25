@@ -1,0 +1,150 @@
+{
+  "label": "after",
+  "date": "2026-10-23T13:27:49.626Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S1 1x(4000x25) Yjs write only": {
+    "median": 0.025,
+    "p95": 0.154,
+    "min": 0.019,
+    "runs": 30
+  },
+  "S1 1x(4000x25) write + handleOnChange body": {
+    "median": 143.134,
+    "p95": 163.899,
+    "min": 136.6002,
+    "runs": 15
+  },
+  "S1 1x(4000x25) encodeStateAsUpdate+base64": {
+    "median": 133.49,
+    "p95": 140.879,
+    "min": 108.7692,
+    "runs": 15
+  },
+  "S1 1x(4000x25) ySheetArrayToPlain": {
+    "median": 27.72,
+    "p95": 29.021,
+    "min": 26.6349,
+    "runs": 15
+  },
+  "S3 1x(4000x25) hook firing (Yjs side)": {
+    "median": 28.275,
+    "p95": 29.572,
+    "min": 27.2067,
+    "runs": 15
+  },
+  "S2 1x(4000x25) remote apply + full encode": {
+    "median": 171.504,
+    "p95": 179.889,
+    "min": 109.325,
+    "runs": 15
+  },
+  "S2 1x(4000x25) remote apply only": {
+    "median": 0.01,
+    "p95": 0.089,
+    "min": 0.0089,
+    "runs": 15
+  },
+  "S1 3x(4000x25) Yjs write only": {
+    "median": 0.017,
+    "p95": 0.02,
+    "min": 0.0152,
+    "runs": 30
+  },
+  "S1 3x(4000x25) write + handleOnChange body": {
+    "median": 511.818,
+    "p95": 518.802,
+    "min": 499.4271,
+    "runs": 15
+  },
+  "S4 old 100x10 store": {
+    "structs": 113913,
+    "deletedLen": 112810,
+    "clients": 101,
+    "bodyBytes": 1085774
+  },
+  "S4 fresh copy store": {
+    "structs": 1105,
+    "deletedLen": 0,
+    "clients": 1,
+    "bodyBytes": 88136
+  },
+  "S4 old full encode": {
+    "median": 8.799,
+    "p95": 14.225,
+    "min": 8.4305,
+    "runs": 20
+  },
+  "S4 fresh full encode": {
+    "median": 1.044,
+    "p95": 2.946,
+    "min": 0.9994,
+    "runs": 20
+  },
+  "S4 old full decode (new doc + apply)": {
+    "median": 63.769,
+    "p95": 201.39,
+    "min": 55.326,
+    "runs": 10
+  },
+  "S4 fresh full decode (new doc + apply)": {
+    "median": 2.477,
+    "p95": 5.392,
+    "min": 2.4185,
+    "runs": 10
+  },
+  "S4 old write + handleOnChange body": {
+    "median": 9.129,
+    "p95": 10.959,
+    "min": 8.8211,
+    "runs": 20
+  },
+  "S5 old encodeStateVector+base64": {
+    "median": 0.029,
+    "p95": 0.065,
+    "min": 0.027,
+    "runs": 50
+  },
+  "S5 old Y.snapshot+encodeSnapshot": {
+    "median": 0.323,
+    "p95": 0.408,
+    "min": 0.2879,
+    "runs": 30
+  },
+  "S5 old fingerprint getFingerprint()": {
+    "median": 0.02,
+    "p95": 0.032,
+    "min": 0.0191,
+    "runs": 50
+  },
+  "S5 old fingerprintFromUpdate(body)": {
+    "median": 34.942,
+    "p95": 40.4,
+    "min": 30.7949,
+    "runs": 20
+  },
+  "S5 old write with tracker attached": {
+    "median": 0.026,
+    "p95": 0.049,
+    "min": 0.0222,
+    "runs": 50
+  },
+  "S5 old write without tracker": {
+    "median": 0.021,
+    "p95": 0.045,
+    "min": 0.0183,
+    "runs": 50
+  },
+  "S5 old open (apply body) with tracker": {
+    "median": 64.605,
+    "p95": 261.247,
+    "min": 56.0086,
+    "runs": 10
+  },
+  "S5 old open (apply body) without tracker": {
+    "median": 61.786,
+    "p95": 64.372,
+    "min": 58.9633,
+    "runs": 10
+  }
+}

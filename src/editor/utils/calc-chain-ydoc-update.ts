@@ -28,10 +28,11 @@ export const calcChainYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'calcChain',
   });
   if (!syncContext) return;
 
-  const newData = sheetEditorRef.current?.getSheet()?.calcChain || [];
+  const newData = syncContext.newValue || [];
   const oldData = syncContext.oldSheet.calcChain || [];
   // @ts-ignore
   const calcChainDiff = diffObjectArrays(oldData, newData, getCalcChainKey);
@@ -54,6 +55,10 @@ export const calcChainYdocUpdate = ({
   }
 
   calcChainDiff?.removed?.forEach((item) => {
+    // Never delete a chain key whose cell still holds a formula: the engine
+    // chain can be missing it after undo/redo or a collaborator's replace
+    // (A4), and the delete would reach every peer.
+    if (syncContext.engineSheet?.data?.[item.r]?.[item.c]?.f != null) return;
     changes.push({
       sheetId: syncContext.currentSheetId,
       path: ['calcChain'],
