@@ -1,0 +1,30 @@
+{
+  "label": "before-c8-warmup",
+  "date": "2026-10-26T07:00:19.451Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S14 500 formulas: warm-up": "n/a (module absent)",
+  "S14 500 formulas: commit to unreferenced cell, formulas processed": {
+    "formulasRead": 500,
+    "formulasEvaluated": 0,
+    "depGraphComplete": false
+  },
+  "S14 500 formulas: commit to unreferenced cell (updateCell)": {
+    "median": 5.303,
+    "p95": 10.006,
+    "min": 4.3732,
+    "runs": 20
+  },
+  "S14 5000 formulas: warm-up": "n/a (module absent)",
+  "S14 5000 formulas: commit to unreferenced cell, formulas processed": {
+    "formulasRead": 5000,
+    "formulasEvaluated": 0,
+    "depGraphComplete": false
+  },
+  "S14 5000 formulas: commit to unreferenced cell (updateCell)": {
+    "median": 37.496,
+    "p95": 72.854,
+    "min": 36.6456,
+    "runs": 20
+  }
+}

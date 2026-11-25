@@ -36,6 +36,14 @@ export type Hooks = {
     column: number,
     oldValue: any,
     newValue: any,
+    /** Sheet that held the cell when it was committed (updateCell only). */
+    sheetId?: string,
+    /**
+     * `skipPersist`: the caller writes this cell to Yjs in its own batch (paste
+     * and fill), after the cell is final. Persisting here too wrote the
+     * pre-format value first, so every formula was written twice.
+     */
+    options?: { skipPersist?: boolean },
   ) => void;
   afterSelectionChange?: (sheetId: string, selection: Selection) => void;
   beforeRenderRowHeaderCell?: (

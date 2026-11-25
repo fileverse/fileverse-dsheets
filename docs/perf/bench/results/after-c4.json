@@ -1,0 +1,19 @@
+{
+  "label": "after-c4",
+  "date": "2026-10-26T11:10:36.448Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S10 one idle scan per data change (hasDenominatedCell, no hit)": {
+    "median": 18.319,
+    "p95": 18.811,
+    "min": 18.133,
+    "runs": 15
+  },
+  "S10 idle scan, hit in first cell": {
+    "median": 0,
+    "p95": 0.003,
+    "min": 0.0002,
+    "runs": 15
+  },
+  "S10 scans per selection change": 0
+}

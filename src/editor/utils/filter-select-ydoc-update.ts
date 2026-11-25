@@ -25,11 +25,11 @@ export const filterSelectYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'filter_select',
   });
   if (!syncContext) return;
 
-  const newData =
-    (sheetEditorRef.current?.getSheet() as any)?.filter_select || {};
+  const newData = syncContext.newValue || {};
   const oldData = syncContext.oldSheet.filter_select || {};
 
   const changes = buildMapFieldChanges({

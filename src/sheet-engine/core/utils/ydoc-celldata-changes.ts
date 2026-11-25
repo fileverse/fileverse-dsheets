@@ -4,6 +4,31 @@ import type { Context } from '../context';
 import type { Cell, CellWithRowAndCol } from '../types';
 import { shouldPersistCelldataCell } from './cell-persist-utils';
 
+/** Receives changes instead of the updateCellYdoc hook (see createYdocBatch). */
+export type YdocChangeSink = (changes: any[]) => void;
+
+/**
+ * Collect the Yjs changes of one structural edit and send them in a single
+ * updateCellYdoc call, so the edit is one transaction and one update for peers
+ * (an insert used to send four and a delete five).
+ */
+export function createYdocBatch(ctx: Context): {
+  sink: YdocChangeSink;
+  flush: () => void;
+} {
+  const pending: any[] = [];
+  return {
+    sink: (changes) => {
+      pending.push(...changes);
+    },
+    flush: () => {
+      if (pending.length > 0 && ctx?.hooks?.updateCellYdoc) {
+        ctx.hooks.updateCellYdoc(pending.splice(0));
+      }
+    },
+  };
+}
+
 export type CelldataYdocChange = {
   sheetId: string;
   path: string[];
@@ -45,6 +70,19 @@ function normalizeRange(
 }
 
 /**
+ * A formula cell is copied into a snapshot: a row/column insert or delete
+ * rewrites `f` (and may set `v`/`m` to #REF!) on the live object, so a snapshot
+ * that kept the object would compare the rewritten cell with itself and the
+ * diff would write nothing. Other cells are not rewritten, so they are kept by
+ * reference.
+ */
+function snapshotCell<T>(cell: T): T {
+  return cell != null && typeof cell === 'object' && (cell as Cell).f != null
+    ? ({ ...(cell as object) } as T)
+    : cell;
+}
+
+/**
  * Snapshot persisted cells in a range.
  * Prefer sparse `celldata` when provided — O(populated cells), not O(range area).
  */
@@ -74,7 +112,7 @@ export function snapshotPersistedCelldataInRange(
       if (shouldPersistCelldataCell(entry.v)) {
         map.set(
           `${entry.r}_${entry.c}`,
-          entry.v as Cell | string | number | boolean,
+          snapshotCell(entry.v) as Cell | string | number | boolean,
         );
       }
     }
@@ -88,7 +126,10 @@ export function snapshotPersistedCelldataInRange(
       const cell = row[c];
       if (cell == null) continue;
       if (shouldPersistCelldataCell(cell)) {
-        map.set(`${r}_${c}`, cell as Cell | string | number | boolean);
+        map.set(
+          `${r}_${c}`,
+          snapshotCell(cell) as Cell | string | number | boolean,
+        );
       }
     }
   }
@@ -183,6 +224,7 @@ export function emitCelldataRangeDiffToYdoc(
   c1: number,
   c2: number,
   beforePersisted?: Map<string, Cell | string | number | boolean>,
+  sink?: YdocChangeSink,
 ): void {
   if (!ctx?.hooks?.updateCellYdoc) return;
   const changes = buildCelldataChangesForRange(
@@ -195,7 +237,93 @@ export function emitCelldataRangeDiffToYdoc(
     beforePersisted,
   );
   if (changes.length > 0) {
-    ctx.hooks.updateCellYdoc(changes);
+    (sink ?? ctx.hooks.updateCellYdoc)(changes);
+  }
+}
+
+/** Formula text per tab and cell key, taken before a structural edit rewrites it. */
+export type FormulaTextSnapshot = Map<string, Map<string, string>>;
+
+/**
+ * Snapshot formula text on every hydrated tab. A row/column insert or delete
+ * rewrites formulas on all tabs, but only the edited tab's shifted range is
+ * diffed to Yjs, so the rest has to be found by comparing against this.
+ */
+export function snapshotFormulaTexts(ctx: Context): FormulaTextSnapshot {
+  const out: FormulaTextSnapshot = new Map();
+  (ctx.luckysheetfile ?? []).forEach((sheet: any) => {
+    const { data } = sheet;
+    if (sheet.id == null) return;
+    if (!data) {
+      // A tab that is not hydrated keeps its cells in celldata (K6).
+      if (!Array.isArray(sheet.celldata)) return;
+      const celldataTexts = new Map<string, string>();
+      sheet.celldata.forEach((entry: any) => {
+        if (entry?.v?.f) celldataTexts.set(`${entry.r}_${entry.c}`, entry.v.f);
+      });
+      if (celldataTexts.size > 0) out.set(String(sheet.id), celldataTexts);
+      return;
+    }
+    const texts = new Map<string, string>();
+    for (let r = 0; r < data.length; r += 1) {
+      const row = data[r];
+      if (!row) continue;
+      for (let c = 0; c < row.length; c += 1) {
+        const f = row[c]?.f;
+        if (f) texts.set(`${r}_${c}`, f);
+      }
+    }
+    if (texts.size > 0) out.set(String(sheet.id), texts);
+  });
+  return out;
+}
+
+/**
+ * Emit cells whose formula text changed since `before`, so peers see the
+ * rewrite. On the edited tab, cells at or past (`editedFromR`, `editedFromC`)
+ * are skipped: the range diff already writes them. `before` keys are
+ * pre-edit coordinates, which equal post-edit ones for every cell outside
+ * that range.
+ */
+export function emitRewrittenFormulasToYdoc(
+  ctx: Context,
+  before: FormulaTextSnapshot,
+  editedSheetId: string,
+  editedFromR: number,
+  editedFromC: number,
+  sink?: YdocChangeSink,
+): void {
+  if (!ctx?.hooks?.updateCellYdoc || before.size === 0) return;
+  const changes: CelldataYdocChange[] = [];
+  (ctx.luckysheetfile ?? []).forEach((sheet: any) => {
+    const texts = before.get(String(sheet.id));
+    if (!texts || (!sheet.data && !Array.isArray(sheet.celldata))) return;
+    const isEdited = String(sheet.id) === String(editedSheetId);
+    const celldataByKey = sheet.data
+      ? null
+      : new Map<string, any>(
+          sheet.celldata.map((entry: any) => [`${entry?.r}_${entry?.c}`, entry]),
+        );
+    texts.forEach((oldF, key) => {
+      const sep = key.indexOf('_');
+      const r = Number(key.slice(0, sep));
+      const c = Number(key.slice(sep + 1));
+      if (isEdited && (r >= editedFromR || c >= editedFromC)) return;
+      const cell = sheet.data
+        ? sheet.data[r]?.[c]
+        : celldataByKey!.get(key)?.v;
+      if (!cell?.f || cell.f === oldF) return;
+      changes.push({
+        sheetId: String(sheet.id),
+        path: ['celldata'],
+        value: { r, c, v: cell },
+        key,
+        type: 'update',
+      });
+    });
+  });
+  if (changes.length > 0) {
+    (sink ?? ctx.hooks.updateCellYdoc)(changes);
   }
 }
 
@@ -210,6 +338,7 @@ export function emitCelldataDeletesBeyondGrid(
   beforePersisted: Map<string, Cell | string | number | boolean> | undefined,
   rowCount: number,
   colCount: number,
+  sink?: YdocChangeSink,
 ): void {
   if (!ctx?.hooks?.updateCellYdoc || !beforePersisted?.size) return;
   if (rowCount < 0 || colCount < 0) return;
@@ -232,7 +361,7 @@ export function emitCelldataDeletesBeyondGrid(
     }
   }
   if (changes.length > 0) {
-    ctx.hooks.updateCellYdoc(changes);
+    (sink ?? ctx.hooks.updateCellYdoc)(changes);
   }
 }
 

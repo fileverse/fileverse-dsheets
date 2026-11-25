@@ -5,10 +5,12 @@ import type { DSheetEditorHandle } from "../types";
 export type DSheetEditorMethods = Pick<
   DSheetEditorHandle,
   | "refreshIndexedDB"
+  | "rebuildLocalStore"
   | "terminateSession"
   | "updateCollaboratorName"
   | "updateSessionTitle"
   | "navigateToSheet"
+  | "getContentFingerprint"
 >;
 
 const assignRef = <T>(ref: Ref<T> | undefined, value: T | null): void => {

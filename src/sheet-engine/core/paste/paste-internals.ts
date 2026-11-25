@@ -1,6 +1,10 @@
 import _, { isObject } from 'lodash';
 import { Context, getFlowdata } from '../context';
-import { execfunction } from '../modules/formula';
+import {
+  delFunctionGroupBatch,
+  execfunction,
+  insertUpdateFunctionGroup,
+} from '../modules/formula';
 import { getdatabyselection } from '../modules/cell';
 import { update, genarate } from '../modules/format';
 import { normalizeSelection } from '../modules/selection';
@@ -11,6 +15,8 @@ import { hasPartMC, isRealNum } from '../modules/validation';
 import { getBorderInfoCompute } from '../modules/border';
 import { expandRowsAndColumns, storeSheetParamALL } from '../modules/sheet';
 import { jfrefreshgrid } from '../modules/refresh';
+import { execFunctionGroup } from '../modules/formula';
+import { isFormulaEvalPending } from '../modules/formula-async-eval';
 import { CFSplitRange, saveHyperlink, spillSortResult } from '../modules';
 import {
   calculateRangeCellSize,
@@ -266,9 +272,15 @@ function postPasteCut(
     target.curDataVerification;
 
   ctx.formulaCache.execFunctionExist.reverse();
+  // Run the pass the list was built for: formulas that read the source or the
+  // target recalculate, and the pass clears the list. Left set, the next
+  // commit anywhere used it as its edited cells and skipped its own
+  // dependents (PR 466 N6).
   // @ts-ignore
-  // execFunctionGroup(ctx, null, null, null, null, target.curData);
-  ctx.formulaCache.execFunctionGlobalData = null;
+  execFunctionGroup(ctx, null, null, null, null, target.curData);
+  if (!isFormulaEvalPending(ctx)) {
+    ctx.formulaCache.execFunctionGlobalData = null;
+  }
 
   // const index = getSheetIndex(ctx, ctx.currentSheetId);
   // const file = ctx.luckysheetfile[index];
@@ -405,6 +417,14 @@ export function pasteHandler(ctx: Context, data: any, borderInfo?: any) {
     if (data.length === 0) {
       return;
     }
+
+    // Formula cells of an HTML-table / object paste are written raw and never
+    // added to the calc chain or evaluated, so the dependency graph no longer
+    // covers every formula (C8). A plain-text paste writes no formula, and a
+    // blocked paste changes nothing: neither clears the flag. (A text paste
+    // with formulas evaluates them through execfunction, which clears it
+    // itself when it runs a formula pass.)
+    ctx.formulaCache.markDepGraphIncomplete();
 
     const cfg = ctx.config || {};
     if (cfg.merge == null) {
@@ -965,6 +985,53 @@ function setCellHyperlink(
   ctx.luckysheetfile[index]!.hyperlink![`${r}_${c}`] = link;
 }
 
+/**
+ * A cut moves the cell, so its calc chain entry moves with it. The paste wrote
+ * the cells without touching the chain: the formula at the new place was not
+ * in it (a later edit of its input did not recalculate it, even after a full
+ * pass) and the old place kept an entry for an empty cell. Source entries go
+ * only when the source is on this sheet (the only case the cut clears it).
+ */
+function moveCalcChainForCutPaste(
+  ctx: Context,
+  d: CellMatrix,
+  copySheetId: string,
+  source: { row: [number, number]; column: [number, number] },
+  target: { row: [number, number]; column: [number, number] },
+) {
+  const sheetId = ctx.currentSheetId;
+  if (sheetId === copySheetId) {
+    const cleared: { r: number; c: number }[] = [];
+    for (let r = source.row[0]; r <= source.row[1]; r += 1) {
+      for (let c = source.column[0]; c <= source.column[1]; c += 1) {
+        cleared.push({ r, c });
+      }
+    }
+    delFunctionGroupBatch(ctx, copySheetId, cleared);
+  }
+
+  const file = ctx.luckysheetfile[getSheetIndex(ctx, sheetId) as number];
+  const inChain = new Set<string>();
+  (file?.calcChain ?? []).forEach((calc) => {
+    if (calc?.id === sheetId) inChain.add(`${calc.r}_${calc.c}_${sheetId}`);
+  });
+  const notFormulas: { r: number; c: number }[] = [];
+  for (let r = target.row[0]; r <= target.row[1]; r += 1) {
+    for (let c = target.column[0]; c <= target.column[1]; c += 1) {
+      if (d[r]?.[c]?.f != null) {
+        const key = `${r}_${c}_${sheetId}`;
+        if (!inChain.has(key)) {
+          insertUpdateFunctionGroup(ctx, r, c, sheetId, inChain);
+          inChain.add(key);
+        }
+      } else if (inChain.has(`${r}_${c}_${sheetId}`)) {
+        notFormulas.push({ r, c });
+      }
+    }
+  }
+  delFunctionGroupBatch(ctx, sheetId, notFormulas);
+}
+
 export function pasteHandlerOfCutPaste(
   ctx: Context,
   copyRange: Context['luckysheet_copy_save'],
@@ -981,6 +1048,10 @@ export function pasteHandlerOfCutPaste(
   if (!allowEdit || ctx.isFlvReadOnly) return;
 
   if (!copyRange) return;
+
+  // Cut-paste moves formula cells without updating the calc chain or
+  // evaluating them, so the graph is stale (C8).
+  ctx.formulaCache.markDepGraphIncomplete();
 
   const cfg = ctx.config || {};
   if (cfg.merge == null) {
@@ -1248,6 +1319,14 @@ export function pasteHandlerOfCutPaste(
 
     d[h] = x;
   }
+
+  moveCalcChainForCutPaste(
+    ctx,
+    d,
+    copySheetId,
+    { row: [c_r1, c_r2], column: [c_c1, c_c2] },
+    { row: [minh, maxh], column: [minc, maxc] },
+  );
 
   last.row = [minh, maxh];
   last.column = [minc, maxc];
@@ -1824,7 +1903,6 @@ export function pasteHandlerOfCopyPaste(
             }
           }
 
-          let afterHookCalled = false;
           if (!_.isNil(value) && !_.isNil(value.f)) {
             let adjustedFormula = value.f;
             let isError = false;
@@ -1905,8 +1983,7 @@ export function pasteHandlerOfCopyPaste(
                   v: arr.length === 1 ? funcV[1] : value.v, // To check with mritunjay for the "arr.length === 1" cond
                   m:
                     funcV[1] instanceof Promise ? '[object Promise]' : funcV[1],
-                });
-                afterHookCalled = true;
+                }, undefined, { skipPersist: true });
               }
             }
 
@@ -1950,17 +2027,16 @@ export function pasteHandlerOfCopyPaste(
               };
             }
           }
-          // If afterUpdateCell ran for this cell, it is expected to handle Yjs sync.
-          if (!(ctx?.hooks?.afterUpdateCell && afterHookCalled)) {
-            pushPasteCelldataChange(
-              changes,
-              ctx,
-              h,
-              c,
-              d[h][c],
-              hadPersistedBefore,
-            );
-          }
+          // Always in this paste's own batch write: afterUpdateCell skips its
+          // write when data-block work is gated off (B2).
+          pushPasteCelldataChange(
+            changes,
+            ctx,
+            h,
+            c,
+            d[h][c],
+            hadPersistedBefore,
+          );
         }
         d[h] = x;
       }
@@ -2184,6 +2260,17 @@ export function handleFormulaStringPaste(ctx: Context, formulaStr: string) {
   d[r][c]!.m = isDataBlockRespose ? 'Loading...' : val.toString();
   d[r][c]!.v = val;
   d[r][c]!.f = formulaStr;
+  // Persist the pasted formula; afterUpdateCell below only runs for data-block
+  // results, so ordinary formulas never reached Yjs (B6).
+  ctx.hooks.updateCellYdoc?.([
+    {
+      sheetId: ctx.currentSheetId,
+      path: ['celldata'],
+      key: `${r}_${c}`,
+      value: { r, c, v: d[r][c] },
+      type: 'update',
+    },
+  ]);
   const cellTemp = { m: '', v: '', f: '' };
 
   cellTemp.m = isDataBlockRespose ? 'Loading...' : val.toString();
