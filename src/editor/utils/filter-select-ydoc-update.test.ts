@@ -38,9 +38,11 @@ function save(
 ) {
   const onSave = vi.fn();
   const workbook = {
-    getWorkbookContext: () => ({ currentSheetId: sheetId }),
-    getSheet: () => ({ filter_select: selection, config }),
-  } as WorkbookInstance;
+    getWorkbookContext: () => ({
+      currentSheetId: sheetId,
+      luckysheetfile: [{ id: sheetId, filter_select: selection, config }],
+    }),
+  } as unknown as WorkbookInstance;
   const args = {
     sheetEditorRef: { current: workbook },
     ydocRef: { current: doc },

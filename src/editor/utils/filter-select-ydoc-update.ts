@@ -26,10 +26,11 @@ export const filterSelectYdocUpdate = ({
     sheetEditorRef,
     ydocRef,
     dsheetId,
+    field: 'filter_select',
   });
   if (!syncContext) return;
 
-  const selection = sheetEditorRef.current?.getSheet()?.filter_select;
+  const selection = syncContext.newValue;
   const next = isValidFilterSelection(selection) ? selection : undefined;
   if (isEqual(syncContext.oldSheet.filter_select, next)) return;
 

@@ -6,6 +6,7 @@ import * as Y from 'yjs';
 import { WorkbookInstance } from '@sheet-engine/react';
 import { encode } from 'punycode';
 import { migrateSheetFactoryForImport } from '../utils/migrate-new-yjs';
+import { isFormatLocked } from './format-gate';
 import { ySheetArrayToPlain } from '../utils/update-ydoc';
 
 export const handleCSVUpload = (
@@ -149,6 +150,10 @@ export const handleCSVUpload = (
               return;
             }
 
+            if (isFormatLocked(ydoc, dsheetId)) {
+              resolve();
+              return;
+            }
             const sheetArray = ydoc.getArray(dsheetId);
 
             // Helper: run the standard post-transaction sync and re-render

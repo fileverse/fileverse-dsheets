@@ -407,6 +407,8 @@ export function onCellsMoveEnd(
     nextCalcChain.push(calc);
   }
   file.calcChain = nextCalcChain.concat(movedCalcChain);
+  // Moved formulas are not evaluated at their new position (C8).
+  ctx.formulaCache.markDepGraphIncomplete();
   for (let r = last.row[0]; r <= last.row[1]; r += 1) {
     // if (r in cfg.rowlen) {
     //   RowlChange = true;

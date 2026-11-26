@@ -10,6 +10,7 @@ import {
   indexToColumnChar,
   execFunctionGroup,
   groupValuesRefresh,
+  resetFormulaDependencyIndexes,
   remapFormulaReferencesByMap,
   type HyperlinkEntry,
 } from '@sheet-engine/core';
@@ -786,8 +787,7 @@ export const useColumnDragAndDrop = (
             }
           }
           if (touchedFormulaCells.length > 0) {
-            draft.formulaCache.depsByCell = new Map();
-            draft.formulaCache.revDepsByCell = new Map();
+            resetFormulaDependencyIndexes(draft);
             draft.formulaCache.execFunctionExist = touchedFormulaCells as any;
             (execFunctionGroup as any)(
               draft,

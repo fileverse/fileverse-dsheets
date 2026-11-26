@@ -1,5 +1,6 @@
 import { fromUint8Array, toUint8Array } from 'js-base64';
 import * as Y from 'yjs';
+import { fingerprintFromDocument } from './editor/utils/content-fingerprint';
 
 export const DEFAULT_DSHEET_PERSISTENCE_TIMEOUT_MS = 8_000;
 
@@ -16,6 +17,8 @@ export type DSheetContentSnapshot = {
   status: DSheetContentStatus;
   encodedState: string | null;
   stateVector: string | null;
+  /** A1 content fingerprint of the document read; null when unavailable. */
+  fingerprint: string | null;
   error?: Error;
 };
 
@@ -86,6 +89,7 @@ export const unavailableDsheetContentSnapshot = (
   status,
   encodedState: null,
   stateVector: null,
+  fingerprint: null,
   ...(error ? { error: toError(error) } : {}),
 });
 
@@ -99,6 +103,7 @@ export const snapshotDsheetDocument = (
     status: state.length <= 2 ? 'empty' : 'available',
     encodedState: fromUint8Array(state),
     stateVector: fromUint8Array(Y.encodeStateVector(doc)),
+    fingerprint: fingerprintFromDocument(doc),
   };
 };
 

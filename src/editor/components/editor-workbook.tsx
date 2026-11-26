@@ -15,6 +15,7 @@ import {
 import { useEditor } from '../contexts/editor-context';
 import { useCollabAwareness } from '../hooks/use-collab-awareness';
 import { afterUpdateCell } from '../utils/after-update-cell';
+import { shouldSkipEchoWrite } from '../utils/remote-apply-guard';
 import { dataVerificationYdocUpdate } from '../utils/data-verification-ydoc-update';
 import { liveQueryListYdocUpdate } from '../utils/live-query-list-ydoc-update';
 import { calcChainYdocUpdate } from '../utils/calc-chain-ydoc-update';
@@ -160,7 +161,9 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     isLiveCollabSession,
     collabIsOwner,
     setSheetEditorRef,
+    notifyActiveSheetChange,
     remoteUpdateRef,
+    structuralRemountPendingRef,
     apiKeyStorage,
     openApiKeyModal,
     onDataBlockEvent,
@@ -266,14 +269,17 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
     };
   }, [hasComments, sheetEditorRef, removeCommentFromCell, closeCommentPopup]);
 
-  // Block metadata → ydoc echoes only while a remote apply is in flight
-  // (remoteApplyDepth > 0). User-initiated edits run when depth is zero.
+  // Block metadata → ydoc echoes while a remote apply is in flight
+  // (remoteApplyDepth > 0) and while a peer's structural edit waits to remount
+  // the grid: the engine still has the old grid, so an echo would write its
+  // old coordinates over the peer's. User-initiated edits run otherwise.
   const guardRemoteEcho = useCallback(
     (fn: () => void) => () => {
-      if (remoteUpdateRef.current) return;
+      if (shouldSkipEchoWrite({ remoteUpdateRef, structuralRemountPendingRef }))
+        return;
       fn();
     },
-    [remoteUpdateRef],
+    [remoteUpdateRef, structuralRemountPendingRef],
   );
 
   const applyDefinedNamesFromYdoc = useCallback(() => {
@@ -525,6 +531,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
             })
         }
         hooks={{
+          afterActivateSheet: () => notifyActiveSheetChange(),
           onLocalCellEdit: () => {
             localUserEditRef.current = true;
           },
@@ -537,9 +544,13 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
             column: number,
             _oldValue: Cell,
             newValue: Cell,
+            sheetId?: string,
+            options?: { skipPersist?: boolean },
           ): void => {
             const refObj = { current: sheetEditorRef.current };
             afterUpdateCell({
+              sheetId,
+              skipPersist: options?.skipPersist,
               handleContentPortal: handleOnChangePortalUpdate,
               dsheetId,
               ydocRef,
@@ -563,6 +574,7 @@ const EditorWorkbookComponent: React.FC<EditorWorkbookProps> = ({
               collabEnabled,
               collabIsOwner,
               remoteUpdateRef,
+              structuralRemountPendingRef,
               localUserEditRef,
             });
             localUserEditRef.current = false;

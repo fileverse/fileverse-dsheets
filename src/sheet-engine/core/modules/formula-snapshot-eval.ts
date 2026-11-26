@@ -25,6 +25,8 @@ export type SnapshotFormulaResult = {
   spe?: unknown;
   deps: string[];
   isError: boolean;
+  /** Read a sheet name that doesn't exist; the main thread keeps it on every commit's run list (C8). */
+  unresolvedSheetRef?: boolean;
 };
 
 export type SnapshotEvalInput = {
@@ -119,6 +121,7 @@ export function evalFormulasInSnapshot(
   const globalData = { ...input.execFunctionGlobalData };
   const parser: any = new Parser();
   let activeDeps: Set<string> | null = null;
+  let unresolvedSheetRef = false;
 
   const toCellKey = (sheetId: string, r: number, c: number) =>
     `${sheetId}:${r}:${c}`;
@@ -131,7 +134,10 @@ export function evalFormulasInSnapshot(
       cellCoord.sheetName == null
         ? options.sheetId
         : getSheetIdByName(sheetsByName, cellCoord.sheetName);
-    if (sheetId == null) throw Error(ERROR_REF);
+    if (sheetId == null) {
+      unresolvedSheetRef = true;
+      throw Error(ERROR_REF);
+    }
     recordDep(toCellKey(sheetId, cellCoord.row.index, cellCoord.column.index));
     const flowdata = dataBySheetId.get(sheetId);
     const cacheKey = `${cellCoord.row.index}_${cellCoord.column.index}_${sheetId}`;
@@ -147,7 +153,10 @@ export function evalFormulasInSnapshot(
         startCellCoord.sheetName == null
           ? options.sheetId
           : getSheetIdByName(sheetsByName, startCellCoord.sheetName);
-      if (sheetId == null) throw Error(ERROR_REF);
+      if (sheetId == null) {
+        unresolvedSheetRef = true;
+        throw Error(ERROR_REF);
+      }
       const flowdata = dataBySheetId.get(sheetId);
       let startRow = startCellCoord.row.index;
       let endRow = endCellCoord.row.index;
@@ -269,6 +278,7 @@ export function evalFormulasInSnapshot(
   for (const formula of input.formulas) {
     const originKey = `${formula.id}:${formula.r}:${formula.c}`;
     activeDeps = new Set<string>();
+    unresolvedSheetRef = false;
     const expression = formula.calc_funcStr.startsWith('=')
       ? formula.calc_funcStr.slice(1)
       : formula.calc_funcStr;
@@ -303,6 +313,7 @@ export function evalFormulasInSnapshot(
       f,
       deps,
       isError,
+      ...(unresolvedSheetRef ? { unresolvedSheetRef: true } : {}),
     });
   }
 

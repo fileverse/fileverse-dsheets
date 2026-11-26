@@ -25,3 +25,12 @@ export const handleExportToODS = async (
   const { handleExportToODS: runExport } = await import('./xlsx-export-impl');
   return runExport(workbookRef, ydocRef, dsheetId, getDocumentTitle);
 };
+
+export const exportToXLSXBytes = async (
+  workbookRef: MutableRefObject<WorkbookInstance | null>,
+  ydocRef: MutableRefObject<Y.Doc | null>,
+  dsheetId: string,
+): Promise<Uint8Array> => {
+  const { exportToXLSXBytes: run } = await import('./xlsx-export-impl');
+  return run(workbookRef, ydocRef, dsheetId);
+};

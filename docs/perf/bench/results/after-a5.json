@@ -1,0 +1,205 @@
+{
+  "label": "after-a5",
+  "date": "2026-10-23T17:09:12.416Z",
+  "node": "v20.19.0",
+  "yjs": "13.6.30",
+  "S1 1x(4000x25) Yjs write only": {
+    "median": 0.025,
+    "p95": 0.131,
+    "min": 0.0191,
+    "runs": 30
+  },
+  "S1 1x(4000x25) write + handleOnChange body": {
+    "median": 126.093,
+    "p95": 148.97,
+    "min": 121.7286,
+    "runs": 15
+  },
+  "S1 1x(4000x25) write + A1 change built": {
+    "median": 0.027,
+    "p95": 0.116,
+    "min": 0.0215,
+    "runs": 30
+  },
+  "S1 1x(4000x25) encodeStateAsUpdate+base64": {
+    "median": 121.073,
+    "p95": 166.861,
+    "min": 96.165,
+    "runs": 15
+  },
+  "S1 1x(4000x25) ySheetArrayToPlain": {
+    "median": 25.724,
+    "p95": 26.303,
+    "min": 24.6735,
+    "runs": 15
+  },
+  "S3 1x(4000x25) hook firing (Yjs side)": {
+    "median": 25.555,
+    "p95": 37.567,
+    "min": 24.62,
+    "runs": 15
+  },
+  "S3 1x(4000x25) calcChainYdocUpdate (real hook)": {
+    "median": 0.005,
+    "p95": 0.079,
+    "min": 0.0023,
+    "runs": 15
+  },
+  "S3 1x(4000x25) dataVerificationYdocUpdate (real hook)": {
+    "median": 0.004,
+    "p95": 0.071,
+    "min": 0.0023,
+    "runs": 15
+  },
+  "S3 1x(4000x25) configYdocUpdate (real hook)": {
+    "median": 0.003,
+    "p95": 0.009,
+    "min": 0.0019,
+    "runs": 15
+  },
+  "S2 1x(4000x25) remote apply + full encode": {
+    "median": 104.33,
+    "p95": 163.175,
+    "min": 97.5047,
+    "runs": 40
+  },
+  "S2 1x(4000x25) remote apply only": {
+    "median": 0.009,
+    "p95": 0.014,
+    "min": 0.0082,
+    "runs": 30
+  },
+  "S1 3x(4000x25) Yjs write only": {
+    "median": 0.015,
+    "p95": 0.027,
+    "min": 0.014,
+    "runs": 30
+  },
+  "S1 3x(4000x25) write + handleOnChange body": {
+    "median": 470.816,
+    "p95": 478.071,
+    "min": 460.301,
+    "runs": 15
+  },
+  "S1 3x(4000x25) write + A1 change built": {
+    "median": 0.021,
+    "p95": 0.027,
+    "min": 0.0194,
+    "runs": 30
+  },
+  "S4 old 100x10 store": {
+    "structs": 113913,
+    "deletedLen": 112810,
+    "clients": 101,
+    "bodyBytes": 1085384
+  },
+  "S4 fresh copy store": {
+    "structs": 1105,
+    "deletedLen": 0,
+    "clients": 1,
+    "bodyBytes": 88136
+  },
+  "S4 old full encode": {
+    "median": 9.255,
+    "p95": 243.622,
+    "min": 7.9962,
+    "runs": 20
+  },
+  "S4 fresh full encode": {
+    "median": 1.001,
+    "p95": 1.089,
+    "min": 0.9907,
+    "runs": 20
+  },
+  "S4 old full decode (new doc + apply)": {
+    "median": 60.725,
+    "p95": 65.485,
+    "min": 58.2458,
+    "runs": 10
+  },
+  "S4 fresh full decode (new doc + apply)": {
+    "median": 2.505,
+    "p95": 5.658,
+    "min": 2.3773,
+    "runs": 10
+  },
+  "S4 old write + handleOnChange body": {
+    "median": 8.429,
+    "p95": 11.116,
+    "min": 8.0867,
+    "runs": 20
+  },
+  "S5 old encodeStateVector+base64": {
+    "median": 0.027,
+    "p95": 0.046,
+    "min": 0.0262,
+    "runs": 50
+  },
+  "S5 old Y.snapshot+encodeSnapshot": {
+    "median": 0.287,
+    "p95": 0.335,
+    "min": 0.2605,
+    "runs": 30
+  },
+  "S5 old fingerprint getFingerprint()": {
+    "median": 0.02,
+    "p95": 0.024,
+    "min": 0.0187,
+    "runs": 50
+  },
+  "S5 old fingerprintFromUpdate(body)": {
+    "median": 37.668,
+    "p95": 43.309,
+    "min": 34.3483,
+    "runs": 20
+  },
+  "S5 old write with tracker attached": {
+    "median": 0.021,
+    "p95": 0.027,
+    "min": 0.0197,
+    "runs": 50
+  },
+  "S5 old write without tracker": {
+    "median": 0.019,
+    "p95": 0.043,
+    "min": 0.018,
+    "runs": 50
+  },
+  "S5 old open (apply body) with tracker": {
+    "median": 72.845,
+    "p95": 79.169,
+    "min": 70.1085,
+    "runs": 10
+  },
+  "S5 old open (apply body) without tracker": {
+    "median": 62.389,
+    "p95": 63.94,
+    "min": 57.331,
+    "runs": 10
+  },
+  "S7 patchPlainCelldata, 50 cells into 100k (fresh copy each run)": {
+    "median": 1.358,
+    "p95": 3.937,
+    "runs": 15
+  },
+  "S7 engine apply, 50 cells: one produceWithPatches per cell": {
+    "median": 73.483,
+    "p95": 75.167,
+    "min": 72.799,
+    "runs": 10
+  },
+  "S7 engine apply, 50 cells: one produce (applyRemoteCells)": {
+    "median": 2.248,
+    "p95": 3.517,
+    "min": 2.2279,
+    "runs": 10
+  },
+  "S6 legacy onChange encodes, 4 edits 50 ms apart": {
+    "base": 4,
+    "stabilize": 1
+  },
+  "S6 legacy onChange encodes, 10 edits 50 ms apart": {
+    "base": 10,
+    "stabilize": 1
+  }
+}

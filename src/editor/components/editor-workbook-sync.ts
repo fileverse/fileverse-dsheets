@@ -2,6 +2,7 @@ import { WorkbookInstance } from '@sheet-engine/react';
 import * as Y from 'yjs';
 import isEqual from 'lodash/isEqual';
 import { SheetChangePath, updateYdocSheetData } from '../utils/update-ydoc';
+import { isFormatLocked } from '../utils/format-gate';
 import { shouldPersistCelldataCell } from '../../sheet-engine/core/utils/cell-persist-utils';
 import { applyCellFormatRangesCommits } from '../../sheet-engine/core/utils/mirror-cell-format-ranges';
 import { detachWorkbookData } from '../utils/detach-workbook-data';
@@ -295,6 +296,7 @@ export const createSheetLengthChangeHandler = ({
           ySheet.set('zoomRatio', sheet.zoomRatio);
         }
 
+        if (isFormatLocked(ydocRef.current, dsheetId)) return;
         ydocRef.current?.transact(() => {
           sheetArray.push([ySheet]);
         });
@@ -317,6 +319,7 @@ export const createSheetLengthChangeHandler = ({
           sheetEditorRef.current?.getAllSheets() || [],
         );
         setTimeout(() => {
+          if (isFormatLocked(ydocRef.current, dsheetId)) return;
           ydocRef.current?.transact(() => {
             sheetArray.delete(removedIndex, 1);
           });
