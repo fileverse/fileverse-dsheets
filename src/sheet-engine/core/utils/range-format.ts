@@ -360,6 +360,70 @@ function replaceOverlappingRangeAttrs(
   return normalizeCellFormatRanges(next);
 }
 
+/** Remove saved fills from the selected visible rows, then merge once. */
+export function clearCellFormatRangeFill(
+  ranges: CellFormatRange[] | undefined,
+  selection: Pick<CellFormatRange, "row" | "column">,
+  hiddenRows: Record<string, number> | undefined,
+): { ranges: CellFormatRange[]; changed: boolean } {
+  if (!ranges?.length) return { ranges: [], changed: false };
+  const hiddenSpans = compressIndices(
+    Object.keys(hiddenRows ?? {})
+      .map(Number)
+      .filter(
+        (row) =>
+          row >= selection.row[0] &&
+          row <= selection.row[1] &&
+          hiddenRows?.[row] != null,
+      ),
+  );
+  const next: CellFormatRange[] = [];
+  let changed = false;
+
+  for (const range of ranges) {
+    const overlap = range.bg != null && getIntersection(range, selection);
+    if (!overlap) {
+      next.push(range);
+      continue;
+    }
+
+    const [start, end] = overlap.row;
+    const hidden = hiddenSpans.filter(
+      ([first, last]) => first <= end && last >= start,
+    );
+    if (hidden.length === 1 && hidden[0][0] <= start && hidden[0][1] >= end) {
+      next.push(range);
+      continue;
+    }
+    changed = true;
+    next.push(...splitRangeOutsideIntersection(range, overlap));
+
+    const cleared = { ...range, column: overlap.column };
+    delete cleared.bg;
+    const hasOtherFormat = CELL_FORMAT_RANGE_ATTR_KEYS.some(
+      (key) => cleared[key] != null,
+    );
+
+    let row = start;
+    for (const [first, last] of hidden) {
+      const hiddenStart = Math.max(first, start);
+      const hiddenEnd = Math.min(last, end);
+      if (hasOtherFormat && row < hiddenStart) {
+        next.push({ ...cleared, row: [row, hiddenStart - 1] });
+      }
+      next.push({
+        ...range,
+        column: overlap.column,
+        row: [hiddenStart, hiddenEnd],
+      });
+      row = hiddenEnd + 1;
+    }
+    if (hasOtherFormat && row <= end) next.push({ ...cleared, row: [row, end] });
+  }
+
+  return { ranges: changed ? normalizeCellFormatRanges(next) : ranges, changed };
+}
+
 export function getCellFormatRangeGridBounds(
   ranges: CellFormatRange[] | undefined,
 ): { maxRow: number; maxCol: number } | null {

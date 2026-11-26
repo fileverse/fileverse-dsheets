@@ -68,7 +68,12 @@ import {
 } from '../utils/border-config-utils';
 import { clearMeasureTextCache, getCellTextInfo } from './text';
 import { hasCellMeaningfulContent } from '../utils/cell-persist-utils';
-import { CellFormatRange, removeCellFormatRangesInRect, upsertCellFormatRange } from '../utils/range-format';
+import {
+  CellFormatRange,
+  clearCellFormatRangeFill,
+  removeCellFormatRangesInRect,
+  upsertCellFormatRange,
+} from '../utils/range-format';
 import { assignActiveConfigToSheetFile } from './sheet';
 
 type ToolbarItemClickHandler = (
@@ -88,9 +93,7 @@ function isCellEligibleForDecimalAdjust(
   if (cell.ct?.fa === '@') return false;
   if (cell.ct?.t === 'n') return true;
   if (isGeneralFormatCell(cell) && isCellValueEmpty(cell)) return true;
-  return (
-    typeof cell.v === 'number' || isRealNum(cell.v) || isRealNum(cell.m)
-  );
+  return typeof cell.v === 'number' || isRealNum(cell.v) || isRealNum(cell.m);
 }
 
 function isCellValueEmpty(cell: Cell | null | undefined): boolean {
@@ -202,14 +205,22 @@ function pushRangeFormatConfigUpdate(
 ) {
   ctx.luckysheetfile[sheetIndex].config ||= {};
   const cfg = ctx.luckysheetfile[sheetIndex].config!;
-  const { ranges, changed } = upsertCellFormatRange(
-    cfg.cellFormatRanges,
-    row_st,
-    row_ed,
-    col_st,
-    col_ed,
-    attrs,
-  );
+  const resetFill =
+    Object.prototype.hasOwnProperty.call(attrs, 'bg') && attrs.bg === undefined;
+  const { ranges, changed } = resetFill
+    ? clearCellFormatRangeFill(
+        cfg.cellFormatRanges,
+        { row: [row_st, row_ed], column: [col_st, col_ed] },
+        ctx.config.rowhidden,
+      )
+    : upsertCellFormatRange(
+        cfg.cellFormatRanges,
+        row_st,
+        row_ed,
+        col_st,
+        col_ed,
+        attrs,
+      );
   if (!changed) return;
   cfg.cellFormatRanges = ranges;
   // Keep live ctx.config in sync so sheet-leave persist cannot wipe ranges.
@@ -285,11 +296,7 @@ export function updateFormatCell(
           if (foucsStatus === '@' && cell?.ct?.t === 'd') {
             // Plain text: preserve user-visible date/time text.
             value = rawM ?? rawV ?? cell?.ct?.s?.[0]?.v;
-          } else if (
-            cell?.ct?.t === 'd' &&
-            isRealNum(rawV) &&
-            type !== 's'
-          ) {
+          } else if (cell?.ct?.t === 'd' && isRealNum(rawV) && type !== 's') {
             // Date/time cells keep Excel serial in `v` — reuse it when reformatting.
             value = rawV;
           } else if (cell?.ct?.t === 'd') {
@@ -536,7 +543,7 @@ export function updateFormatCell(
       }
     }
 
-    if (hasEmptyCellFormat) {
+    if (hasEmptyCellFormat || (attr === 'bg' && foucsStatus === undefined)) {
       pushRangeFormatConfigUpdate(
         changes,
         ctx,
@@ -1786,7 +1793,8 @@ export function handleClearFormat(ctx: Context) {
   if (index != null && ctx.luckysheet_select_save?.length) {
     const sheet = ctx.luckysheetfile[index];
     sheet.config ||= {};
-    let nextRanges = sheet.config.cellFormatRanges ?? ctx.config?.cellFormatRanges;
+    let nextRanges =
+      sheet.config.cellFormatRanges ?? ctx.config?.cellFormatRanges;
     const prevRanges = nextRanges;
     ctx.luckysheet_select_save.forEach((selection) => {
       nextRanges = removeCellFormatRangesInRect(
